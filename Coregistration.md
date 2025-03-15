@@ -84,6 +84,21 @@ estimates for $\Delta x, \Delta y$, and $\Delta z$. Below I describe a
 method for differentiating systematic errors and noise from the
 elevation changes we want to resolve.
 
+First, however, a minor expansion to
+<a href="#eq-shifts" class="quarto-xref">Equation 1</a> above. The
+initial iterations of working with program align I found that minor
+systematic biases with slope gradient persisted. To deal with those, I
+modified <a href="#eq-shifts" class="quarto-xref">Equation 1</a> to
+include a gradient term.
+
+$$
+\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + (1+\beta\theta_i)\Delta z
+$$ Here $\theta_i$ is the slope gradient at point $i$ and $\beta$ is a
+coefficient that we will determine empirically. This modification allows
+for a systematic bias in the elevation differences that varies with
+slope gradient. We now have four values to solve for:
+$\Delta x, \Delta y, \Delta z$, and $\beta$.
+
 We’ll use a portion of the Post-Mortem study area with overlap of the
 2006 and 2007 lidar DTMs that contains several of the study blocks. The
 study blocks are shown by the black polygons in the image below. The red
