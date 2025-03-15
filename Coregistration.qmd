@@ -131,7 +131,7 @@ pq2 <- pq2 + plot_annotation(title = "Median error (m) prior to coregistration")
 pq2
 ```
 
-The median represents the systematic error. It is small for low-gradient terrain and increases with slope steepness. For south-easterly aspects, the median error is positive; for north-westerly aspects, the median error is negative, and for south-west and north-east facing slopes, the median error remains small. This indicates that the DTMs are shifted in a south-east to north-west direction relative to each other.
+The median represents the systematic error. It is small for low-gradient terrain and increases with slope steepness. For south-easterly aspects, the median error is negative; for north-westerly aspects, the median error is positive, and for south-west and north-east facing slopes, the median error remains small. This indicates that the DTMs are shifted in a south-east to north-west direction relative to each other.
 
 We can use the [interquartile range](https://en.wikipedia.org/wiki/Interquartile_range) as a measure of noise in the difference raster.
 
@@ -169,7 +169,7 @@ The interquartile range is relatively small for low-gradient terrain and increas
 
 Now, can we define a function of slope and aspect that reflects the behavior observed in the graphs above? For a single aspect, we see that the median error exhibits a roughly linear dependence with gradient. The slope of that linear dependence varies with the sine of the aspect. This agrees with what we expect if the two DTMs are offset horizontally. Along the fall line, differences in elevation will be maximum; along a contour, differences will be minimum. So define $$\mu = \sin(A+\alpha)$$
 
-where $A$ is the azimuth measured from north and $\alpha$ is the angular shift so variation in $\mu$ aligns with that seen in @fig-medianError. Then define a linear function of gradient with coefficients that vary with $\mu$:
+where $A$ is the azimuth measured from north and $\alpha$ is the angular shift so variation in $\mu$ aligns with that seen in @fig-medianErrorBefore. Then define a linear function of gradient with coefficients that vary with $\mu$:
 
 $$
 qmin = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)*S
@@ -184,7 +184,7 @@ I solve for these coefficients as follows:
     ii) Define $qshift = -(qmax-qmin)*0.5$
     iii) Define $range = (qmax-qmin)*0.5$
     iv) Define $normq(abin,sbin) = (q2(abin,sbin) + qshift)/range$
-2.  Find the value of $\alpha$ that minimizes the sum of squared residuals, i.e., find the value of $\alpha$ that minimizes $\sum_{i=1}^n(\sin(A_i+\alpha)-normq_i)^2$. This is done using Brent's algorithm (see [people.match.sc.edu/Burkardt/f_src/brent/brent.f90](people.match.sc.edu/Burkardt/f_src/brent/brent.f90)).
+2.  Find the value of $\alpha$ that minimizes the sum of squared residuals, i.e., find the value of $\alpha$ that minimizes $\sum_{i=1}^n(\sin(A_i+\alpha)-normq_i)^2$. This is done using Brent's algorithm (see [people.match.sc.edu/Burkardt/f_src/brent/brent.f90](https://people.math.sc.edu/Burkardt/f_src/brent/brent.f90)).
 3.  Define a set of linear equations\
     $$qmin_i = \beta min_0 + \beta min_1*mu_i + \beta min_2*S_i + \beta min_3*mu_i*S_i$$ $$qmax_i = \beta max_0 + \beta max_1*mu_i + \beta max_2*S_i + \beta max_3*mu_i*S_i$$ where $\mu_i = \sin(A_i+\alpha)$ and $A_i$ is the slope aspect and $S_i$ is slope gradient.
 4.  Solve for the $\beta min$s and $\beta max$s. This is done using the [LAPACK](https://en.wikipedia.org/wiki/LAPACK) routine DGELS.
@@ -197,25 +197,6 @@ e0[, "qmax" := Q3 + 1.5*(Q3-Q1)]
 qfit <- as.data.table(read.csv("c:/work/data/postmortem/outbins5_fit.csv"))
 qfit <- qfit[, "Aspect" := as.factor(Azimuth)]
 qfit <- qfit[, "Gradient" := as.factor(Slope)]
-pfitmin <- ggplot() + 
-  geom_point(data=e0,
-             aes(x=Slope,y=qmin,color=Aspect), 
-             size=2) + 
-  geom_line(data=qfit, 
-            aes(x=Slope,y=Qmin,color=Aspect),
-            linewidth=1) +
-  scale_color_brewer(palette ='Set1',
-                     labels=c("N","NE","E","SE","S","SW","W","NW"))
-
-pfitmax <- ggplot() + 
-  geom_point(data=e0,
-             aes(x=Slope,y=qmax,color=Aspect), 
-             size=2) + 
-  geom_line(data=qfit, 
-            aes(x=Slope,y=Qmax,color=Aspect), 
-            linewidth=1) +
-  scale_color_brewer(palette ='Set1',
-                     labels=c("N","NE","E","SE","S","SW","W","NW"))
 
 p0 <- ggplot() +
   geom_point(data=e0[Aspect==0,],
@@ -461,3 +442,5 @@ compareInter
 ```
 
 The random errors, as indicated by the interquartile range, have been slightly reduced. Not what I was expecting. The elevation-difference raster is now ready for further analysis.
+
+The next step is a spatially distributed quantification of the frequency distribution of elevation differences, described in Quantiles.

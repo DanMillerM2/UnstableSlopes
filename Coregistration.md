@@ -135,8 +135,8 @@ Figure 1
 
 The median represents the systematic error. It is small for low-gradient
 terrain and increases with slope steepness. For south-easterly aspects,
-the median error is positive; for north-westerly aspects, the median
-error is negative, and for south-west and north-east facing slopes, the
+the median error is negative; for north-westerly aspects, the median
+error is positive, and for south-west and north-east facing slopes, the
 median error remains small. This indicates that the DTMs are shifted in
 a south-east to north-west direction relative to each other.
 
@@ -178,8 +178,9 @@ contour, differences will be minimum. So define $$\mu = \sin(A+\alpha)$$
 
 where $A$ is the azimuth measured from north and $\alpha$ is the angular
 shift so variation in $\mu$ aligns with that seen in
-**?@fig-medianError**. Then define a linear function of gradient with
-coefficients that vary with $\mu$:
+<a href="#fig-medianErrorBefore" class="quarto-xref">Figure 1</a>. Then
+define a linear function of gradient with coefficients that vary with
+$\mu$:
 
 $$
 qmin = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)*S
@@ -204,7 +205,7 @@ I solve for these coefficients as follows:
     residuals, i.e., find the value of $\alpha$ that minimizes
     $\sum_{i=1}^n(\sin(A_i+\alpha)-normq_i)^2$. This is done using
     Brent’s algorithm (see
-    [people.match.sc.edu/Burkardt/f_src/brent/brent.f90](people.match.sc.edu/Burkardt/f_src/brent/brent.f90)).
+    [people.match.sc.edu/Burkardt/f_src/brent/brent.f90](https://people.math.sc.edu/Burkardt/f_src/brent/brent.f90)).
 3.  Define a set of linear equations  
     $$qmin_i = \beta min_0 + \beta min_1*mu_i + \beta min_2*S_i + \beta min_3*mu_i*S_i$$
     $$qmax_i = \beta max_0 + \beta max_1*mu_i + \beta max_2*S_i + \beta max_3*mu_i*S_i$$
@@ -279,3 +280,6 @@ Figure 5
 The random errors, as indicated by the interquartile range, have been
 slightly reduced. Not what I was expecting. The elevation-difference
 raster is now ready for further analysis.
+
+The next step is a spatially distributed quantification of the frequency
+distribution of elevation differences, described in Quantiles.
