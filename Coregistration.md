@@ -294,8 +294,13 @@ coregistration.
 
 </div>
 
-![Interquartile range (m) before and after
-coregistration.](Coregistration_files/figure-commonmark/fig_compareInter-1.png)
+<div id="fig-compareInter">
+
+![](Coregistration_files/figure-commonmark/fig-compareInter-1.png)
+
+Figure 8: Interquartile range (m) before and after coregistration.
+
+</div>
 
 The random errors, as indicated by the interquartile range, have been
 slightly reduced. Not what I was expecting. Here’s another look at the
@@ -309,7 +314,7 @@ before and after results.
 
 ![](Coregistration_files/figure-commonmark/fig-den-1.png)
 
-Figure 8: Density plots of median, mean, and interquartile range of
+Figure 9: Density plots of median, mean, and interquartile range of
 elevation differences before and after coregistration.
 
 </div>
@@ -326,11 +331,18 @@ We still see random noise, but the systematic errors aligned with slope
 aspect are gone. Distinct changes are visible along many stream
 channels. The final level of detection (LoD) used to delineate stable
 terrain from areas where elevations changed between 2006 and 2017 is
-shown with the curves in **?@fig-curvesFinal** below.
+shown with the curves in
+<a href="#fig-curvesFinal" class="quarto-xref">Figure 10</a> below.
 
-![First and third quartiles (dots), polynomial fits (thin lines), and
-limits using Tukey’s fences (k=1.5) after shifting the 2017
-DTM.](Coregistration_files/figure-commonmark/unnamed-chunk-10-1.png)
+<div id="fig-curvesFinal">
+
+![](Coregistration_files/figure-commonmark/fig-curvesFinal-1.png)
+
+Figure 10: First and third quartiles (dots), polynomial fits (thin
+lines), and limits using Tukey’s fences (k=1.5) after shifting the 2017
+DTM.
+
+</div>
 
 The curves are now all symmetric about zero and the envelope defining
 the LoD is narrower. Even so, the what we are interpeting as “noise” in
@@ -339,7 +351,7 @@ of this uncertainty?
 
 ## Canopy effects.
 
-See <a href="#fig-canopy" class="quarto-xref">Figure 9</a> below. The
+See <a href="#fig-canopy" class="quarto-xref">Figure 11</a> below. The
 left panel shows elevation differences draped on a shaded relief image
 for a portion of the overlapping 2006 and 2017 DTMs after
 coregistration, the right panel shows an aerial photo view of the same
@@ -356,7 +368,7 @@ general reduction of lidar DTM accuracy observed over forested areas
 <img src="images/clipboard-2778201248.png"
 data-fig-cap="Left panel shows differences in DTM elevations after coregistration. Right panel shows an aerial photo view of the same area." />
 
-Figure 9: Left panel shows differences in DTM elevations after
+Figure 11: Left panel shows differences in DTM elevations after
 coregistration. Right panel shows an aerial photo view of the same area.
 
 </div>
@@ -370,14 +382,14 @@ forested areas (Petras et al. 2023):
 2.  Interpretation of canopy reflections as ground returns.
 
 The first of these is illustrated in
-<a href="#fig-groundReturns" class="quarto-xref">Figure 10</a> below.
+<a href="#fig-groundReturns" class="quarto-xref">Figure 12</a> below.
 
 <div id="fig-groundReturns">
 
 <img src="images/clipboard-1515199096.png"
 data-fig-cap="Left panel shows the number of lidar ground returns within each cell of the 2006 DTM (3-foot DTM point spacing). Right panel zooms into the area within the box of the left panel. Black dots indicate ground returns." />
 
-Figure 10: Left panel shows the number of lidar ground returns within
+Figure 12: Left panel shows the number of lidar ground returns within
 each cell of the 2006 DTM (3-foot DTM point spacing). Right panel zooms
 into the area within the box of the left panel. Black dots indicate
 ground returns.
@@ -387,7 +399,7 @@ ground returns.
 Variation in ground-return spacing results in variable-sized gaps with
 no returns and variable spatial density in the number of signals per DTM
 cell. The bar chart in
-<a href="#fig-barChart" class="quarto-xref">Figure 11</a> below shows
+<a href="#fig-barChart" class="quarto-xref">Figure 13</a> below shows
 the proportion of all cells in the 2006 DTM that overlapped the 2017 DTM
 containing a given number of ground returns.
 
@@ -395,7 +407,7 @@ containing a given number of ground returns.
 
 ![](Coregistration_files/figure-commonmark/fig-barChart-1.png)
 
-Figure 11: Proportion of 2006 DTM cells with a given number of ground
+Figure 13: Proportion of 2006 DTM cells with a given number of ground
 returns
 
 </div>
@@ -419,9 +431,10 @@ random errors into the DTM elevations.
 
 After coregistration of the 2006 and 2017 DTMs, we found that
 variability in elevation differences, as measured by the interquartile
-range (**?@fig-compareInter**) ranged from about 10 to 30 centimeters,
-increasing with increasing hillslope gradient.
-<a href="#fig-interquartileCanopy" class="quarto-xref">Figure 12</a>
+range (<a href="#fig-compareInter" class="quarto-xref">Figure 8</a>)
+ranged from about 10 to 30 centimeters, increasing with increasing
+hillslope gradient.
+<a href="#fig-interquartileCanopy" class="quarto-xref">Figure 14</a>
 below shows the same data, but here parsed by hillslope gradient and
 tree-canopy height. Canopy height was determined in program align after
 shifting the 2017 DSM by subtracting the DTM elevation from the DSM
@@ -432,7 +445,7 @@ canopy heights.
 
 ![](Coregistration_files/figure-commonmark/fig-interquartileCanopy-1.png)
 
-Figure 12: Variation of the interquartile range with changes in canopy
+Figure 14: Variation of the interquartile range with changes in canopy
 height and hillslope gradient.
 
 </div>
@@ -441,7 +454,7 @@ height and hillslope gradient.
 
 ![](Coregistration_files/figure-commonmark/fig-curvesCanopy-1.png)
 
-Figure 13: The interquartile range and LoD (Tukey’s fences with k=1.5)
+Figure 15: The interquartile range and LoD (Tukey’s fences with k=1.5)
 plotted as a function of canopy height for different increments in
 hillslope gradient.
 

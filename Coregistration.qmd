@@ -74,31 +74,31 @@ scratch_dir <- "c:/work/scratch"
 executable_dir <- "c:/work/sandbox/gridutilities/projects/align/x64/release/"
 program_name = "align"
 
-#returnCode <- TerrainWorksUtils::align(refDTM,
-#               alignDTM,
-#               refDSM,
-#               alignDSM,
-#               iterations,
-#               k,
-#               dampener,
-#               outDTM,
-#               tileNx,
-#               tileNy,
-#               overlap,
-#               radius,
-#               nslope,
-#               maxSlope,
-#               nAzimuth,
-#               outbins,
-#               outDif,
-#               outOutlier,
-#               scratch_dir,
-#               executable_dir,
-#               program_name)
+returnCode <- TerrainWorksUtils::align(refDTM,
+               alignDTM,
+               refDSM,
+               alignDSM,
+               iterations,
+               k,
+               dampener,
+               outDTM,
+               tileNx,
+               tileNy,
+               overlap,
+               radius,
+               nslope,
+               maxSlope,
+               nAzimuth,
+               outbins,
+               outDif,
+               outOutlier,
+               scratch_dir,
+               executable_dir,
+               program_name)
 
-#if (returnCode != 0) {
-#  stop("Error in align")
-#}
+if (returnCode != 0) {
+  stop("Error in align")
+}
 ```
 
 @fig-medianErrorBefore shows median elevation difference values across the range of hillslope gradient and aspect increments. Deviations from zero indicate systematic variations with gradient and aspect.
@@ -513,7 +513,7 @@ compareq2
 ```
 
 ```{r}
-#| label: fig_compareInter
+#| label: fig-compareInter
 #| fig-cap: "Interquartile range (m) before and after coregistration."
 
 inter_slope <- pinter_slope + labs(title="Before")
@@ -575,7 +575,7 @@ We've narrowed the range of median and mean values and shifted the interquartile
 We still see random noise, but the systematic errors aligned with slope aspect are gone. Distinct changes are visible along many stream channels. The final level of detection (LoD) used to delineate stable terrain from areas where elevations changed between 2006 and 2017 is shown with the curves in @fig-curvesFinal below.
 
 ```{r}
-#| figure: fig-curvesFinal
+#| label: fig-curvesFinal
 #| fig-cap: "First and third quartiles (dots), polynomial fits (thin lines), and limits using Tukey's fences (k=1.5) after shifting the 2017 DTM."
 #| fig-height: 9.5
 library(scales)
