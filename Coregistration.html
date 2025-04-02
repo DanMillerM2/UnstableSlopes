@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.6.39">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Dan">
+<meta name="dcterms.date" content="2025-03-27">
+
+<title>Coregistration</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="Coregistration_files/libs/clipboard/clipboard.min.js"></script>
+<script src="Coregistration_files/libs/quarto-html/quarto.js"></script>
+<script src="Coregistration_files/libs/quarto-html/popper.min.js"></script>
+<script src="Coregistration_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="Coregistration_files/libs/quarto-html/anchor.min.js"></script>
+<link href="Coregistration_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="Coregistration_files/libs/quarto-html/quarto-syntax-highlighting-e26003cea8cd680ca0c55a263523d882.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="Coregistration_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="Coregistration_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="Coregistration_files/libs/bootstrap/bootstrap-8a79a254b8e706d3c925cde0a310d4f0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
+
+<script type="text/javascript">
+const typesetMath = (el) => {
+  if (window.MathJax) {
+    // MathJax Typeset
+    window.MathJax.typeset([el]);
+  } else if (window.katex) {
+    // KaTeX Render
+    var mathElements = el.getElementsByClassName("math");
+    var macros = [];
+    for (var i = 0; i < mathElements.length; i++) {
+      var texText = mathElements[i].firstChild;
+      if (mathElements[i].tagName == "SPAN") {
+        window.katex.render(texText.data, mathElements[i], {
+          displayMode: mathElements[i].classList.contains('display'),
+          throwOnError: false,
+          macros: macros,
+          fleqn: false
+        });
+      }
+    }
+  }
+}
+window.Quarto = {
+  typesetMath
+};
+</script>
+
+</head>
+
+<body class="fullcontent">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Coregistration</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Dan </p>
+          </div>
+  </div>
+    
+    <div>
+    <div class="quarto-title-meta-heading">Published</div>
+    <div class="quarto-title-meta-contents">
+      <p class="date">March 27, 2025</p>
+    </div>
+  </div>
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<p>We want to identify landslide sites using changes in ground-surface elevation resolved between sequential lidar acquisitions. We want to take advantage of raster-processing algorithms for image segmentation and topographic analyses, so we would like to work with elevation-difference rasters. In using lidar to detect elevation change, it is necessary to ensure that the two data sets are aligned spatially. Differences in spatial registration between the two data sets will produce systematic errors in measured elevation differences. In the study design, we described approaches that have been used for co-registration of lidar datasets. These involve two strategies:</p>
+<ul>
+<li><p>Co-register the ground returns, then build DTMs.</p></li>
+<li><p>Co-register existing DTMs.</p></li>
+</ul>
+<p>The first approach seems likely to be the more consistent of the two, because consistent methods can be used for filtering ground returns from the point clouds and for interpolation of the DTMs from the ground returns. When using existing DTMs, e.g., those downloaded from the Lidar Portal, they may have been generated with different point-filtering algorithms and interpolation schemes. However, working with point clouds directly is computationally intensive and time consuming. If we can obtain good results with the existing DTMs, that will reduce time and computer requirements dramatically.</p>
+<p>Consider two DTMs for the same site, one slightly offset from the other by an amount <span class="math inline">\(\Delta x, \Delta y, \Delta z\)</span>. The elevation difference between the two DTMs at a grid-point <span class="math inline">\(i\)</span> is <span class="math inline">\(\Delta e_i\)</span>. We can write the elevation difference as</p>
+<p><span id="eq-shifts"><span class="math display">\[
+\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + \frac{\partial{\Delta e_i}}{\partial{z_i}}\Delta z
+\tag{1}\]</span></span></p>
+<p>where <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span> is the partial derivative of the elevation difference with respect to <span class="math inline">\(x_i\)</span>, and similarly for <span class="math inline">\(y_i\)</span> and <span class="math inline">\(z_i\)</span>. For <span class="math inline">\(n\)</span> DTM grid points, we then have <span class="math inline">\(n\)</span> equations, each with a unique <span class="math inline">\(\Delta e_i, \frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span>, and <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{y_i}}\)</span> (<span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{z_i}}\)</span> is simply one) and with single values for each of <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span>. We seek the <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> that provide the best estimates of all the <span class="math inline">\(\Delta e_i\)</span>s. We can treat this as a <a href="https://en.wikipedia.org/wiki/Linear_least_squares">linear least-squares problem</a>. In matrix notation, we seek to minimize <span class="math inline">\(||\boldsymbol{A}\boldsymbol{x} - \boldsymbol{b}||^2\)</span> where <span class="math inline">\(\boldsymbol{A}\)</span> is a 3 by <span class="math inline">\(n\)</span> matrix containing the partial derivatives, <span class="math inline">\(\boldsymbol{x}\)</span> is a 3-element vector containing the the <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> values, and <span class="math inline">\(\boldsymbol{b}\)</span> is an <span class="math inline">\(n\)</span>-element array containing the <span class="math inline">\(\Delta e_i\)</span>s.</p>
+<p>Imagine, on an 80% slope, an offset of 0.5 meters between the two DTMs would result in a <span class="math inline">\(\Delta e\)</span> of 0.4 meters. The partial derivatives <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span> and <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{y_i}}\)</span> reflect the ground-surface slope at point <span class="math inline">\(i\)</span> as resolved by the DTM. Each point lies at the corner of four DTM cells, each cell is defined by four points. For any DTM point, we can look at the elevations of the adjacent 8 points to determine into which of the four adjacent cell we need to shift the point to solve for <span class="math inline">\(\Delta e\)</span>. We can estimate the elevation change with a change in x or y within that cell using bilinear interpolation. That gives a value for <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span> and <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{y_i}}\)</span>. The value of <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{z_i}}\)</span> is simply 1.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
+<p>For any overlapping portion of two DTMs, we can find an optimal set <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span>. Because the degree of misalignment between the DTMs may vary spatially, we can seek optimal solutions over a moving window or for overlapping tiles, although the window or tiles must be sufficiently large to encompass the full range of slope aspects.</p>
+<p>In doing this, we want to exclude portions of the DTMs where elevation changes did occur. The <span class="math inline">\(\Delta e\)</span>s for those sites would not be a consequence of a shift in the registration between the DTMs and including those in our set of equations would bias the resulting estimates for <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span>. Below I describe a method for differentiating systematic errors and noise from the elevation changes we want to resolve.</p>
+<p>We’ll use a portion of the Post-Mortem study area with overlap of the 2006 and 2007 lidar DTMs that contains several of the study blocks. The study blocks are shown by the black polygons in the image below. The red box outlines the analysis area.</p>
+<p><img src="images/clipboard-1274792243.png" class="img-fluid"></p>
+<p><img src="images/clipboard-3673670531.png" class="img-fluid"></p>
+<p>Overlap of the two DTMs is shown below with the elevation difference, in quarter-meter increments, indicated by the colors.</p>
+<div id="fig_dif0" class="quarto-figure quarto-figure-center anchored">
+<figure class="figure">
+<p><img src="images/clipboard-2801040071.png" class="img-fluid figure-img" width="500"></p>
+<figcaption>Elevation difference (m), 2006 to 2017 lidar overlap</figcaption>
+</figure>
+</div>
+<p>The elevation differences are spatially variable with systematic biases aligned with hillslope aspect. We can see this by binning the elevation differences for each DTM grid point by increments in slope and aspect and plotting <a href="https://en.wikipedia.org/wiki/Quartile">quartiles</a>. To make the following plots, I first determined the quartiles for the full range of elevation-difference values in each bin. I want to focus on systematic errors and noise in the DTMs and exclude sites where elevations did change, e.g., at landslide sites. To differentiate between signal (actual elevation changes) and noise, I calculated the interquartile range for all values, then used a <a href="https://en.wikipedia.org/wiki/Outlier#Tukey's_fences">Tukey fence</a> with <span class="math inline">\(k\)</span> = 1.5. Values less that <span class="math inline">\(q1 - 1.5*(q3-q1)\)</span> or greater than <span class="math inline">\(q3 + 1.5*(q3-q1)\)</span> are considered likely <a href="https://en.wikipedia.org/wiki/Outlier">outliers</a>. These potentially indicate sites where elevations have changed between lidar acquisitions. For each bin, I removed these potential outliers and recalculated the quartiles to provide an estimate of the systematic bias and random error in the elevation-difference values.</p>
+<p>The calculations are performed by program align.</p>
+<p>Start with systematic errors as indicated by the median value for each slope and aspect bin.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-medianErrorBefore" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-medianErrorBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-medianErrorBefore-1.png" id="fig-medianErrorBefore" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-medianErrorBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;1
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The median represents the systematic error. It is small for low-gradient terrain and increases with slope steepness. For south-easterly aspects, the median error is negative; for north-westerly aspects, the median error is positive, and for south-west and north-east facing slopes, the median error remains small. This indicates that the DTMs are shifted in a south-east to north-west direction relative to each other.</p>
+<p>We can use the <a href="https://en.wikipedia.org/wiki/Interquartile_range">interquartile range</a> as a measure of noise in the difference raster.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-interquartileBefore" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-interquartileBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-interquartileBefore-1.png" id="fig-interquartileBefore" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-interquartileBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;2
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>The interquartile range is relatively small for low-gradient terrain and increases with slope steepness. This provides a characterization of the noise in the elevation-difference raster obtained by subtracting the 2017 lidar DTM from the 2006 lidar DTM. Can we use these measurements to constrain the elevation-threshold that distinguishes signal from noise? Can we use <span class="math inline">\(qmin = q1 - 1.5*(q3-q1)\)</span> for the minimum <span class="math inline">\(q1\)</span> value as a function of aspect and slope as a threshold for identifying sites where elevations decreased between 2006 and 2017? Likewise, can we use <span class="math inline">\(qmax = q3 + 1.5*(q3-q1)\)</span> for the maximum <span class="math inline">\(q3\)</span> value as a function of aspect and slope as a threshold for identifying sites where elevations increased between 2006 and 2017? These values provide slope-dependent threshold within which we can identify sites where elevations likely did not change.</p>
+<p>Can we define a function of slope and aspect that reflects the behavior observed in the graphs above? For a single aspect, we see that the median error exhibits a roughly linear dependence with gradient. The slope of that linear dependence varies with the sine of the aspect. This agrees with what we expect if the two DTMs are offset horizontally. Along the fall line, differences in elevation will be maximum; along a contour, differences will be minimum. So define <span class="math display">\[\mu = \sin(A+\alpha)\]</span></p>
+<p>where <span class="math inline">\(A\)</span> is the azimuth measured from north and <span class="math inline">\(\alpha\)</span> is the angular shift so variation in <span class="math inline">\(\mu\)</span> aligns with that seen in <a href="#fig-medianErrorBefore" class="quarto-xref">Figure&nbsp;1</a>. Then define a linear function of gradient with coefficients that vary with <span class="math inline">\(\mu\)</span>:</p>
+<p><span class="math display">\[
+qmin = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)*S
+\]</span></p>
+<p>where <span class="math inline">\(S\)</span> is slope gradient and the <span class="math inline">\(\beta\)</span>s are empirical coefficients. This defines an equation with five coefficients, <span class="math inline">\(\alpha\)</span> and the four <span class="math inline">\(\beta\)</span>s.</p>
+<p>I solve for these coefficients as follows:</p>
+<ol type="1">
+<li>Create a normalized set of curves for the variation of <span class="math inline">\(q2\)</span> as a function of aspect for each of the slope-gradient increments. The “normalized” curves vary from -1 to +1 over the range of aspects. The normalization is done as follows:
+<ol type="i">
+<li>For each slope increment, find the maximum and minimum values of <span class="math inline">\(q2\)</span>.</li>
+<li>Define <span class="math inline">\(qshift = -(qmax-qmin)*0.5\)</span></li>
+<li>Define <span class="math inline">\(range = (qmax-qmin)*0.5\)</span></li>
+<li>Define <span class="math inline">\(normq(abin,sbin) = (q2(abin,sbin) + qshift)/range\)</span></li>
+</ol></li>
+<li>Find the value of <span class="math inline">\(\alpha\)</span> that minimizes the sum of squared residuals, i.e., find the value of <span class="math inline">\(\alpha\)</span> that minimizes <span class="math inline">\(\sum_{i=1}^n(\sin(A_i+\alpha)-normq_i)^2\)</span>. This is done using Brent’s algorithm (see <a href="https://people.math.sc.edu/Burkardt/f_src/brent/brent.f90">people.match.sc.edu/Burkardt/f_src/brent/brent.f90</a>).</li>
+<li>Define a set of linear equations<br>
+<span class="math display">\[qmin_i = \beta min_0 + \beta min_1*mu_i + \beta min_2*S_i + \beta min_3*mu_i*S_i\]</span> <span class="math display">\[qmax_i = \beta max_0 + \beta max_1*mu_i + \beta max_2*S_i + \beta max_3*mu_i*S_i\]</span> where <span class="math inline">\(\mu_i = \sin(A_i+\alpha)\)</span> and <span class="math inline">\(A_i\)</span> is the slope aspect and <span class="math inline">\(S_i\)</span> is slope gradient.</li>
+<li>Solve for the <span class="math inline">\(\beta min\)</span>s and <span class="math inline">\(\beta max\)</span>s. This is done using the <a href="https://en.wikipedia.org/wiki/LAPACK">LAPACK</a> routine DGELS.</li>
+</ol>
+<p>Here are the resulting curves for the eight major slope aspects (N, NE, E, SE, S, SW, W, and NW).</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/unnamed-chunk-4-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/unnamed-chunk-4-2.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/unnamed-chunk-4-3.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/unnamed-chunk-4-4.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The envelope contained within the <span class="math inline">\(qmin\)</span> and <span class="math inline">\(qmax\)</span> threshold curves defines the elevation-difference values falling within the range of gradient- and aspect-dependent systematic errors plus the random errors (noise) present in the difference raster. We can use these thresholds to identify sites where there likely were elevation changes during the time between the lidar acquisitions and exclude these from the set of equations used to estimate the optimal <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> values. We then use the elevation-difference raster to estimate the optimal <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> values for each tile or moving window and shift the 2017 DTM to align with the 2006 DTM. Note that these shifts can be spatially variable. We then use the aligned 2017 DTM to estimate the elevation differences between the two DTMs.</p>
+<p>Here are results after coregistration.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-medianErrorAfter" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-medianErrorAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-medianErrorAfter-1.png" id="fig-medianErrorAfter" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-medianErrorAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;3
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>This procedure has greatly reduced the systematic differences. The slope and aspect dependence are not entirely eliminated - I’ll think some more about how to get that last little bit. Let’s look at the interquartile range, our measure of random error.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-interquartileAfter" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-interquartileAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-interquartileAfter-1.png" id="fig-interquartileAfter" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-interquartileAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;4
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>Comparing before and after:</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-compareq2" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-compareq2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-compareq2-1.png" id="fig-compareq2" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-compareq2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;5
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/fig_compareInter-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>The random errors, as indicated by the interquartile range, have been slightly reduced. Not what I was expecting. Here’s another look at the before and after results.</p>
+<div class="cell">
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: A numeric `legend.position` argument in `theme()` was deprecated in ggplot2
+3.5.0.
+ℹ Please use the `legend.position.inside` argument of `theme()` instead.</code></pre>
+</div>
+</div>
+<p>We’ve narrowed the range of median values and shifted the the interquartiles to lower values (but that dual mode in the median is interesting). Here’s the elevation differences after alignment:</p>
+<p><img src="images/clipboard-292234770.png" id="fig_dif" class="img-fluid"></p>
+<p>We still see random noise, but the systematic errors aligned with slope aspect are gone. Distinct changes are visible along many stream channels.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/unnamed-chunk-11-1.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/unnamed-chunk-11-2.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/unnamed-chunk-11-3.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+<div class="cell-output-display">
+<div>
+<figure class="figure">
+<p><img src="Coregistration_files/figure-html/unnamed-chunk-11-4.png" class="img-fluid figure-img" width="672"></p>
+</figure>
+</div>
+</div>
+</div>
+<p>Next steps:</p>
+<ul>
+<li><p>Map the outlier magnitude using program Quantiles: that is, how many interquartile ranges is a point below qmin or above qmax. This is what we use to identify candidate sites. These are then filtered in program huntLS to flag potential landslide scars.</p></li>
+<li><p>We can determine the spatial extent of a patch using the local qmin and qmax, but still measure the volume change using the dz values.</p></li>
+</ul>
+
+
+<div id="quarto-appendix" class="default"><section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes"><h2 class="anchored quarto-appendix-heading">Footnotes</h2>
+
+<ol>
+<li id="fn1"><p>I found, however, that the vertical shift, <span class="math inline">\(\Delta z\)</span>, varied nonlinearly with slope gradient. <a href="#eq-shifts" class="quarto-xref">Equation&nbsp;1</a> was therefore modified to <span class="math inline">\(\Delta e_i =\frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + \frac{\partial{\Delta e_i}}{\partial{z_i}}\Delta z + \beta_1 S_i + \beta_2 S_i^2\)</span>, where <span class="math inline">\(S_i\)</span> is slope gradient for the <span class="math inline">\(i^{th}\)</span> point and <span class="math inline">\(\beta_1\)</span> and <span class="math inline">\(\beta_2\)</span> are additional empirical coefficients.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+</ol>
+</section></div></main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const onCopySuccess = function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  }
+  const getTextToCopy = function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+    text: getTextToCopy
+  });
+  clipboard.on('success', onCopySuccess);
+  if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+    const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+      text: getTextToCopy,
+      container: window.document.getElementById('quarto-embedded-source-code-modal')
+    });
+    clipboardModal.on('success', onCopySuccess);
+  }
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp('/' + window.location.host + '/');
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

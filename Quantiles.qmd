@@ -1,0 +1,130 @@
+---
+title: "Quantiles"
+author: "Dan"
+date: today
+format: gfm
+editor: visual
+execute:
+  echo: false
+bibliography: references.bib
+---
+
+Even after alignment of two sequential DTMs, there will be persistent errors in the measured elevation differences. We need to differentiate actual ground-surface-elevation changes from random errors (noise) in the two DTMs. The minimum value above which these differences can reliably be interpreted as changes in elevation is referred to as the level of detection (LoD). Differences less than the LoD are considered random noise. Differences greater than the LoD are recognized as changes in elevation occurring between acquisition of the two lidar datasets. The magnitude of the LoD translates to the level of confidence that can be placed in the eroded and deposited volumes inferred from these measured changes in elevation.
+
+Error statistics compiled for each DTM can be used to estimate a theoretical LoD based on concepts of error propagation [@brasington2003; @lane2003]. These statistics are based on comparison of ground control points with lidar ground-return elevations. Using the standard deviation of elevation errors estimated for each DTM ($\sigma_{2006}$ for the 2006 lidar and $\sigma_{2017}$ for the 2007 lidar), the standard deviation of differences in elevations between the DTMs ($\sigma_{\Delta z}$) is estimated as
+
+$$
+\sigma_{\Delta z} = \sqrt{\sigma_{2006}^2 + \sigma_{2017}^2}
+$$ {#eq-sigmaDeltaZ}
+
+For the 2006 lidar, $\sigma_{2006}$ is reported as 0.06m. For the 2017 lidar, $\sigma_{2017}$ is reported as 0.04 m in unvegetated areas and 0.09m in vegetated areas. Using the vegetated value, this gives an estimated $\sigma_{\Delta z}$ of about 0.10 m. Assuming that errors follow a normal distribution centered about zero, we might then assume with 95% confidence (two $\sigma_{\Delta Z}$) that differences greater than 0.2m indicate actual changes in elevation.
+
+Observed variability is shown in @fig-errors for a small area from the 2006-2017 overlap examined in the Coregistration document. The left panel shows elevation differences binned into 0.1-m increments from -0.3 to +0.3 meters by color, with values between -0.1 and +0.1 meters uncolored. These are draped over a shaded relief image. The right panel shows an aerial-photo view of the same area. Over the low-gradient, low-relief, unforested fields and pastures, elevation differences are consistently less than ±0.1m. On the forested hillslopes, the speckled appearance indicates localized changes exceeding ±0.3m. It seems more likely that these indicate noise in the DTMs and not actual changes in elevation.
+
+![Variability in elevation differences increases under forest canopy](images/clipboard-2778201248.png){#fig-errors}
+
+What might be the source of the variability over the forested hillslopes? See @fig-groundReturns below. The left panel shows the number of lidar ground returns per DTM cell (cells size is 3 feet, 0.91m) for the same area as in @fig-errors. The right panel shows a close up for the area in the box of the left panel, with black dots indicating the ground-return points.
+
+![Ground-return points for the 2006 lidar DTM.](images/clipboard-1515199096.png){#fig-groundReturns}
+
+The density of ground returns varies spatially and there are gaps with no returns spanning from several to tens of cells. Here is a histogram showing the proportion of cells within the analysis area with a given number of ground returns.
+
+```{r}
+library(data.table)
+library(ggplot2)
+
+dataFile <- "c:/work/data/postmortem/pointcount.csv"
+cnt <- as.data.table(read.csv(dataFile))
+cnt[, prop := Cells/sum(Cells)]
+p_histo <- ggplot(cnt, aes(x=Points, y= prop)) + geom_col() +
+  labs(title="Proportion of 2006 DTM cells with a given number of ground returns",
+       x="Number of ground returns", y="Proportion of cells") +
+  coord_cartesian(x=c(0,5)) +
+  scale_y_continuous(labels = scales::percent)
+p_histo
+```
+
+More than half of the cells contain no ground returns. Elevations for these points are interpolated from neighboring ground-return elevations. Spatial variation in aerial lidar ground-return density arises from a number of sources [@petras2023], including the type of lidar instrumentation and scan pattern, the overlap of scans from adjacent flight lines, the aspect and gradient of the ground surface relative to the position of the aircraft, and the presence of surface water. A primary source of the variability seen in @fig-errors, however, is the presence of forest cover. Only a portion of the laser signals penetrate the tree canopy, leading to gaps and variability in the spacing of ground returns, and some signals interpreted as ground returns may be reflections from the trees, not the ground surface. The ground-return locations differ for the two lidar datasets. The variable location and extent of data gaps in the two DTMs, coupled with tree reflections interpreted as ground returns, create the pattern of elevation differences between the two DTMs shown in @fig-errors.We need a method of characterizing DTM differences that accommodates spatial variability in the frequency distribution of values and for using that frequency distribution to determine an appropriate LoD.
+
+For coregistration of the two DTMs, we examined the frequency distribution of $\Delta z$ values over the entire difference raster. After filtered out apparent outliers using Tukey's fences, we used the distribution to identify an LoD for delineating stable terrain where elevation changes had likely not occurred. The locational shifts of the 2017 DTM were then calculated to bring the two DTMs into alignment over that stable terrain. We found that the magnitude of the LoD varied with slope gradient.
+
+```{r}
+library(data.table)
+library(ggplot2)
+library(latex2exp)
+library(RColorBrewer)
+
+
+inputPath <- "c:/work/data/postmortem/"
+outbins <- paste0(inputPath, "outbins")
+datafile <- paste0(outbins,"_final.csv")
+efinal <- as.data.table(read.csv(datafile))
+efinal <- efinal[, "Aspect" := as.factor(Azimuth)]
+efinal[, "qmin" := Q1 - 1.5*(Q3-Q1)]
+efinal[, "qmax" := Q3 + 1.5*(Q3-Q1)]
+
+p_LoD <- ggplot(efinal) + 
+  geom_point(aes(x=tan(asin(Slope)), y=qmin, color=Aspect), size=3, alpha = 0.8) +
+  geom_smooth(aes(x=tan(asin(Slope)), y=qmin), linewidth = 1, color="black", se=FALSE, method = "lm") +
+  geom_point(aes(x=tan(asin(Slope)), y=qmax, color=Aspect), size=3, alpha=0.8) +
+  geom_smooth(aes(x=tan(asin(Slope)), y=qmax), linewidth = 1, color="black", se = FALSE, method = "lm") +
+  labs(title = TeX(r"(LoD estimated from global frequency distribution of $\Delta z$)"),
+       subtitle = '2006 to 2017 lidar DTMs, Post-Mortem study area',
+       x = 'Gradient', 
+       y='LoD (m)') +
+  theme(legend.position="right") +
+  scale_color_brewer(palette = 'Set1', 
+                     labels=c("N","NE","E","SE","S","SW","W","NW")) +
+  scale_x_continuous(labels=scales::percent)
+p_LoD
+```
+
+Given, however, the increase in uncertainty in elevation differences under forest canopy, this gradient dependence may simply reflect a trend for agricultural fields and pastures to occur in flatter areas and forests on hillslopes. In any case, this LoD based on the observed distribution of $\Delta z$ values is larger than that based on @eq-sigmaDeltaz. We need a method to measure local variability in $\Delta z$ with which to estimate our level of certainty that a difference in elevation between two DTMs represents an actual change in elevation. We can expand on the use of quartiles in measured $\Delta z$ values that we developed to identify stable terrain for coregistration.
+
+Program quantiles builds a frequency distribution of elevation differences over a circular moving window of specified radius. Potential outliers are filtered out, based on Tukey's fences (k=1.5), and the first, second, and third quartiles are calculated. The mean and standard deviation of the elevation differences are also calculated. The z-score and probability of the elevation difference at each pixel are calculated based on the mean and standard deviation. For pixels with values less than the 1^st^ quartile $q_1$, the value $(\Delta z - q_1)/(q_3-q_1)$ is calculated. For pixels with values greater than the 3rd quartile $q_3$, the quantity $(\Delta z - q_1)/(q_3-q_1)$ is calculated. These quantities provide a measure of how extreme the pixel $\Delta z$ value is compared to the entire frequency distribution (minus outliers). The output from program quantiles is a set of rasters for each of these statistics.
+
+```{r}
+library(TerrainWorksUtils)
+library(stringr)
+
+inputPath <- "c:/work/data/postmortem/"
+in_raster <- paste0(inputPath, "difN.flt")
+radius <- 25. # radius of the moving circular window
+buffer <- 2 # spacing in pixels between window centers
+out_outlier <- paste0(inputPath, "outlier_50")
+out_q1 <- paste0(inputPath, "q1_50")
+out_q2 <- paste0(inputPath, "q2_50")
+out_q3 <- paste0(inputPath, "q3_50")
+out_mean <- paste0(inputPath, "mean_50")
+out_zscore <- paste0(inputPath, "zscore_50")
+out_prob <- paste0(inputPath, "prob_50")
+scratch_dir <- "c:/work/scratch"
+executable_dir <- "c:/work/sandbox/gridutilities/projects/quantiles/x64/release"
+program_name <- "quantiles"
+
+returnCode <- TerrainWorksUtils::quantiles(in_raster,
+                  radius,
+                  buffer,
+                  out_outlier,
+                  out_q1,
+                  out_q2,
+                  out_q3,
+                  out_mean,
+                  out_zscore,
+                  out_prob,
+                  scratch_dir,
+                  executable_dir,
+                  program_name)
+
+if (returnCode != 0) {
+  stop("Error in quantiles")
+}
+```
+
+With the output from program quantiles, the expectation is that extreme values are associated with actual changes in elevation between 2006 and 2017. This brings up two questions:
+
+1.  What length scale to use; that is, what radius for the circular window?
+
+2.  How extreme does a difference between the two DTMs need to be to indicate an actual change in elevation?
+
+We'll examine the scale issue first. We want to resolve landslide features, both loss of material in initiation zones and deposition of material downslope. The moving window must be large compared to the areal extent of landslide scars and deposits, otherwise the elevation changes associated with these features will comprise too large a portion of the window area - of the frequency distribution - to be extreme compared to the rest of the window. Conversely, a large window may also overlap zones of high and low variability, thus limiting ability to resolve smaller changes in elevation in low-variability zones.
