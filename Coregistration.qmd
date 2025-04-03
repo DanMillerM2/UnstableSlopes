@@ -23,13 +23,13 @@ $$
 \Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + \frac{\partial{\Delta e_i}}{\partial{z_i}}\Delta z
 $$ {#eq-shifts}
 
-where $\frac{\partial{\Delta e_i}}{\partial{x_i}}$ is the partial derivative of the elevation difference with respect to $x_i$, and similarly for $y_i$ and $z_i$. For $n$ DTM grid points, we then have $n$ equations, each with a unique $\Delta e_i, \frac{\partial{\Delta e_i}}{\partial{x_i}}$, and $\frac{\partial{\Delta e_i}}{\partial{y_i}}$ ($\frac{\partial{\Delta e_i}}{\partial{z_i}}$ is simply one) and with single values for each of $\Delta x, \Delta y$, and $\Delta z$. We seek the $\Delta x, \Delta y$, and $\Delta z$ that provide the best estimates of all the $\Delta e_i$s. We can treat this as a [linear least-squares problem](https://en.wikipedia.org/wiki/Linear_least_squares). In matrix notation, we seek to minimize $||\boldsymbol{A}\boldsymbol{x} - \boldsymbol{b}||^2$ where $\boldsymbol{A}$ is a 3 by $n$ matrix containing the partial derivatives, $\boldsymbol{x}$ is a 3-element vector containing the the $\Delta x, \Delta y$, and $\Delta z$ values, and $\boldsymbol{b}$ is an $n$-element array containing the $\Delta e_i$s.
+where $\frac{\partial{\Delta e_i}}{\partial{x_i}}$ is the partial derivative of the elevation difference with respect to $x_i$, and similarly for $y_i$ and $z_i$. For $n$ DTM grid points, we then have $n$ equations, each with a unique $\Delta e_i, \frac{\partial{\Delta e_i}}{\partial{x_i}}$, and $\frac{\partial{\Delta e_i}}{\partial{y_i}}$ ($\frac{\partial{\Delta e_i}}{\partial{z_i}}$ is simply one) and with single values for each of $\Delta x, \Delta y$, and $\Delta z$. We seek the $\Delta x, \Delta y$, and $\Delta z$ that provide the best estimates of all the $\Delta e_i$. We can treat this as a [linear least-squares problem](https://en.wikipedia.org/wiki/Linear_least_squares). In matrix notation, we seek to minimize $||\boldsymbol{A}\boldsymbol{x} - \boldsymbol{b}||^2$ where $\boldsymbol{A}$ is a 3 by $n$ matrix containing the partial derivatives, $\boldsymbol{x}$ is a 3-element vector containing the the $\Delta x, \Delta y$, and $\Delta z$ values, and $\boldsymbol{b}$ is an $n$-element array containing the $\Delta e_i$.
 
 Imagine, on an 80% slope, an offset of 0.5 meters between the two DTMs would result in a $\Delta e$ of 0.4 meters. The partial derivatives $\frac{\partial{\Delta e_i}}{\partial{x_i}}$ and $\frac{\partial{\Delta e_i}}{\partial{y_i}}$ reflect the ground-surface slope at point $i$ as resolved by the DTM. Each point lies at the corner of four DTM cells, each cell is defined by four points. For any DTM point, we can look at the elevations of the adjacent 8 points to determine into which of the four adjacent cells we need to shift the point to solve for $\Delta e$. We can estimate the elevation change with a change in $x$ or $y$ within that cell using bilinear interpolation. That gives a value for $\frac{\partial{\Delta e_i}}{\partial{x_i}}$ and $\frac{\partial{\Delta e_i}}{\partial{y_i}}$. The value of $\frac{\partial{\Delta e_i}}{\partial{z_i}}$ is simply 1.[^1]
 
 [^1]: I found, however, that the vertical shift, $\Delta z$, varied nonlinearly with slope gradient. @eq-shifts was therefore modified to $\Delta e_i =\frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + \frac{\partial{\Delta e_i}}{\partial{z_i}}\Delta z + \beta_1 S_i + \beta_2 S_i^2$, where $S_i$ is the sine of the hillslope gradient for the $i^{th}$ point and $\beta_1$ and $\beta_2$ are additional empirical coefficients.
 
-For any overlapping portion of two DTMs, we can find an optimal set $\Delta x, \Delta y$, and $\Delta z$. In doing this, we want to exclude portions of the DTMs where elevation changes did occur. The $\Delta e$s for those sites would not be a consequence of a shift in the registration between the DTMs and including those in our set of equations would bias the resulting estimates for $\Delta x, \Delta y$, and $\Delta z$. Below I describe a method for differentiating systematic errors and noise from the elevation changes we want to resolve.
+For any overlapping portion of two DTMs, we can find an optimal set $\Delta x, \Delta y$, and $\Delta z$. In doing this, we want to exclude portions of the DTMs where elevation changes did occur. The $\Delta e$ values for those sites would not be a consequence of a shift in the registration between the DTMs and including those in our set of equations would bias the resulting estimates for $\Delta x, \Delta y$, and $\Delta z$. Below I describe a method for differentiating systematic errors and noise from the elevation changes we want to resolve.
 
 We'll use a portion of the Post-Mortem study area with overlap of the 2006 and 2007 lidar DTMs that contains several of the study blocks. The study blocks are shown by the black polygons in the image below. The red box outlines the analysis area.
 
@@ -43,10 +43,10 @@ Overlap of the two DTMs is shown below with the elevation difference, in quarter
 
 The elevation differences are spatially variable with systematic biases aligned with hillslope aspect. We can see this by binning the elevation differences for each DTM grid point by increments in slope and aspect and plotting [quartiles](https://en.wikipedia.org/wiki/Quartile). To make the following plots, I first determined the quartiles for the full range of elevation-difference values in each bin. I want to focus on systematic errors and noise in the DTMs and exclude sites where elevations did change, e.g., at landslide sites. To differentiate between signal (actual elevation changes) and noise, I calculated the interquartile range for all values, then used a [Tukey fence](https://en.wikipedia.org/wiki/Outlier#Tukey's_fences) with $k$ = 1.5. Values less that $q1 - 1.5*(q3-q1)$ or greater than $q3 + 1.5*(q3-q1)$ are considered likely [outliers](https://en.wikipedia.org/wiki/Outlier). These potentially indicate sites where elevations have changed between lidar acquisitions. For each bin, I removed these potential outliers and recalculated the quartiles to provide an estimate of the systematic bias and random error in the elevation-difference values.
 
-The calculations are performed by program align.
+The calculations are performed by program Align.
 
 ```{r}
-# Run program align
+# Run program Align
 
 library(TerrainWorksUtils)
 library(stringr)
@@ -194,7 +194,7 @@ $$
 qmin = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)S + (\beta_4 + \beta_5 \mu)S^2
 $$
 
-where $S$ is slope gradient and the $\beta$s are empirical coefficients. This defines an equation with seven coefficients, $\alpha$ and the six $\beta$s.
+where $S$ is slope gradient and the $\beta$ are empirical coefficients. This defines an equation with seven coefficients, $\alpha$ and the six $\beta$ values.
 
 I solve for these coefficients as follows:
 
@@ -206,7 +206,7 @@ I solve for these coefficients as follows:
 2.  Find the value of $\alpha$ that minimizes the sum of squared residuals, i.e., find the value of $\alpha$ that minimizes $\sum_{i=1}^n(\sin(A_i+\alpha)-normq_i)^2$. This is done using Brent's algorithm (see [people.match.sc.edu/Burkardt/f_src/brent/brent.f90](https://people.math.sc.edu/Burkardt/f_src/brent/brent.f90)).
 3.  Define a set of linear equations\
     $$qmin_i = \beta min_0 + \beta min_1*mu_i + \beta min_2*S_i + \beta min_3*mu_i*S_i$$ $$qmax_i = \beta max_0 + \beta max_1*mu_i + \beta max_2*S_i + \beta max_3*mu_i*S_i$$ where $\mu_i = \sin(A_i+\alpha)$ and $A_i$ is the slope aspect and $S_i$ is slope gradient.
-4.  Solve for the $\beta min$s and $\beta max$s. This is done using the [LAPACK](https://en.wikipedia.org/wiki/LAPACK) routine DGELS.
+4.  Solve for the $\beta min$ and $\beta max$ values. This is done using the [LAPACK](https://en.wikipedia.org/wiki/LAPACK) routine DGELS.
 
 Here are the resulting curves for the eight major slope aspects (N, NE, E, SE, S, SW, W, and NW).
 
@@ -791,9 +791,9 @@ The curves are now all symmetric about zero and the envelope defining the LoD is
 
 ## Canopy effects.
 
-See @fig-canopy below. The left panel shows elevation differences draped on a shaded relief image for a portion of the overlapping 2006 and 2017 DTMs after coregistration, the right panel shows an aerial photo view of the same area. Over the low-gradient, low-relief, and unforested fields and pastures, differences between the two DTMs are minor. Over the forested hillslopes, the speckled pattern in the left panel indicates variability in DTM elevations on the order of several tens of centimeters over horizontal length scales of a few to ten meters, consistent with a general reduction of lidar DTM accuracy observed over forested areas [@simpson2017].
+See @fig-canopy below. The left panel shows elevation differences draped on a shaded relief image for a portion of the overlapping 2006 and 2017 DTMs after coregistration; the right panel shows an aerial photo view of the same area. Over the low-gradient, low-relief, and unforested fields and pastures, differences between the two DTMs are minor. Over the forested hillslopes, the speckled pattern in the left panel indicates variability in DTM elevations on the order of several tens of centimeters over horizontal length scales of a few to ten meters, consistent with a general reduction of lidar DTM accuracy observed over forested areas [@simpson2017].
 
-![Left panel shows differences in DTM elevations after coregistration. Right panel shows an aerial photo view of the same area.](images/clipboard-2778201248.png){#fig-canopy fig-cap="Left panel shows differences in DTM elevations after coregistration. Right panel shows an aerial photo view of the same area."}
+![The left panel shows differences in DTM elevations after coregistration. The right panel shows an aerial photo view of the same area.](images/clipboard-2778201248.png){#fig-canopy fig-cap="Left panel shows differences in DTM elevations after coregistration. Right panel shows an aerial photo view of the same area."}
 
 There are two likely primary reasons for the increased variability over forested areas [@petras2023a]:
 
@@ -828,7 +828,7 @@ p_histo
 
 The variable spacing between ground returns results in variable lengths over which elevations are interpolated to the DTM grid points. Topographic detail between ground-return points is lost. The gaps in ground return points will differ between the two DTMs. In rough terrain, small features resolved in one DTM might thus be missed in the other, resulting in differences in the interpolated ground elevations. A variety of factors can result in variable lidar point spacing [@yan2023; @petras2023a]. For example, the systematic north-west to south-east trending variations in point density visible in the left panel may result from the extent of swath overlap between adjacent flight lines as the lidar was collected. Random variations in point density in forested areas may result from spatial variability in the proportion of laser signals that penetrate through the tree canopy. Additionally, some of the ground returns may actually be misinterpreted reflections from tree canopy or understory vegetation, which introduces random errors into the DTM elevations.
 
-After coregistration of the 2006 and 2017 DTMs, we found that variability in elevation differences, as measured by the interquartile range (@fig-compareInter) ranged from about 10 to 30 centimeters, increasing with increasing hillslope gradient. @fig-interquartileCanopy below shows the same data, but here parsed by hillslope gradient and tree-canopy height. Canopy height was determined in program align after shifting the 2017 DSM by subtracting the DTM elevation from the DSM elevation at each grid point and using the maximum of the 2006 or 2017 canopy heights.
+After coregistration of the 2006 and 2017 DTMs, we found that variability in elevation differences, as measured by the interquartile range (@fig-compareInter) ranged from about 10 to 30 centimeters, increasing with increasing hillslope gradient. @fig-interquartileCanopy below shows the same data, but here parsed by hillslope gradient and tree-canopy height. Canopy height was determined in program Align after shifting the 2017 DSM by subtracting the DTM elevation from the DSM elevation at each grid point and using the maximum of the 2006 or 2017 canopy heights.
 
 ```{r}
 #| label: fig-interquartileCanopy
@@ -1141,7 +1141,7 @@ p5 <- p1 / p2 / p3 / p4 + plot_layout(heights=unit(c(1.5,1.5,1.5,1.5),c("in","in
 p5
 ```
 
-These show a minor increase with tree height at low gradients, but little variation with tree height with increasing gradient. For now I am saving incorporation of canopy height into our calculation of LoD for the next iteration of program align.
+These show a minor increase with tree height at low gradients, but little variation with tree height with increasing gradient. For now I am saving incorporation of canopy height into our calculation of LoD for the next iteration of program Align.
 
 We are using the LoD defined by these graphs to identify "stable" locations where elevations have probably not changed between the 2006 and 2017 lidar acquisitions. We used the elevation differences over these stable locations to solve for the horizontal ($\Delta x, \Delta y$) and vertical ($\Delta z$) shifts needed to bring the 2017 DTM into alignment with the 2006 DTM, using @eq-shifts. The range spanned by this LoD, ± 0.5m, is sufficient, however, to include things like flood plain or fan agradation. Likewise, there may be systematic biases in the random errors associated with lidar signal reflections from vegetation interpreted as ground returns. A plantation that grows 2 meters over that 11 years may generate larger mean positive errors in 2017 DTM elevations than in 2006 DTM elevations, resulting in a positive bias in elevation differences measured over that area. Likewise, an area harvested between 2006 and 2017 will generate a negative bias. Aerially extensive small changes in elevation and systematic changes in vegetation height and density will affect the results we obtain in solving @eq-shifts. Currently, I do not know how to identify or remove those biases.
 

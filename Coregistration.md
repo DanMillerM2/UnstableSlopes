@@ -54,14 +54,14 @@ $\frac{\partial{\Delta e_i}}{\partial{y_i}}$
 ($\frac{\partial{\Delta e_i}}{\partial{z_i}}$ is simply one) and with
 single values for each of $\Delta x, \Delta y$, and $\Delta z$. We seek
 the $\Delta x, \Delta y$, and $\Delta z$ that provide the best estimates
-of all the $\Delta e_i$s. We can treat this as a [linear least-squares
+of all the $\Delta e_i$. We can treat this as a [linear least-squares
 problem](https://en.wikipedia.org/wiki/Linear_least_squares). In matrix
 notation, we seek to minimize
 $||\boldsymbol{A}\boldsymbol{x} - \boldsymbol{b}||^2$ where
 $\boldsymbol{A}$ is a 3 by $n$ matrix containing the partial
 derivatives, $\boldsymbol{x}$ is a 3-element vector containing the the
 $\Delta x, \Delta y$, and $\Delta z$ values, and $\boldsymbol{b}$ is an
-$n$-element array containing the $\Delta e_i$s.
+$n$-element array containing the $\Delta e_i$.
 
 Imagine, on an 80% slope, an offset of 0.5 meters between the two DTMs
 would result in a $\Delta e$ of 0.4 meters. The partial derivatives
@@ -79,8 +79,8 @@ $\frac{\partial{\Delta e_i}}{\partial{z_i}}$ is simply 1.[^1]
 
 For any overlapping portion of two DTMs, we can find an optimal set
 $\Delta x, \Delta y$, and $\Delta z$. In doing this, we want to exclude
-portions of the DTMs where elevation changes did occur. The $\Delta e$s
-for those sites would not be a consequence of a shift in the
+portions of the DTMs where elevation changes did occur. The $\Delta e$
+values for those sites would not be a consequence of a shift in the
 registration between the DTMs and including those in our set of
 equations would bias the resulting estimates for $\Delta x, \Delta y$,
 and $\Delta z$. Below I describe a method for differentiating systematic
@@ -129,7 +129,7 @@ For each bin, I removed these potential outliers and recalculated the
 quartiles to provide an estimate of the systematic bias and random error
 in the elevation-difference values.
 
-The calculations are performed by program align.
+The calculations are performed by program Align.
 
 <a href="#fig-medianErrorBefore" class="quarto-xref">Figure 2</a> shows
 median elevation difference values across the range of hillslope
@@ -200,9 +200,9 @@ $$
 qmin = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)S + (\beta_4 + \beta_5 \mu)S^2
 $$
 
-where $S$ is slope gradient and the $\beta$s are empirical coefficients.
+where $S$ is slope gradient and the $\beta$ are empirical coefficients.
 This defines an equation with seven coefficients, $\alpha$ and the six
-$\beta$s.
+$\beta$ values.
 
 I solve for these coefficients as follows:
 
@@ -225,8 +225,8 @@ I solve for these coefficients as follows:
     $$qmax_i = \beta max_0 + \beta max_1*mu_i + \beta max_2*S_i + \beta max_3*mu_i*S_i$$
     where $\mu_i = \sin(A_i+\alpha)$ and $A_i$ is the slope aspect and
     $S_i$ is slope gradient.
-4.  Solve for the $\beta min$s and $\beta max$s. This is done using the
-    [LAPACK](https://en.wikipedia.org/wiki/LAPACK) routine DGELS.
+4.  Solve for the $\beta min$ and $\beta max$ values. This is done using
+    the [LAPACK](https://en.wikipedia.org/wiki/LAPACK) routine DGELS.
 
 Here are the resulting curves for the eight major slope aspects (N, NE,
 E, SE, S, SW, W, and NW).
@@ -354,7 +354,7 @@ of this uncertainty?
 See <a href="#fig-canopy" class="quarto-xref">Figure 11</a> below. The
 left panel shows elevation differences draped on a shaded relief image
 for a portion of the overlapping 2006 and 2017 DTMs after
-coregistration, the right panel shows an aerial photo view of the same
+coregistration; the right panel shows an aerial photo view of the same
 area. Over the low-gradient, low-relief, and unforested fields and
 pastures, differences between the two DTMs are minor. Over the forested
 hillslopes, the speckled pattern in the left panel indicates variability
@@ -368,8 +368,9 @@ general reduction of lidar DTM accuracy observed over forested areas
 <img src="images/clipboard-2778201248.png"
 data-fig-cap="Left panel shows differences in DTM elevations after coregistration. Right panel shows an aerial photo view of the same area." />
 
-Figure 11: Left panel shows differences in DTM elevations after
-coregistration. Right panel shows an aerial photo view of the same area.
+Figure 11: The left panel shows differences in DTM elevations after
+coregistration. The right panel shows an aerial photo view of the same
+area.
 
 </div>
 
@@ -436,7 +437,7 @@ ranged from about 10 to 30 centimeters, increasing with increasing
 hillslope gradient.
 <a href="#fig-interquartileCanopy" class="quarto-xref">Figure 14</a>
 below shows the same data, but here parsed by hillslope gradient and
-tree-canopy height. Canopy height was determined in program align after
+tree-canopy height. Canopy height was determined in program Align after
 shifting the 2017 DSM by subtracting the DTM elevation from the DSM
 elevation at each grid point and using the maximum of the 2006 or 2017
 canopy heights.
@@ -463,7 +464,7 @@ hillslope gradient.
 These show a minor increase with tree height at low gradients, but
 little variation with tree height with increasing gradient. For now I am
 saving incorporation of canopy height into our calculation of LoD for
-the next iteration of program align.
+the next iteration of program Align.
 
 We are using the LoD defined by these graphs to identify “stable”
 locations where elevations have probably not changed between the 2006
