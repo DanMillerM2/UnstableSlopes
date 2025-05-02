@@ -1,6 +1,6 @@
 # Coregistration
 Dan
-2025-04-26
+2025-05-01
 
 # Introduction
 
@@ -153,19 +153,32 @@ reference DTM center point (point 5) match as closely as possible.
 
 </div>
 
-We found, however, that $\Delta z$ was not constant, but varied
-nonlinearly with hillslope gradient. We therefore modified
-<a href="#eq-shifts" class="quarto-xref">Equation 1</a> to:
+> [!NOTE]
+>
+> We found, however, that $\Delta z$ was not constant with location, but
+> varied nonlinearly with hillslope gradient $\theta$ and varied with
+> changes in forest-canopy height $\Delta H$ (see
+> <a href="#sec-CanopyEffects" class="quarto-xref">Section 2.1</a>
+> below). We therefore modified
+> <a href="#eq-shifts" class="quarto-xref">Equation 1</a> to:
+> <span id="eq-shifts2">$$
+> \Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + ((\beta_0 + \beta_1\theta + \beta_2\theta^2) + (\beta_3 + \beta_4\theta)\Delta H))
+>  \qquad(2)$$</span>
+>
+> The $\Delta x$ and $\Delta y$ terms determine the horizontal shift
+> needed to align the DTMs, the
+> $(\beta_0 + \beta_1\theta + \beta_2\theta^2)$ term determines the
+> hillslope-gradient-dependent vertical shift, and the
+> $(\beta_3 + \beta_4\theta)\Delta H)$ term accounts for systematic
+> errors associated with changes in canopy height from forest growth and
+> timber harvest, and for variations in vegetation height in
+> agricultural areas, between the time of the two lidar acquisitions.
 
-<span id="eq-shifts2">$$
-\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + (\Delta z + \beta_0\theta + \beta_1\theta^2)
- \qquad(2)$$</span>
-
-any overlapping portion of two DTMs, we can find an optimal set of
-values for $\Delta x, \Delta y$, $\Delta z$, and $\beta$. In doing this,
-we want to exclude portions of the DTMs where elevation changes did
-occur. The $\Delta e$ values for those sites would not be a consequence
-of a systematic shift in the registration between the DTMs and including
+For any overlapping portion of two DTMs, we can find an optimal set of
+values for $\Delta x, \Delta y$, and the $\beta$s. In doing this, we
+want to exclude portions of the DTMs where elevation changes did occur.
+The $\Delta e$ values for those sites would not be a consequence of a
+systematic shift in the registration between the DTMs and including
 those in our set of equations would bias the resulting estimates for
 $\Delta x, \Delta y$, $\Delta z$ and $\beta$. Below we describe a method
 for differentiating systematic errors and noise from the elevation
@@ -228,7 +241,8 @@ than 0.2m indicate actual changes in elevation.
 This approach does not, however, account for all sources of uncertainty
 in the DoD. In particular, lidar ground returns do not have a uniform
 spacing. In areas with forest canopy, there may be gaps that span
-multiple DTM grid points (discussed in **?@sec-canopyEffects** below).
+multiple DTM grid points (discussed in
+<a href="#sec-CanopyEffects" class="quarto-xref">Section 2.1</a> below).
 Elevations of the DTM points through these gaps are unknown and must be
 interpolated from the surrounding ground returns. These gaps may not
 align between the two DTMs. To account for this, and other, sources of
@@ -290,10 +304,11 @@ outliers.
 </div>
 
 In low-gradient terrain, the interquartile range is close to the
-standard deviation estimated with **?@eq-DTM** above. It then increases
-with slope steepness. This provides a characterization of the noise in
-the DoD obtained by subtracting the 2017 lidar DTM from the 2006 lidar
-DTM.
+standard deviation estimated with
+<a href="#eq-DTMerror" class="quarto-xref">Equation 3</a> above. It then
+increases with slope steepness. This provides a characterization of the
+noise in the DoD obtained by subtracting the 2017 lidar DTM from the
+2006 lidar DTM.
 
 Can we define a function of slope and aspect that reflects the behavior
 observed in the graphs above? For a single aspect, we see that the
@@ -437,14 +452,18 @@ We’ve narrowed the range of median and mean values and shifted the
 interquartiles to lower values. Here’s the elevation differences after
 alignment:
 
-<img src="images/clipboard-292234770.png" data-fig-align="center"
-width="500"
-alt="Elevation differences (2017 minus 2006) after coregistration." />
+<div id="fig-dif">
+
+<img src="images/clipboard-1486922337.png" id="fig-dif" width="500" />
+
+Figure 11
+
+</div>
 
 We still see random noise, but the systematic errors aligned with slope
 aspect are gone. Distinct changes are visible along many stream
 channels. The curves in
-<a href="#fig-curvesFinal" class="quarto-xref">Figure 11</a> below show
+<a href="#fig-curvesFinal" class="quarto-xref">Figure 12</a> below show
 the interquarile range and Tukey’s fences after coregistration. Note the
 change in y-axis scale relative to
 <a href="#fig-curves0" class="quarto-xref">Figure 5</a>.
@@ -453,7 +472,7 @@ change in y-axis scale relative to
 
 ![](Coregistration_files/figure-commonmark/fig-curvesFinal-1.png)
 
-Figure 11: First and third quartiles (dots), polynomial fits (thin
+Figure 12: First and third quartiles (dots), polynomial fits (thin
 lines), and limits using Tukey’s fences (k=1.5) after shifting the 2017
 DTM.
 
@@ -466,7 +485,7 @@ this uncertainty?
 
 ## Canopy effects.
 
-See <a href="#fig-canopy" class="quarto-xref">Figure 12</a> below. The
+See <a href="#fig-canopy" class="quarto-xref">Figure 13</a> below. The
 left panel shows elevation differences draped on a shaded relief image
 for a portion of the overlapping 2006 and 2017 DTMs after
 coregistration; the right panel shows an aerial photo view of the same
@@ -483,7 +502,7 @@ general reduction of lidar DTM accuracy observed over forested areas
 <img src="images/clipboard-2778201248.png"
 data-fig-cap="Left panel shows differences in DTM elevations after coregistration. Right panel shows an aerial photo view of the same area." />
 
-Figure 12: The left panel shows differences in DTM elevations after
+Figure 13: The left panel shows differences in DTM elevations after
 coregistration. The right panel shows an aerial photo view of the same
 area.
 
@@ -498,15 +517,15 @@ forested areas (Petras et al. 2023):
 2.  Interpretation of canopy reflections as ground returns.
 
 The first of these is illustrated in
-<a href="#fig-groundReturns" class="quarto-xref">Figure 13</a> and
-<a href="#fig-density" class="quarto-xref">Figure 14</a> below.
+<a href="#fig-groundReturns" class="quarto-xref">Figure 14</a> and
+<a href="#fig-density" class="quarto-xref">Figure 15</a> below.
 
 <div id="fig-groundReturns">
 
 <img src="images/clipboard-1515199096.png"
 data-fig-cap="Left panel shows the number of lidar ground returns within each cell of the 2006 DTM (3-foot DTM point spacing). Right panel zooms into the area within the box of the left panel. Black dots indicate ground returns." />
 
-Figure 13: The left panel shows the number of lidar ground returns
+Figure 14: The left panel shows the number of lidar ground returns
 within each cell of the 2006 DTM (3-foot DTM point spacing). The right
 panel zooms into the area within the box of the left panel. Black dots
 indicate ground returns.
@@ -517,7 +536,7 @@ indicate ground returns.
 
 ![](images/clipboard-1076959254.png)
 
-Figure 14: The left panel shows the ground-return point density for the
+Figure 15: The left panel shows the ground-return point density for the
 2006 lidar measured over a 7.5-m radius. The right panel shows an areal
 view of the area in the summer of 2006. Low point densities (blues)
 align with unforested fields and clearcuts.
@@ -527,7 +546,7 @@ align with unforested fields and clearcuts.
 Variation in ground-return spacing results in variable-sized gaps with
 no returns and variable spatial density in the number of signals per DTM
 cell. The bar chart in
-<a href="#fig-barChart" class="quarto-xref">Figure 15</a> below shows
+<a href="#fig-barChart" class="quarto-xref">Figure 16</a> below shows
 the proportion of all cells in the 2006 DTM that overlapped the 2017 DTM
 containing a given number of ground returns.
 
@@ -535,7 +554,7 @@ containing a given number of ground returns.
 
 ![](Coregistration_files/figure-commonmark/fig-barChart-1.png)
 
-Figure 15: Proportion of 2006 DTM cells with a given number of ground
+Figure 16: Proportion of 2006 DTM cells with a given number of ground
 returns
 
 </div>
@@ -563,7 +582,7 @@ variability in elevation differences, as measured by the interquartile
 range (<a href="#fig-compareInter" class="quarto-xref">Figure 9</a>)
 ranged from about 10 to 30 centimeters, increasing with increasing
 hillslope gradient.
-<a href="#fig-interquartileCanopy" class="quarto-xref">Figure 16</a>
+<a href="#fig-interquartileCanopy" class="quarto-xref">Figure 17</a>
 below shows the same data, but here parsed by hillslope gradient and
 tree-canopy height. Canopy height was determined in program Align after
 shifting the 2017 DSM[^4] by subtracting the DTM elevation from the DSM
@@ -574,29 +593,27 @@ canopy heights.
 
 ![](Coregistration_files/figure-commonmark/fig-interquartileCanopy-1.png)
 
-Figure 16: Variation of the interquartile range with changes in canopy
+Figure 17: Variation of the interquartile range with changes in canopy
 height and hillslope gradient.
 
 </div>
 
 The upper panel in
-<a href="#fig-interquartileCanopy" class="quarto-xref">Figure 16</a>
+<a href="#fig-interquartileCanopy" class="quarto-xref">Figure 17</a>
 shows the increase in interquartile range with hillslope gradient; the
 lower panel shows a slight increase in interquartile range with canopy
 height. To characterize the combined hillslope-gradient and
 canopy-height dependence, we fit the $q_1$ and $q_3$ values over all
-gradient-canopy height bins with an equation of the form:
+gradient-canopy height bins with an equation quadratic in both canopy
+height H and hillslope gradient $\theta$:
 
 <span id="eq-byCanopy">$$
-q = (\beta_0 + \beta_1 \theta + \beta_2 \theta^2) + (\beta_3 + \beta_4 \theta + \beta_5 \theta^2)H
- \qquad(4)$$</span>
-
-where $\theta$ is hillslope gradient and $H$ is canopy height.
-<a href="#fig-curvesCanopy" class="quarto-xref">Figure 17</a> below
-shows the interquartile range and Tukey fences as functions of canopy
-height for a range of gradient interval. The black circles show $q_1$
-and $q_3$ from the binned $\Delta e$ values, the thin black lines show
-the curves fit to the $q_1$ and $q_3$ values using
+q = (\beta_0 + \beta_1 \theta + \beta_2 \theta^2) + (\beta_3 + \beta_4 H + \beta_5 H^2) + \beta_6 H \theta + \beta_7H^2\theta + \beta_8H\theta^2 + \beta_9H^2\theta^2
+ \qquad(4)$$</span><a href="#fig-curvesCanopy" class="quarto-xref">Figure 18</a>
+below shows the interquartile range and Tukey fences as functions of
+canopy height for a range of gradient interval. The black circles show
+$q_1$ and $q_3$ from the binned $\Delta e$ values, the thin black lines
+show the curves fit to the $q_1$ and $q_3$ values using
 <a href="#eq-byCanopy" class="quarto-xref">Equation 4</a>, and the thick
 black lines show the Tukey fences with $k=1.5$.
 
@@ -604,28 +621,28 @@ black lines show the Tukey fences with $k=1.5$.
 
 ![](Coregistration_files/figure-commonmark/fig-curvesCanopy-1.png)
 
-Figure 17: The interquartile range and LoD (Tukey’s fences with k=1.5)
+Figure 18: The interquartile range and LoD (Tukey’s fences with k=1.5)
 plotted as a function of canopy height for different increments in
 hillslope gradient.
 
 </div>
 
-<a href="#fig-curvesCanopy2" class="quarto-xref">Figure 18</a> below
+<a href="#fig-curvesCanopy2" class="quarto-xref">Figure 19</a> below
 shows the same data, but plotted as a function of hillslope gradient.
 
 <div id="fig-curvesCanopy2">
 
 ![](Coregistration_files/figure-commonmark/fig-curvesCanopy2-1.png)
 
-Figure 18: The interquartile range and LoD (Tukey’s fences with k=1.5)
+Figure 19: The interquartile range and LoD (Tukey’s fences with k=1.5)
 plotted as a function of hillslope gradient for different increments in
 canopy height.
 
 </div>
 
-The variation of interquartile range with gradient (~20cm) is
-considerabley greater than that associated with canopy height (~5cm).
-These curves account for both effects.
+Variability in the range of elevation differences varies with both
+hillslope gradient and forest-canopy height. These curves account for
+both effects.
 
 We are using the LoD defined by these graphs to identify “stable”
 locations where elevations have probably not changed between the 2006
@@ -635,17 +652,36 @@ these stable locations to solve for the horizontal
 the 2017 DTM into alignment with the 2006 DTM, using
 <a href="#eq-shifts2" class="quarto-xref">Equation 2</a>. The range
 spanned by this LoD, ± 0.5m, is sufficient, however, to include things
-like flood plain or fan aggradation. Likewise, there may be systematic
-biases in the random errors associated with lidar signal reflections
-from vegetation interpreted as ground returns. A plantation that grows 2
-meters over that 11 years may generate larger mean positive errors in
-2017 DTM elevations than in 2006 DTM elevations, resulting in a positive
-bias in elevation differences measured over that area. Likewise, an area
-harvested between 2006 and 2017 will generate a negative bias. Aerially
-extensive small changes in elevation and systematic changes in
-vegetation height and density will affect the results we obtain in
-solving <a href="#eq-shifts2" class="quarto-xref">Equation 2</a>. We
-have not yet attempted to identify or remove those biases.
+like flood plain or fan aggradation.
+
+There may stil be systematic biases in the random errors associated with
+lidar signal reflections from vegetation interpreted as ground returns.
+A plantation that grows 2 meters over that 11 years may generate larger
+mean positive errors in 2017 DTM elevations than in 2006 DTM elevations,
+resulting in a positive bias in elevation differences measured over that
+area. Likewise, an area harvested between 2006 and 2017 will generate a
+negative bias. <a href="#fig-DeltaH" class="quarto-xref">Figure 20</a>
+below shows quartiles of $\Delta e$ measured over 5-meter increments of
+canopy-height change between 2006 and 2007. Negative $\Delta H$ values
+indicate a loss of canopy (timber harvest) or vegetation (mowing of a
+pasture). Positive values indicate canopy or vegetation growth.
+
+<div id="fig-DeltaH">
+
+![](Coregistration_files/figure-commonmark/fig-DeltaH-1.png)
+
+Figure 20: First, second, and third quartiles of Δe for increments of
+change in canopy height (ΔH) between 2006 and 2007.
+
+</div>
+
+We see a slight trend for increasing $\Delta e$ values moving from
+negative to positive $\Delta H$ values. This is consistent with the
+expectation that a loss of canopy (negative $\Delta H$) will generate a
+negative bias and that canopy growth will generate a positive bias. The
+deviation is small, on the order of 5 cm. However, this observation
+prompted inclusion of the $\Delta H$ term in
+<a href="#eq-shifts2" class="quarto-xref">Equation 2</a>.
 
 Next: identify landslide scars using the DoD.
 

@@ -2,12 +2,12 @@
 <html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
 
 <meta charset="utf-8">
-<meta name="generator" content="quarto-1.6.39">
+<meta name="generator" content="quarto-1.6.43">
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="Dan">
-<meta name="dcterms.date" content="2025-03-27">
+<meta name="dcterms.date" content="2025-05-01">
 
 <title>Coregistration</title>
 <style>
@@ -22,7 +22,27 @@ ul.task-list li input[type="checkbox"] {
   margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
   vertical-align: middle;
 }
-</style>
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
 
 
 <script src="Coregistration_files/libs/clipboard/clipboard.min.js"></script>
@@ -31,10 +51,10 @@ ul.task-list li input[type="checkbox"] {
 <script src="Coregistration_files/libs/quarto-html/tippy.umd.min.js"></script>
 <script src="Coregistration_files/libs/quarto-html/anchor.min.js"></script>
 <link href="Coregistration_files/libs/quarto-html/tippy.css" rel="stylesheet">
-<link href="Coregistration_files/libs/quarto-html/quarto-syntax-highlighting-e26003cea8cd680ca0c55a263523d882.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<link href="Coregistration_files/libs/quarto-html/quarto-syntax-highlighting-d4d76bf8491c20bad77d141916dc28e1.css" rel="stylesheet" id="quarto-text-highlighting-styles">
 <script src="Coregistration_files/libs/bootstrap/bootstrap.min.js"></script>
 <link href="Coregistration_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
-<link href="Coregistration_files/libs/bootstrap/bootstrap-8a79a254b8e706d3c925cde0a310d4f0.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<link href="Coregistration_files/libs/bootstrap/bootstrap-1bc8a17f135ab3d594c857e9f48e611b.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
 
   <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
   <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
@@ -93,7 +113,7 @@ window.Quarto = {
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">March 27, 2025</p>
+      <p class="date">May 1, 2025</p>
     </div>
   </div>
   
@@ -105,141 +125,176 @@ window.Quarto = {
 </header>
 
 
-<p>We want to identify landslide sites using changes in ground-surface elevation resolved between sequential lidar acquisitions. We want to take advantage of raster-processing algorithms for image segmentation and topographic analyses, so we would like to work with elevation-difference rasters. In using lidar to detect elevation change, it is necessary to ensure that the two data sets are aligned spatially. Differences in spatial registration between the two data sets will produce systematic errors in measured elevation differences. In the study design, we described approaches that have been used for co-registration of lidar datasets. These involve two strategies:</p>
+<section id="sec-Intro" class="level1">
+<h1>Introduction</h1>
+<p>Our goal is to identify landslide sites using changes in ground-surface elevation resolved between sequential aerial lidar acquisitions. We could work with the lidar point clouds directly for this task, but we would like to take advantage of raster-processing algorithms for image segmentation and topographic analyses, so we want to evaluate the potential of working with the raster DTMs derived from the lidar point-cloud ground returns. Specifically, we here evaluate elevation-difference rasters, referred to as “DEMs of Difference (DoDs)” <span class="citation" data-cites="r.d.williams2012">(<a href="#ref-r.d.williams2012" role="doc-biblioref">R. D. Williams 2012</a>)</span>. A DoD is obtained by subtracting one DTM<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> from another.</p>
+<p>In using two (or more) lidar data sets to detect elevation change, it is necessary to ensure that the data sets are spatially aligned <span class="citation" data-cites="cucchiaro2020">(<a href="#ref-cucchiaro2020" role="doc-biblioref">Cucchiaro et al. 2020</a>)</span>. Differences in spatial registration between the data sets will produce systematic errors in measured elevation differences. In the study design, we described approaches that have been used for co-registration of lidar datasets. These involve two strategies:</p>
 <ul>
-<li><p>Co-register the ground returns, then build DTMs.</p></li>
-<li><p>Co-register existing DTMs.</p></li>
+<li><p>Co-register the lidar point-cloud ground returns, then build the two DTMs.</p></li>
+<li><p>Build the two DTMs, then coregister one DTM to align with the other.</p></li>
 </ul>
-<p>The first approach seems likely to be the more consistent of the two, because consistent methods can be used for filtering ground returns from the point clouds and for interpolation of the DTMs from the ground returns. When using existing DTMs, e.g., those downloaded from the Lidar Portal, they may have been generated with different point-filtering algorithms and interpolation schemes. However, working with point clouds directly is computationally intensive and time consuming. If we can obtain good results with the existing DTMs, that will reduce time and computer requirements dramatically.</p>
-<p>Consider two DTMs for the same site, one slightly offset from the other by an amount <span class="math inline">\(\Delta x, \Delta y, \Delta z\)</span>. The elevation difference between the two DTMs at a grid-point <span class="math inline">\(i\)</span> is <span class="math inline">\(\Delta e_i\)</span>. We can write the elevation difference as</p>
+<p>The first approach seems likely to be the more consistent of the two, because consistent methods can be used for filtering ground returns from both point clouds and for interpolation of the DTMs from the ground returns. When using existing DTMs, e.g., those downloaded from the <a href="https://lidarportal.dnr.wa.gov/">Washington Lidar Portal</a>, they may have been generated with different point-filtering algorithms and interpolation schemes. However, working with point clouds directly is computationally intensive and time consuming. If we can obtain good results with the existing DTMs, that will reduce time and computer requirements <span class="citation" data-cites="li2023">(<a href="#ref-li2023" role="doc-biblioref">Li et al. 2023</a>)</span>.</p>
+<p>Both approaches must address errors in the two lidar data sets. Besides the systematic errors associated with differences in the spatial registration of the point clouds and resulting DTMs, sources of error include uncertainty in the elevation and location of each laser-signal reflection represented by points in the point cloud, laser reflections from vegetation interpreted as ground returns, and uncertainty as to what the elevation is in between ground-return locations. These errors and uncertainties carry through to a DTM built by interpolating from the ground-return points to a DTM grid. The DoD obtained by subtracting one DTM from another will include the combined effects of the errors and uncertainties in both DTMs.</p>
+<p>The magnitude of these errors and uncertainty affect the confidence we can place in inferences made using the DTMs and the resulting DoD. We need to account for this uncertainty when coregistering one DTM to the other and when mapping landslide scars and deposits using the DoD. A common way to account for this uncertainty is by determining a “minimum level of detection” (LoD) <span class="citation" data-cites="wheaton2010">(e.g., <a href="#ref-wheaton2010" role="doc-biblioref">Wheaton et al. 2010</a>)</span>. The LoD is generally set so that we can assume a specified level of confidence that DoD values greater than the LoD represent actual changes in ground-surface elevation. Differences less than the LoD fall within the range of inherent noise in the DoD and may or may not represent true changes in ground elevation.</p>
+<p>In the next sections we describe a method for estimating an LoD value and using it to guide co-registration of the two DTMs and identification of landslide scars and deposits.</p>
+</section>
+<section id="sec-coregister" class="level1">
+<h1>Coregistration</h1>
+<p>Consider two DTMs for the same site. One may be slightly shifted horizontally and vertically from the other, and/or slightly tilted or rotated. Over all or some portion of the DTMs, we can seek to shift and rotate one so as to minimize differences with the other <span class="citation" data-cites="d.rosenholm1988">(<a href="#ref-d.rosenholm1988" role="doc-biblioref">D. Rosenholm and Kennert Torlegard 1988</a>)</span>. We assume that, over the spatial extents of aerial lidar acquisitions (as opposed to those of satellite-acquired lidar), registration of the point clouds and derived surface models is sufficiently accurate that differences in the tilt and rotation of the coordinate systems is minimal. We focus on a linear displacement of one DTM from the other by an amount <span class="math inline">\(\Delta x, \Delta y, \Delta z\)</span>. We express the elevation difference <span class="math inline">\(\Delta e_i\)</span> between the two DTMs at a grid-point <span class="math inline">\(i\)</span> as</p>
 <p><span id="eq-shifts"><span class="math display">\[
 \Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + \frac{\partial{\Delta e_i}}{\partial{z_i}}\Delta z
 \tag{1}\]</span></span></p>
-<p>where <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span> is the partial derivative of the elevation difference with respect to <span class="math inline">\(x_i\)</span>, and similarly for <span class="math inline">\(y_i\)</span> and <span class="math inline">\(z_i\)</span>. For <span class="math inline">\(n\)</span> DTM grid points, we then have <span class="math inline">\(n\)</span> equations, each with a unique <span class="math inline">\(\Delta e_i, \frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span>, and <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{y_i}}\)</span> (<span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{z_i}}\)</span> is simply one) and with single values for each of <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span>. We seek the <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> that provide the best estimates of all the <span class="math inline">\(\Delta e_i\)</span>s. We can treat this as a <a href="https://en.wikipedia.org/wiki/Linear_least_squares">linear least-squares problem</a>. In matrix notation, we seek to minimize <span class="math inline">\(||\boldsymbol{A}\boldsymbol{x} - \boldsymbol{b}||^2\)</span> where <span class="math inline">\(\boldsymbol{A}\)</span> is a 3 by <span class="math inline">\(n\)</span> matrix containing the partial derivatives, <span class="math inline">\(\boldsymbol{x}\)</span> is a 3-element vector containing the the <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> values, and <span class="math inline">\(\boldsymbol{b}\)</span> is an <span class="math inline">\(n\)</span>-element array containing the <span class="math inline">\(\Delta e_i\)</span>s.</p>
-<p>Imagine, on an 80% slope, an offset of 0.5 meters between the two DTMs would result in a <span class="math inline">\(\Delta e\)</span> of 0.4 meters. The partial derivatives <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span> and <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{y_i}}\)</span> reflect the ground-surface slope at point <span class="math inline">\(i\)</span> as resolved by the DTM. Each point lies at the corner of four DTM cells, each cell is defined by four points. For any DTM point, we can look at the elevations of the adjacent 8 points to determine into which of the four adjacent cell we need to shift the point to solve for <span class="math inline">\(\Delta e\)</span>. We can estimate the elevation change with a change in x or y within that cell using bilinear interpolation. That gives a value for <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span> and <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{y_i}}\)</span>. The value of <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{z_i}}\)</span> is simply 1.<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a></p>
-<p>For any overlapping portion of two DTMs, we can find an optimal set <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span>. Because the degree of misalignment between the DTMs may vary spatially, we can seek optimal solutions over a moving window or for overlapping tiles, although the window or tiles must be sufficiently large to encompass the full range of slope aspects.</p>
-<p>In doing this, we want to exclude portions of the DTMs where elevation changes did occur. The <span class="math inline">\(\Delta e\)</span>s for those sites would not be a consequence of a shift in the registration between the DTMs and including those in our set of equations would bias the resulting estimates for <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span>. Below I describe a method for differentiating systematic errors and noise from the elevation changes we want to resolve.</p>
+<p>where <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span> is the partial derivative of the elevation difference with respect to <span class="math inline">\(x_i\)</span>, and similarly for <span class="math inline">\(y_i\)</span> and <span class="math inline">\(z_i\)</span>. For <span class="math inline">\(n\)</span> DTM grid points, we then have <span class="math inline">\(n\)</span> equations, each with a unique <span class="math inline">\(\Delta e_i, \frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span>, and <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{y_i}}\)</span> (the value of <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{z_i}}\)</span> is simply 1) and with single values for each of <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span>. We seek the <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> values that provide the best estimates of all the <span class="math inline">\(\Delta e_i\)</span>. We can treat this as a <a href="https://en.wikipedia.org/wiki/Linear_least_squares">linear least-squares problem</a>. In matrix notation, we seek to minimize <span class="math inline">\(||\boldsymbol{A}\boldsymbol{x} - \boldsymbol{b}||^2\)</span> where <span class="math inline">\(\boldsymbol{A}\)</span> is a 3 by <span class="math inline">\(n\)</span> matrix containing the partial derivatives, <span class="math inline">\(\boldsymbol{x}\)</span> is a 3-element vector containing the the <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> values, and <span class="math inline">\(\boldsymbol{b}\)</span> is an <span class="math inline">\(n\)</span>-element array containing the <span class="math inline">\(\Delta e_i\)</span>.</p>
+<p>The partial derivatives <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{x_i}}\)</span> and <span class="math inline">\(\frac{\partial{\Delta e_i}}{\partial{y_i}}\)</span> reflect the ground-surface slope at point <span class="math inline">\(i\)</span> as resolved by the DTM. Each point lies at the corner of four DTM cells, each cell is defined by four points, as illustrated in <a href="#fig-grid" class="quarto-xref">Figure&nbsp;1</a> below. The black lines outline a set of four reference DTM cells. Elevations are specified at the corners, shown by the black circles. The red lines outline the corresponding four cells of the DTM we want to align with the reference DTM. We start with the grid points of the two DTMs aligned. At the center point (point 5 in <a href="#fig-grid" class="quarto-xref">Figure&nbsp;1</a>), we subtract the elevation of the reference DTM from the DTM to align. This is <span class="math inline">\(\Delta e\)</span> for that point. We can estimate elevations and the derivatives <span class="math inline">\(\frac{\partial{\Delta e}}{\partial{x}}\)</span> and <span class="math inline">\(\frac{\partial{\Delta e}}{\partial{y}}\)</span> within each DTM cell using bilinear interpolation based on the elevations at the corner points. We are seeking to shift the red DTM by an amount <span class="math inline">\(\Delta x\)</span> and <span class="math inline">\(\Delta y\)</span> so that the elevation within the shifted DTM cell at the location of the black DTM center point (point 5) will equal, as closely as possible, to the elevation of that reference DTM point.</p>
+<p>For example, if the ground-surface gradient at the center point were 80% on a north-east aspect, if one DTM were offset from the other by 0.5m to the northeast, the elevation difference <span class="math inline">\(\Delta e\)</span> between the two DTMs at that point would be 0.4m and <span class="math inline">\(\frac{\partial{\Delta e}}{\partial{x}}\)</span> and <span class="math inline">\(\frac{\partial{\Delta e}}{\partial{y}}\)</span> will both be around 0.57m/m (<span class="math inline">\(0.8/\sqrt2\)</span>). By shifting the red DTM to the north-east by 0.5m, as shown in <a href="#fig-grid" class="quarto-xref">Figure&nbsp;1</a>, the elevations of the two DTMs will better match at the reference DTM center point, with the elevation of the red DTM cell at that point calculated using bilinear interpolation with the red corner points of the lower-left cell (points 1, 2, 4, and 5). These calculations are repeated for every point across the over-lapping portions of the two DTMs. The calculated values will vary a bit from point to point; we seek the single set of values that minimizes elevation differences across all reference DTM grid points. Even with the horizontal shift, we may find that the two DTMs have a remaining systematic elevation difference. That is addressed with the <span class="math inline">\(\Delta z\)</span> value.</p>
+<div id="fig-grid" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-align="center">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-grid-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="images/clipboard-2384403491.png" class="img-fluid quarto-figure quarto-figure-center figure-img" width="400">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-grid-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;1: Shifting of the red DTM so that elevations at the black reference DTM center point (point 5) match as closely as possible.
+</figcaption>
+</figure>
+</div>
+<div class="callout callout-style-default callout-note callout-titled">
+<div class="callout-header d-flex align-content-center">
+<div class="callout-icon-container">
+<i class="callout-icon"></i>
+</div>
+<div class="callout-title-container flex-fill">
+Note
+</div>
+</div>
+<div class="callout-body-container callout-body">
+<p>We found, however, that <span class="math inline">\(\Delta z\)</span> was not constant with location, but varied nonlinearly with hillslope gradient <span class="math inline">\(\theta\)</span> and varied with changes in forest-canopy height <span class="math inline">\(\Delta H\)</span> (see <a href="#sec-CanopyEffects" class="quarto-xref">Section&nbsp;2.1</a> below). We therefore modified <a href="#eq-shifts" class="quarto-xref">Equation&nbsp;1</a> to: <span id="eq-shifts2"><span class="math display">\[
+\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + ((\beta_0 + \beta_1\theta + \beta_2\theta^2) + (\beta_3 + \beta_4\theta)\Delta H))
+\tag{2}\]</span></span></p>
+<p>The <span class="math inline">\(\Delta x\)</span> and <span class="math inline">\(\Delta y\)</span> terms determine the horizontal shift needed to align the DTMs, the <span class="math inline">\((\beta_0 + \beta_1\theta + \beta_2\theta^2)\)</span> term determines the hillslope-gradient-dependent vertical shift, and the <span class="math inline">\((\beta_3 + \beta_4\theta)\Delta H)\)</span> term accounts for systematic errors associated with changes in canopy height from forest growth and timber harvest, and for variations in vegetation height in agricultural areas, between the time of the two lidar acquisitions.</p>
+</div>
+</div>
+<p>For any overlapping portion of two DTMs, we can find an optimal set of values for <span class="math inline">\(\Delta x, \Delta y\)</span>, and the <span class="math inline">\(\beta\)</span>s. In doing this, we want to exclude portions of the DTMs where elevation changes did occur. The <span class="math inline">\(\Delta e\)</span> values for those sites would not be a consequence of a systematic shift in the registration between the DTMs and including those in our set of equations would bias the resulting estimates for <span class="math inline">\(\Delta x, \Delta y\)</span>, <span class="math inline">\(\Delta z\)</span> and <span class="math inline">\(\beta\)</span>. Below we describe a method for differentiating systematic errors and noise from the elevation changes we want to resolve.</p>
 <p>We’ll use a portion of the Post-Mortem study area with overlap of the 2006 and 2007 lidar DTMs that contains several of the study blocks. The study blocks are shown by the black polygons in the image below. The red box outlines the analysis area.</p>
 <p><img src="images/clipboard-1274792243.png" class="img-fluid"></p>
-<p><img src="images/clipboard-3673670531.png" class="img-fluid"></p>
+<div id="fig-site" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-cap="Site location and area of analysis">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-site-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="images/clipboard-3673670531.png" class="img-fluid figure-img" data-fig-cap="Site location and area of analysis">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-site-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;2: Site location and area of analysis.
+</figcaption>
+</figure>
+</div>
 <p>Overlap of the two DTMs is shown below with the elevation difference, in quarter-meter increments, indicated by the colors.</p>
 <div id="fig_dif0" class="quarto-figure quarto-figure-center anchored">
 <figure class="figure">
 <p><img src="images/clipboard-2801040071.png" class="img-fluid figure-img" width="500"></p>
-<figcaption>Elevation difference (m), 2006 to 2017 lidar overlap</figcaption>
+<figcaption>Elevation difference (m), 2006 to 2017 lidar overlap, draped on a shaded relief image</figcaption>
 </figure>
 </div>
-<p>The elevation differences are spatially variable with systematic biases aligned with hillslope aspect. We can see this by binning the elevation differences for each DTM grid point by increments in slope and aspect and plotting <a href="https://en.wikipedia.org/wiki/Quartile">quartiles</a>. To make the following plots, I first determined the quartiles for the full range of elevation-difference values in each bin. I want to focus on systematic errors and noise in the DTMs and exclude sites where elevations did change, e.g., at landslide sites. To differentiate between signal (actual elevation changes) and noise, I calculated the interquartile range for all values, then used a <a href="https://en.wikipedia.org/wiki/Outlier#Tukey's_fences">Tukey fence</a> with <span class="math inline">\(k\)</span> = 1.5. Values less that <span class="math inline">\(q1 - 1.5*(q3-q1)\)</span> or greater than <span class="math inline">\(q3 + 1.5*(q3-q1)\)</span> are considered likely <a href="https://en.wikipedia.org/wiki/Outlier">outliers</a>. These potentially indicate sites where elevations have changed between lidar acquisitions. For each bin, I removed these potential outliers and recalculated the quartiles to provide an estimate of the systematic bias and random error in the elevation-difference values.</p>
-<p>The calculations are performed by program align.</p>
-<p>Start with systematic errors as indicated by the median value for each slope and aspect bin.</p>
+<p>The elevation differences are spatially variable with systematic biases aligned with hillslope aspect. We can see this bias by binning the elevation differences for each DTM grid point by increments in slope and aspect and plotting <a href="https://en.wikipedia.org/wiki/Quartile">quartiles</a>. To make the following plots, we first determined the quartiles for the full range of elevation-difference values in each bin. We want to exclude sites where elevations did change, e.g., at landslide sites. That is, we need to determine the LoD (minimum level of detection) that differentiates between signal (actual elevation changes) and noise.</p>
+<p>Error statistics compiled for each DTM can be used to estimate a theoretical LoD based on concepts of error propagation <span class="citation" data-cites="brasington2003 lane2003">(<a href="#ref-brasington2003" role="doc-biblioref">Brasington, Langham, and Rumsby 2003</a>; <a href="#ref-lane2003" role="doc-biblioref">Lane, Westaway, and Murray Hicks 2003</a>)</span>. These statistics are based on comparison of ground control points with lidar ground-return elevations. Using the standard deviation of elevation errors estimated for each DTM (<span class="math inline">\(\sigma_{2006}\)</span> for the 2006 lidar and <span class="math inline">\(\sigma_{2017}\)</span> for the 2007 lidar), the standard deviation of differences in elevations between the DTMs (<span class="math inline">\(\sigma_{\Delta z}\)</span>) is estimated as</p>
+<p><span id="eq-DTMerror"><span class="math display">\[ \sigma_{\Delta z} = \sqrt{\sigma_{2006}^2 + \sigma_{2017}^2}  \tag{3}\]</span></span></p>
+<p>For the 2006 lidar, <span class="math inline">\(\sigma_{2006}\)</span> is reported as 0.06m. For the 2017 lidar, <span class="math inline">\(\sigma_{2017}\)</span> is reported as 0.04 m in unvegetated areas and 0.09m in vegetated areas. Using the vegetated value, this gives an estimated <span class="math inline">\(\sigma_{\Delta z}\)</span> of about 0.10 m. Assuming that errors follow a normal distribution centered about zero, we might then assume with 95% confidence (two <span class="math inline">\(\sigma_{\Delta Z}\)</span>) that differences greater than 0.2m indicate actual changes in elevation.</p>
+<p>This approach does not, however, account for all sources of uncertainty in the DoD. In particular, lidar ground returns do not have a uniform spacing. In areas with forest canopy, there may be gaps that span multiple DTM grid points (discussed in <a href="#sec-CanopyEffects" class="quarto-xref">Section&nbsp;2.1</a> below). Elevations of the DTM points through these gaps are unknown and must be interpolated from the surrounding ground returns. These gaps may not align between the two DTMs. To account for this, and other, sources of uncertainty, we would prefer a method for estimating the LoD based on the DoD itself.</p>
+<p>To do that, we used the observed frequency distribution of elevation-difference (<span class="math inline">\(\Delta e\)</span>) values. We sorted all values from smallest to largest and found the <span class="math inline">\(\Delta e\)</span> value for each quartile; <span class="math inline">\(q_1, q_2, q_3,\)</span> and <span class="math inline">\(q_4\)</span><a href="#fn2" class="footnote-ref" id="fnref2" role="doc-noteref"><sup>2</sup></a>. The <a href="https://en.wikipedia.org/wiki/Interquartile_range">interquartile range</a> (<span class="math inline">\(q_3-q_1)\)</span> contains the middle half of all values and provides an indicator of the central tendency and variability of the distribution. We then used <a href="https://en.wikipedia.org/wiki/Outlier#Tukey's_fences">Tukey fences</a> to identify likely <a href="https://en.wikipedia.org/wiki/Outlier">outliers</a>. Values less that <span class="math inline">\(q1 - k*(q3-q1)\)</span> or greater than <span class="math inline">\(q3 + k*(q3-q1)\)</span>, with <span class="math inline">\(k=1.5\)</span>, are considered outliers. We have high confidence that these locations indicate sites where elevations have changed between lidar acquisitions. For each bin, we removed these potential outliers and recalculated the quartiles. We then used the resulting Tukey fences to define the upper and lower limit for an LoD.</p>
+<p>The calculations are performed by program Align<a href="#fn3" class="footnote-ref" id="fnref3" role="doc-noteref"><sup>3</sup></a>.</p>
+<p><a href="#fig-medianErrorBefore" class="quarto-xref">Figure&nbsp;3</a> shows median elevation-difference values (<span class="math inline">\(q_2\)</span>) across the range of hillslope gradient and aspect increments. Deviations from zero indicate systematic variations with gradient and aspect.</p>
 <div class="cell">
 <div class="cell-output-display">
-<div id="fig-medianErrorBefore" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<div id="fig-medianErrorBefore" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-medianErrorBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="Coregistration_files/figure-html/fig-medianErrorBefore-1.png" id="fig-medianErrorBefore" class="img-fluid figure-img" width="672">
+<img src="Coregistration_files/figure-html/fig-medianErrorBefore-1.png" class="img-fluid figure-img" width="672">
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-medianErrorBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;1
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-medianErrorBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;3: Median difference (m) in 2006 and 2017 DTM elevations prior to coregistration, after removal of apparent outliers.
 </figcaption>
 </figure>
 </div>
 </div>
 </div>
-<p>The median represents the systematic error. It is small for low-gradient terrain and increases with slope steepness. For south-easterly aspects, the median error is negative; for north-westerly aspects, the median error is positive, and for south-west and north-east facing slopes, the median error remains small. This indicates that the DTMs are shifted in a south-east to north-west direction relative to each other.</p>
-<p>We can use the <a href="https://en.wikipedia.org/wiki/Interquartile_range">interquartile range</a> as a measure of noise in the difference raster.</p>
+<p>As shown in the upper panel of <a href="#fig-medianErrorBefore" class="quarto-xref">Figure&nbsp;3</a>, this systematic variation is small for low-gradient terrain and increases with slope steepness. For south-easterly aspects, the median elevation difference is negative; for north-westerly aspects, the median difference is positive, and for south-west and north-east facing slopes, the median difference remains small. This indicates that the DTMs are shifted in a south-east to north-west direction relative to each other.</p>
+<p>We use the interquartile range as a measure of the magnitude of random variability in the difference raster.</p>
 <div class="cell">
 <div class="cell-output-display">
-<div id="fig-interquartileBefore" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<div id="fig-interquartileBefore" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-interquartileBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="Coregistration_files/figure-html/fig-interquartileBefore-1.png" id="fig-interquartileBefore" class="img-fluid figure-img" width="672">
+<img src="Coregistration_files/figure-html/fig-interquartileBefore-1.png" class="img-fluid figure-img" width="672">
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-interquartileBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;2
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-interquartileBefore-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;4: Interquartile range (m) of 2006 and 2017 DTM elevation differencess prior to coregistration, after removal of apparent outliers.
 </figcaption>
 </figure>
 </div>
 </div>
 </div>
-<p>The interquartile range is relatively small for low-gradient terrain and increases with slope steepness. This provides a characterization of the noise in the elevation-difference raster obtained by subtracting the 2017 lidar DTM from the 2006 lidar DTM. Can we use these measurements to constrain the elevation-threshold that distinguishes signal from noise? Can we use <span class="math inline">\(qmin = q1 - 1.5*(q3-q1)\)</span> for the minimum <span class="math inline">\(q1\)</span> value as a function of aspect and slope as a threshold for identifying sites where elevations decreased between 2006 and 2017? Likewise, can we use <span class="math inline">\(qmax = q3 + 1.5*(q3-q1)\)</span> for the maximum <span class="math inline">\(q3\)</span> value as a function of aspect and slope as a threshold for identifying sites where elevations increased between 2006 and 2017? These values provide slope-dependent threshold within which we can identify sites where elevations likely did not change.</p>
-<p>Can we define a function of slope and aspect that reflects the behavior observed in the graphs above? For a single aspect, we see that the median error exhibits a roughly linear dependence with gradient. The slope of that linear dependence varies with the sine of the aspect. This agrees with what we expect if the two DTMs are offset horizontally. Along the fall line, differences in elevation will be maximum; along a contour, differences will be minimum. So define <span class="math display">\[\mu = \sin(A+\alpha)\]</span></p>
-<p>where <span class="math inline">\(A\)</span> is the azimuth measured from north and <span class="math inline">\(\alpha\)</span> is the angular shift so variation in <span class="math inline">\(\mu\)</span> aligns with that seen in <a href="#fig-medianErrorBefore" class="quarto-xref">Figure&nbsp;1</a>. Then define a linear function of gradient with coefficients that vary with <span class="math inline">\(\mu\)</span>:</p>
+<p>In low-gradient terrain, the interquartile range is close to the standard deviation estimated with <a href="#eq-DTMerror" class="quarto-xref">Equation&nbsp;3</a> above. It then increases with slope steepness. This provides a characterization of the noise in the DoD obtained by subtracting the 2017 lidar DTM from the 2006 lidar DTM.</p>
+<p>Can we define a function of slope and aspect that reflects the behavior observed in the graphs above? For a single aspect, we see that the median error exhibits a slightly curved dependence with gradient. The slope of that dependence varies with the sine of the aspect. This agrees with what we expect if the two DTMs are offset horizontally. Along the fall line, differences in elevation will be maximum; along a contour, differences will be minimum. We define</p>
+<p><span class="math display">\[\mu = \sin(A+\alpha)\]</span></p>
+<p>where <span class="math inline">\(A\)</span> is the azimuth measured from north and <span class="math inline">\(\alpha\)</span> is the angular shift such that variation in <span class="math inline">\(\mu\)</span> aligns with that seen in <a href="#fig-medianErrorBefore" class="quarto-xref">Figure&nbsp;3</a>. We then define a quadratic function of gradient with coefficients that vary with <span class="math inline">\(\mu\)</span>:</p>
 <p><span class="math display">\[
-qmin = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)*S
+q_1 = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)\theta + (\beta_4 + \beta_5 \mu)\theta^2
 \]</span></p>
-<p>where <span class="math inline">\(S\)</span> is slope gradient and the <span class="math inline">\(\beta\)</span>s are empirical coefficients. This defines an equation with five coefficients, <span class="math inline">\(\alpha\)</span> and the four <span class="math inline">\(\beta\)</span>s.</p>
-<p>I solve for these coefficients as follows:</p>
+<p>where <span class="math inline">\(\theta\)</span> is slope gradient and the <span class="math inline">\(\beta\)</span> are empirical coefficients. This defines an equation with seven coefficients, <span class="math inline">\(\alpha\)</span> and the six <span class="math inline">\(\beta\)</span> values. We use the same equation for <span class="math inline">\(q_3\)</span> and solve again for the seven coefficients.</p>
+<p>We solve for these coefficients as follows:</p>
 <ol type="1">
-<li>Create a normalized set of curves for the variation of <span class="math inline">\(q2\)</span> as a function of aspect for each of the slope-gradient increments. The “normalized” curves vary from -1 to +1 over the range of aspects. The normalization is done as follows:
+<li>Create a normalized set of curves for the variation of <span class="math inline">\(q_1\)</span> and <span class="math inline">\(q_3\)</span> as a function of aspect for each of the slope-gradient increments. The “normalized” curves vary from -1 to +1 over the range of aspects. The normalization is done as follows:
 <ol type="i">
-<li>For each slope increment, find the maximum and minimum values of <span class="math inline">\(q2\)</span>.</li>
+<li>For each slope increment, find the maximum and minimum values of <span class="math inline">\(q1\)</span> and <span class="math inline">\(q_3\)</span>.</li>
 <li>Define <span class="math inline">\(qshift = -(qmax-qmin)*0.5\)</span></li>
 <li>Define <span class="math inline">\(range = (qmax-qmin)*0.5\)</span></li>
-<li>Define <span class="math inline">\(normq(abin,sbin) = (q2(abin,sbin) + qshift)/range\)</span></li>
+<li>Define <span class="math inline">\(normq(abin,sbin) = (q(abin,sbin) + qshift)/range\)</span></li>
 </ol></li>
 <li>Find the value of <span class="math inline">\(\alpha\)</span> that minimizes the sum of squared residuals, i.e., find the value of <span class="math inline">\(\alpha\)</span> that minimizes <span class="math inline">\(\sum_{i=1}^n(\sin(A_i+\alpha)-normq_i)^2\)</span>. This is done using Brent’s algorithm (see <a href="https://people.math.sc.edu/Burkardt/f_src/brent/brent.f90">people.match.sc.edu/Burkardt/f_src/brent/brent.f90</a>).</li>
 <li>Define a set of linear equations<br>
 <span class="math display">\[qmin_i = \beta min_0 + \beta min_1*mu_i + \beta min_2*S_i + \beta min_3*mu_i*S_i\]</span> <span class="math display">\[qmax_i = \beta max_0 + \beta max_1*mu_i + \beta max_2*S_i + \beta max_3*mu_i*S_i\]</span> where <span class="math inline">\(\mu_i = \sin(A_i+\alpha)\)</span> and <span class="math inline">\(A_i\)</span> is the slope aspect and <span class="math inline">\(S_i\)</span> is slope gradient.</li>
-<li>Solve for the <span class="math inline">\(\beta min\)</span>s and <span class="math inline">\(\beta max\)</span>s. This is done using the <a href="https://en.wikipedia.org/wiki/LAPACK">LAPACK</a> routine DGELS.</li>
+<li>Solve for the <span class="math inline">\(\beta min\)</span> and <span class="math inline">\(\beta max\)</span> values. This is done using the <a href="https://en.wikipedia.org/wiki/LAPACK">LAPACK</a> routine DGELS.</li>
 </ol>
-<p>Here are the resulting curves for the eight major slope aspects (N, NE, E, SE, S, SW, W, and NW).</p>
+<p>Here are the resulting curves for the eight major slope aspects (N, NE, E, SE, S, SW, W, and NW). In <a href="#fig-curves0" class="quarto-xref">Figure&nbsp;5</a>, the circles show the binned <span class="math inline">\(q_1\)</span> and <span class="math inline">\(q_3\)</span> values, the thin black lines show the fits to the <span class="math inline">\(q_1\)</span> and <span class="math inline">\(q_3\)</span> values, and the heavy black lines show the LoD limits estimated using Tukey’s fences with <span class="math inline">\(k=1.5\)</span>.</p>
 <div class="cell">
 <div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/unnamed-chunk-4-1.png" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/unnamed-chunk-4-2.png" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/unnamed-chunk-4-3.png" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-<div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/unnamed-chunk-4-4.png" class="img-fluid figure-img" width="672"></p>
-</figure>
-</div>
-</div>
-</div>
-<p>The envelope contained within the <span class="math inline">\(qmin\)</span> and <span class="math inline">\(qmax\)</span> threshold curves defines the elevation-difference values falling within the range of gradient- and aspect-dependent systematic errors plus the random errors (noise) present in the difference raster. We can use these thresholds to identify sites where there likely were elevation changes during the time between the lidar acquisitions and exclude these from the set of equations used to estimate the optimal <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> values. We then use the elevation-difference raster to estimate the optimal <span class="math inline">\(\Delta x, \Delta y\)</span>, and <span class="math inline">\(\Delta z\)</span> values for each tile or moving window and shift the 2017 DTM to align with the 2006 DTM. Note that these shifts can be spatially variable. We then use the aligned 2017 DTM to estimate the elevation differences between the two DTMs.</p>
-<p>Here are results after coregistration.</p>
-<div class="cell">
-<div class="cell-output-display">
-<div id="fig-medianErrorAfter" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<div id="fig-curves0" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
-<div aria-describedby="fig-medianErrorAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="Coregistration_files/figure-html/fig-medianErrorAfter-1.png" id="fig-medianErrorAfter" class="img-fluid figure-img" width="672">
+<div aria-describedby="fig-curves0-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-curves0-1.png" class="img-fluid figure-img" width="672">
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-medianErrorAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;3
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-curves0-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;5: Hillslope gradient- and aspect-dependent level of detection (LoD). The dots indicate calculated first and third quartiles for each slope and aspect interval, the thin lines show the polynomial fit to those points, and the thick lines show the Tukey’s fences using a k value of 1.5.
 </figcaption>
 </figure>
 </div>
 </div>
 </div>
-<p>This procedure has greatly reduced the systematic differences. The slope and aspect dependence are not entirely eliminated - I’ll think some more about how to get that last little bit. Let’s look at the interquartile range, our measure of random error.</p>
+<p>The envelope contained within the thick black threshold curves defines the elevation-difference values falling within the range of gradient- and aspect-dependent systematic errors plus random variability present in the DoD. We use these thresholds to define the LoD to identify sites where there likely were elevation changes during the time between the lidar acquisitions and exclude these from the set of equations used to estimate the optimal <span class="math inline">\(\Delta x, \Delta y\)</span>, <span class="math inline">\(\Delta z\)</span>, and <span class="math inline">\(\beta\)</span> values with <a href="#eq-shifts2" class="quarto-xref">Equation&nbsp;2</a> above.</p>
+<p>Note that these thresholds are not symmetric about zero. The median (<span class="math inline">\(q_2\)</span>), midway between the <span class="math inline">\(q_1\)</span> and <span class="math inline">\(q_3\)</span> curves, is near zero for low-gradient terrain, but veers away from zero at steeper gradients by an amount that varies with aspect. Shifting the 2017 DTM to minimize differences between the two DTMs should eliminate that aspect dependence.</p>
+<p>Here are results after coregistration.</p>
 <div class="cell">
 <div class="cell-output-display">
-<div id="fig-interquartileAfter" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<div id="fig-medianErrorAfter" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-medianErrorAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-medianErrorAfter-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-medianErrorAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;6: Median difference (m) in 2006 and 2017 DTM elevations after coregistration.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>This procedure has greatly reduced the systematic differences. Let’s look at the interquartile range, our measure of random error.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-interquartileAfter" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-interquartileAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="Coregistration_files/figure-html/fig-interquartileAfter-1.png" id="fig-interquartileAfter" class="img-fluid figure-img" width="672">
+<img src="Coregistration_files/figure-html/fig-interquartileAfter-1.png" class="img-fluid figure-img" width="672">
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-interquartileAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;4
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-interquartileAfter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;7: Interquartile range (m) of 2006 and 2017 DTM elevation differences after coregistration.
 </figcaption>
 </figure>
 </div>
@@ -248,13 +303,13 @@ Figure&nbsp;4
 <p>Comparing before and after:</p>
 <div class="cell">
 <div class="cell-output-display">
-<div id="fig-compareq2" class="quarto-float quarto-figure quarto-figure-center anchored" width="672">
+<div id="fig-compareq2" class="quarto-float quarto-figure quarto-figure-center anchored">
 <figure class="quarto-float quarto-float-fig figure">
 <div aria-describedby="fig-compareq2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-<img src="Coregistration_files/figure-html/fig-compareq2-1.png" id="fig-compareq2" class="img-fluid figure-img" width="672">
+<img src="Coregistration_files/figure-html/fig-compareq2-1.png" class="img-fluid figure-img" width="672">
 </div>
-<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-compareq2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
-Figure&nbsp;5
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-compareq2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;8: Median elevation differences (m) before and after coregistration.
 </figcaption>
 </figure>
 </div>
@@ -262,65 +317,229 @@ Figure&nbsp;5
 </div>
 <div class="cell">
 <div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/fig_compareInter-1.png" class="img-fluid figure-img" width="672"></p>
+<div id="fig-compareInter" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-compareInter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-compareInter-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-compareInter-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;9: Interquartile range (m) before and after coregistration.
+</figcaption>
 </figure>
 </div>
 </div>
 </div>
-<p>The random errors, as indicated by the interquartile range, have been slightly reduced. Not what I was expecting. Here’s another look at the before and after results.</p>
+<p>Here’s another look at the before and after results.</p>
+<div class="cell" data-warnings="false">
+<div class="cell-output-display">
+<div id="fig-den" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-den-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-den-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-den-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;10: Density plots of median, mean, and interquartile range of elevation differences before and after coregistration.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>We’ve narrowed the range of median and mean values and shifted the interquartiles to lower values. Here’s the elevation differences after alignment:</p>
+<div id="fig-dif" class="quarto-float quarto-figure quarto-figure-center anchored" width="500">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-dif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="images/clipboard-1486922337.png" id="fig-dif" class="img-fluid figure-img" width="500">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig quarto-uncaptioned" id="fig-dif-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;11
+</figcaption>
+</figure>
+</div>
+<p>We still see random noise, but the systematic errors aligned with slope aspect are gone. Distinct changes are visible along many stream channels. The curves in <a href="#fig-curvesFinal" class="quarto-xref">Figure&nbsp;12</a> below show the interquarile range and Tukey’s fences after coregistration. Note the change in y-axis scale relative to <a href="#fig-curves0" class="quarto-xref">Figure&nbsp;5</a>.</p>
 <div class="cell">
-<div class="cell-output cell-output-stderr">
-<pre><code>Warning: A numeric `legend.position` argument in `theme()` was deprecated in ggplot2
-3.5.0.
-ℹ Please use the `legend.position.inside` argument of `theme()` instead.</code></pre>
+<div class="cell-output-display">
+<div id="fig-curvesFinal" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-curvesFinal-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-curvesFinal-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-curvesFinal-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;12: First and third quartiles (dots), polynomial fits (thin lines), and limits using Tukey’s fences (k=1.5) after shifting the 2017 DTM.
+</figcaption>
+</figure>
 </div>
 </div>
-<p>We’ve narrowed the range of median values and shifted the the interquartiles to lower values (but that dual mode in the median is interesting). Here’s the elevation differences after alignment:</p>
-<p><img src="images/clipboard-292234770.png" id="fig_dif" class="img-fluid"></p>
-<p>We still see random noise, but the systematic errors aligned with slope aspect are gone. Distinct changes are visible along many stream channels.</p>
+</div>
+<p>The curves are now all symmetric about zero and the envelope defining the LoD is narrower. Even so, what we are interpreting as “noise” in the DoD still spans a range of about ± 0.5m. What might be some causes of this uncertainty?</p>
+<section id="sec-CanopyEffects" class="level2">
+<h2 class="anchored" data-anchor-id="sec-CanopyEffects">Canopy effects.</h2>
+<p>See <a href="#fig-canopy" class="quarto-xref">Figure&nbsp;13</a> below. The left panel shows elevation differences draped on a shaded relief image for a portion of the overlapping 2006 and 2017 DTMs after coregistration; the right panel shows an aerial photo view of the same area. Over the low-gradient, low-relief, and unforested fields and pastures, differences between the two DTMs are minor. Over the forested hillslopes, the speckled pattern in the left panel indicates variability in DTM elevations on the order of several tens of centimeters over horizontal length scales of a few to ten meters, consistent with a general reduction of lidar DTM accuracy observed over forested areas <span class="citation" data-cites="simpson2017">(<a href="#ref-simpson2017" role="doc-biblioref">Simpson, Smith, and Wooster 2017</a>)</span>.</p>
+<div id="fig-canopy" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-cap="Left panel shows differences in DTM elevations after coregistration. Right panel shows an aerial photo view of the same area.">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-canopy-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="images/clipboard-2778201248.png" class="img-fluid figure-img" data-fig-cap="Left panel shows differences in DTM elevations after coregistration. Right panel shows an aerial photo view of the same area.">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-canopy-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;13: The left panel shows differences in DTM elevations after coregistration. The right panel shows an aerial photo view of the same area.
+</figcaption>
+</figure>
+</div>
+<p>There are two likely primary reasons for the increased variability over forested areas <span class="citation" data-cites="petras2023a">(<a href="#ref-petras2023a" role="doc-biblioref">Petras et al. 2023</a>)</span>:</p>
+<ol type="1">
+<li><p>Increased spacing of lidar ground returns because of reflections from the forest canopy, and</p></li>
+<li><p>Interpretation of canopy reflections as ground returns.</p></li>
+</ol>
+<p>The first of these is illustrated in <a href="#fig-groundReturns" class="quarto-xref">Figure&nbsp;14</a> and <a href="#fig-density" class="quarto-xref">Figure&nbsp;15</a> below.</p>
+<div id="fig-groundReturns" class="quarto-float quarto-figure quarto-figure-center anchored" data-fig-cap="Left panel shows the number of lidar ground returns within each cell of the 2006 DTM (3-foot DTM point spacing). Right panel zooms into the area within the box of the left panel. Black dots indicate ground returns.">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-groundReturns-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="images/clipboard-1515199096.png" class="img-fluid figure-img" data-fig-cap="Left panel shows the number of lidar ground returns within each cell of the 2006 DTM (3-foot DTM point spacing). Right panel zooms into the area within the box of the left panel. Black dots indicate ground returns.">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-groundReturns-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;14: The left panel shows the number of lidar ground returns within each cell of the 2006 DTM (3-foot DTM point spacing). The right panel zooms into the area within the box of the left panel. Black dots indicate ground returns.
+</figcaption>
+</figure>
+</div>
+<div id="fig-density" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-density-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="images/clipboard-1076959254.png" class="img-fluid figure-img">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-density-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;15: The left panel shows the ground-return point density for the 2006 lidar measured over a 7.5-m radius. The right panel shows an areal view of the area in the summer of 2006. Low point densities (blues) align with unforested fields and clearcuts.
+</figcaption>
+</figure>
+</div>
+<p>Variation in ground-return spacing results in variable-sized gaps with no returns and variable spatial density in the number of signals per DTM cell. The bar chart in <a href="#fig-barChart" class="quarto-xref">Figure&nbsp;16</a> below shows the proportion of all cells in the 2006 DTM that overlapped the 2017 DTM containing a given number of ground returns.</p>
 <div class="cell">
 <div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/unnamed-chunk-11-1.png" class="img-fluid figure-img" width="672"></p>
+<div id="fig-barChart" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-barChart-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-barChart-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-barChart-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;16: Proportion of 2006 DTM cells with a given number of ground returns
+</figcaption>
 </figure>
 </div>
 </div>
+</div>
+<p>The variable spacing between ground returns results in variable lengths over which elevations are interpolated to the DTM grid points. Topographic detail between ground-return points is lost. The gaps in ground return points will differ between the two DTMs. In rough terrain, small features resolved in one DTM might thus be missed in the other, resulting in differences in the interpolated ground elevations.</p>
+<p>A variety of factors can result in variable lidar point spacing <span class="citation" data-cites="yan2023 petras2023a">(<a href="#ref-yan2023" role="doc-biblioref">Yan 2023</a>; <a href="#ref-petras2023a" role="doc-biblioref">Petras et al. 2023</a>)</span>. For example, the systematic north-west to south-east trending variations in point density visible in the left panel may result from differences in the extent of swath overlap between adjacent flight lines as the lidar was collected. Random variations in point density in forested areas may result from spatial variability in the proportion of laser signals that penetrate through the tree canopy. Additionally, some of the ground returns may actually be misinterpreted reflections from tree canopy or understory vegetation, which introduces random errors into the DTM elevations.</p>
+<p>After coregistration of the 2006 and 2017 DTMs, we found that variability in elevation differences, as measured by the interquartile range (<a href="#fig-compareInter" class="quarto-xref">Figure&nbsp;9</a>) ranged from about 10 to 30 centimeters, increasing with increasing hillslope gradient. <a href="#fig-interquartileCanopy" class="quarto-xref">Figure&nbsp;17</a> below shows the same data, but here parsed by hillslope gradient and tree-canopy height. Canopy height was determined in program Align after shifting the 2017 DSM<a href="#fn4" class="footnote-ref" id="fnref4" role="doc-noteref"><sup>4</sup></a> by subtracting the DTM elevation from the DSM elevation at each grid point and using the maximum of the 2006 or 2017 canopy heights.</p>
+<div class="cell">
 <div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/unnamed-chunk-11-2.png" class="img-fluid figure-img" width="672"></p>
+<div id="fig-interquartileCanopy" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-interquartileCanopy-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-interquartileCanopy-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-interquartileCanopy-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;17: Variation of the interquartile range with changes in canopy height and hillslope gradient.
+</figcaption>
 </figure>
 </div>
 </div>
+</div>
+<p>The upper panel in <a href="#fig-interquartileCanopy" class="quarto-xref">Figure&nbsp;17</a> shows the increase in interquartile range with hillslope gradient; the lower panel shows a slight increase in interquartile range with canopy height. To characterize the combined hillslope-gradient and canopy-height dependence, we fit the <span class="math inline">\(q_1\)</span> and <span class="math inline">\(q_3\)</span> values over all gradient-canopy height bins with an equation quadratic in both canopy height H and hillslope gradient <span class="math inline">\(\theta\)</span>:</p>
+<p><span id="eq-byCanopy"><span class="math display">\[
+q = (\beta_0 + \beta_1 \theta + \beta_2 \theta^2) + (\beta_3 + \beta_4 H + \beta_5 H^2) + \beta_6 H \theta + \beta_7H^2\theta + \beta_8H\theta^2 + \beta_9H^2\theta^2
+\tag{4}\]</span></span><a href="#fig-curvesCanopy" class="quarto-xref">Figure&nbsp;18</a> below shows the interquartile range and Tukey fences as functions of canopy height for a range of gradient interval. The black circles show <span class="math inline">\(q_1\)</span> and <span class="math inline">\(q_3\)</span> from the binned <span class="math inline">\(\Delta e\)</span> values, the thin black lines show the curves fit to the <span class="math inline">\(q_1\)</span> and <span class="math inline">\(q_3\)</span> values using <a href="#eq-byCanopy" class="quarto-xref">Equation&nbsp;4</a>, and the thick black lines show the Tukey fences with <span class="math inline">\(k=1.5\)</span>.</p>
+<div class="cell">
 <div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/unnamed-chunk-11-3.png" class="img-fluid figure-img" width="672"></p>
+<div id="fig-curvesCanopy" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-curvesCanopy-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-curvesCanopy-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-curvesCanopy-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;18: The interquartile range and LoD (Tukey’s fences with k=1.5) plotted as a function of canopy height for different increments in hillslope gradient.
+</figcaption>
 </figure>
 </div>
 </div>
+</div>
+<p><a href="#fig-curvesCanopy2" class="quarto-xref">Figure&nbsp;19</a> below shows the same data, but plotted as a function of hillslope gradient.</p>
+<div class="cell">
 <div class="cell-output-display">
-<div>
-<figure class="figure">
-<p><img src="Coregistration_files/figure-html/unnamed-chunk-11-4.png" class="img-fluid figure-img" width="672"></p>
+<div id="fig-curvesCanopy2" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-curvesCanopy2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-curvesCanopy2-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-curvesCanopy2-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;19: The interquartile range and LoD (Tukey’s fences with k=1.5) plotted as a function of hillslope gradient for different increments in canopy height.
+</figcaption>
 </figure>
 </div>
 </div>
 </div>
-<p>Next steps:</p>
-<ul>
-<li><p>Map the outlier magnitude using program Quantiles: that is, how many interquartile ranges is a point below qmin or above qmax. This is what we use to identify candidate sites. These are then filtered in program huntLS to flag potential landslide scars.</p></li>
-<li><p>We can determine the spatial extent of a patch using the local qmin and qmax, but still measure the volume change using the dz values.</p></li>
-</ul>
+<p>Variability in the range of elevation differences varies with both hillslope gradient and forest-canopy height. These curves account for both effects.</p>
+<p>We are using the LoD defined by these graphs to identify “stable” locations where elevations have probably not changed between the 2006 and 2017 lidar acquisitions. We used the elevation differences over these stable locations to solve for the horizontal (<span class="math inline">\(\Delta x, \Delta y\)</span>) and vertical (<span class="math inline">\(\Delta z\)</span>) shifts needed to bring the 2017 DTM into alignment with the 2006 DTM, using <a href="#eq-shifts2" class="quarto-xref">Equation&nbsp;2</a>. The range spanned by this LoD, ± 0.5m, is sufficient, however, to include things like flood plain or fan aggradation.</p>
+<p>There may stil be systematic biases in the random errors associated with lidar signal reflections from vegetation interpreted as ground returns. A plantation that grows 2 meters over that 11 years may generate larger mean positive errors in 2017 DTM elevations than in 2006 DTM elevations, resulting in a positive bias in elevation differences measured over that area. Likewise, an area harvested between 2006 and 2017 will generate a negative bias. <a href="#fig-DeltaH" class="quarto-xref">Figure&nbsp;20</a> below shows quartiles of <span class="math inline">\(\Delta e\)</span> measured over 5-meter increments of canopy-height change between 2006 and 2007. Negative <span class="math inline">\(\Delta H\)</span> values indicate a loss of canopy (timber harvest) or vegetation (mowing of a pasture). Positive values indicate canopy or vegetation growth.</p>
+<div class="cell">
+<div class="cell-output-display">
+<div id="fig-DeltaH" class="quarto-float quarto-figure quarto-figure-center anchored">
+<figure class="quarto-float quarto-float-fig figure">
+<div aria-describedby="fig-DeltaH-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+<img src="Coregistration_files/figure-html/fig-DeltaH-1.png" class="img-fluid figure-img" width="672">
+</div>
+<figcaption class="quarto-float-caption-bottom quarto-float-caption quarto-float-fig" id="fig-DeltaH-caption-0ceaefa1-69ba-4598-a22c-09a6ac19f8ca">
+Figure&nbsp;20: First, second, and third quartiles of Δe for increments of change in canopy height (ΔH) between 2006 and 2007.
+</figcaption>
+</figure>
+</div>
+</div>
+</div>
+<p>We see a slight trend for increasing <span class="math inline">\(\Delta e\)</span> values moving from negative to positive <span class="math inline">\(\Delta H\)</span> values. This is consistent with the expectation that a loss of canopy (negative <span class="math inline">\(\Delta H\)</span>) will generate a negative bias and that canopy growth will generate a positive bias. The deviation is small, on the order of 5 cm. However, this observation prompted inclusion of the <span class="math inline">\(\Delta H\)</span> term in <a href="#eq-shifts2" class="quarto-xref">Equation&nbsp;2</a>.</p>
+<p>Next: identify landslide scars using the DoD.</p>
+</section>
+</section>
+<section id="references" class="level1 unnumbered">
 
 
-<div id="quarto-appendix" class="default"><section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes"><h2 class="anchored quarto-appendix-heading">Footnotes</h2>
+</section>
+
+
+<div id="quarto-appendix" class="default"><section class="quarto-appendix-contents" role="doc-bibliography" id="quarto-bibliography"><h2 class="anchored quarto-appendix-heading">References</h2><div id="refs" class="references csl-bib-body hanging-indent" data-entry-spacing="0" role="list">
+<div id="ref-brasington2003" class="csl-entry" role="listitem">
+Brasington, James, Joe Langham, and Barbara Rumsby. 2003. <span>“Methodological Sensitivity of Morphometric Estimates of Coarse Fluvial Sediment Transport.”</span> <em>Geomorphology</em> 53 (3-4): 299–316. <a href="https://doi.org/10.1016/S0169-555X(02)00320-3">https://doi.org/10.1016/S0169-555X(02)00320-3</a>.
+</div>
+<div id="ref-cucchiaro2020" class="csl-entry" role="listitem">
+Cucchiaro, Sara, Eleonora Maset, Marco Cavalli, Stefano Crema, Lorenzo Marchi, Alberto Beinat, and Federico Cazorzi. 2020. <span>“How Does Co-Registration Affect Geomorphic Change Estimates in Multi-Temporal Surveys?”</span> <em>GIScience &amp; Remote Sensing</em> 57 (5): 611–32. <a href="https://doi.org/10.1080/15481603.2020.1763048">https://doi.org/10.1080/15481603.2020.1763048</a>.
+</div>
+<div id="ref-d.rosenholm1988" class="csl-entry" role="listitem">
+D. Rosenholm, and Kennert Torlegard. 1988. <span>“Three Dimensional Absolute Orientation of Stereo Models Using Digital Elvation Models.”</span> <em>Photogrammetric Engineering and Remote Sensing</em> 54 (10): 1385–89.
+</div>
+<div id="ref-lane2003" class="csl-entry" role="listitem">
+Lane, Stuart N., Richard M. Westaway, and D. Murray Hicks. 2003. <span>“Estimation of Erosion and Deposition Volumes in a Large, Gravel<span>-</span>Bed, Braided River Using Synoptic Remote Sensing.”</span> <em>Earth Surface Processes and Landforms: The Journal of the British Geomorphological Research Group</em> 28 (3): 249–71.
+</div>
+<div id="ref-li2023" class="csl-entry" role="listitem">
+Li, Tao, Yuanlin Hu, Bin Liu, Liming Jiang, Hansheng Wang, and Xiang Shen. 2023. <span>“Co-Registration and Residual Correction of Digital Elevation Models: A Comparative Study.”</span> <em>The Cryosphere</em> 17 (12): 5299–5316. <a href="https://doi.org/10.5194/tc-17-5299-2023">https://doi.org/10.5194/tc-17-5299-2023</a>.
+</div>
+<div id="ref-petras2023a" class="csl-entry" role="listitem">
+Petras, V., A. Petrasova, J. B. McCarter, H. Mitasova, and R. K. Meentemeyer. 2023. <span>“Point Density Variations in Airborne Lidar Point Clouds.”</span> <em>Sensors (Basel)</em> 23 (3). <a href="https://doi.org/10.3390/s23031593">https://doi.org/10.3390/s23031593</a>.
+</div>
+<div id="ref-r.d.williams2012" class="csl-entry" role="listitem">
+R. D. Williams. 2012. <span>“DEMs of Difference.”</span> In. British Society for Geomorphology.
+</div>
+<div id="ref-simpson2017" class="csl-entry" role="listitem">
+Simpson, Jake, Thomas Smith, and Martin Wooster. 2017. <span>“Assessment of Errors Caused by Forest Vegetation Structure in Airborne LiDAR-Derived DTMs.”</span> <em>Remote Sensing</em> 9 (11): 1101. <a href="https://doi.org/10.3390/rs9111101">https://doi.org/10.3390/rs9111101</a>.
+</div>
+<div id="ref-wheaton2010" class="csl-entry" role="listitem">
+Wheaton, Joseph M., James Brasington, Stephen E. Darby, and David A. Sear. 2010. <span>“Accounting for Uncertainty in DEMs from Repeat Topographic Surveys: Improved Sediment Budgets.”</span> <em>Earth Surface Processes and Landforms</em> 35: 136–56. <a href="https://doi.org/10.1002/esp.1886">https://doi.org/10.1002/esp.1886</a>.
+</div>
+<div id="ref-yan2023" class="csl-entry" role="listitem">
+Yan, Wai Yeung. 2023. <span>“Airborne Lidar Data Artifacts: What We Know Thus Far.”</span> <em>IEEE Geoscience and Remote Sensing Magazine</em> 11 (3): 21–45. <a href="https://doi.org/10.1109/MGRS.2023.3285261">https://doi.org/10.1109/MGRS.2023.3285261</a>.
+</div>
+</div></section><section id="footnotes" class="footnotes footnotes-end-of-document" role="doc-endnotes"><h2 class="anchored quarto-appendix-heading">Footnotes</h2>
 
 <ol>
-<li id="fn1"><p>I found, however, that the vertical shift, <span class="math inline">\(\Delta z\)</span>, varied nonlinearly with slope gradient. <a href="#eq-shifts" class="quarto-xref">Equation&nbsp;1</a> was therefore modified to <span class="math inline">\(\Delta e_i =\frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + \frac{\partial{\Delta e_i}}{\partial{z_i}}\Delta z + \beta_1 S_i + \beta_2 S_i^2\)</span>, where <span class="math inline">\(S_i\)</span> is slope gradient for the <span class="math inline">\(i^{th}\)</span> point and <span class="math inline">\(\beta_1\)</span> and <span class="math inline">\(\beta_2\)</span> are additional empirical coefficients.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn1"><p>The terms “DEM”, for Digital Elevation Model, and “DTM”, for Digital Terrain Model, are not used consistently in the literature (e.g., see <a href="https://en.wikipedia.org/wiki/Digital_elevation_model">Wikipedia</a>). We are using the term “DTM” because that is the term used on the Washington Lidar Portal. These DTMs are intended to represent the ground surface with all overlying vegetation and buildings removed.<a href="#fnref1" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn2"><p>One quarter of all <span class="math inline">\(\Delta e\)</span> values are less or equal to <span class="math inline">\(q_1\)</span>, half are less than or equal to <span class="math inline">\(q_2\)</span> (which is also the median value), three quarters are less than or equal to <span class="math inline">\(q_3\)</span>, and <span class="math inline">\(q_4\)</span> is the maximum value.<a href="#fnref2" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn3"><p>Program Align is included in the <a href="https://danmillerm2.github.io/NetStream_Doc/">Netstream</a> suite of Fortran programs.<a href="#fnref3" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
+<li id="fn4"><p>A DSM is a Digital Surface Model. It indicates the elevation of the 1st laser-signal returns. By subtracting the DTM from the DSM, we obtain a measure of the forest-canopy height. The DSMs were generated from the same lidar point clouds as used for the DTMs and were downloaded from the Washington Lidar Portal.<a href="#fnref4" class="footnote-back" role="doc-backlink">↩︎</a></p></li>
 </ol>
 </section></div></main>
 <!-- /main column -->

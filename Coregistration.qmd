@@ -2,7 +2,9 @@
 title: "Coregistration"
 author: "Dan"
 date: today
-format: gfm
+format: html
+#format: gfm
+#format: docx
 editor: visual
 execute:
   echo: false
@@ -46,13 +48,15 @@ For example, if the ground-surface gradient at the center point were 80% on a no
 
 ![Shifting of the red DTM so that elevations at the black reference DTM center point (point 5) match as closely as possible.](images/clipboard-2384403491.png){#fig-grid fig-align="center" width="400"}
 
-We found, however, that $\Delta z$ was not constant, but varied nonlinearly with hillslope gradient. We therefore modified @eq-shifts to:
-
-$$
-\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + (\Delta z + \beta_0\theta + \beta_1\theta^2)
+::: callout-note
+We found, however, that $\Delta z$ was not constant with location, but varied nonlinearly with hillslope gradient $\theta$ and varied with changes in forest-canopy height $\Delta H$ (see @sec-CanopyEffects below). We therefore modified @eq-shifts to: $$
+\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + ((\beta_0 + \beta_1\theta + \beta_2\theta^2) + (\beta_3 + \beta_4\theta)\Delta H))
 $$ {#eq-shifts2}
 
-any overlapping portion of two DTMs, we can find an optimal set of values for $\Delta x, \Delta y$, $\Delta z$, and $\beta$. In doing this, we want to exclude portions of the DTMs where elevation changes did occur. The $\Delta e$ values for those sites would not be a consequence of a systematic shift in the registration between the DTMs and including those in our set of equations would bias the resulting estimates for $\Delta x, \Delta y$, $\Delta z$ and $\beta$. Below we describe a method for differentiating systematic errors and noise from the elevation changes we want to resolve.
+The $\Delta x$ and $\Delta y$ terms determine the horizontal shift needed to align the DTMs, the $(\beta_0 + \beta_1\theta + \beta_2\theta^2)$ term determines the hillslope-gradient-dependent vertical shift, and the $(\beta_3 + \beta_4\theta)\Delta H)$ term accounts for systematic errors associated with changes in canopy height from forest growth and timber harvest, and for variations in vegetation height in agricultural areas, between the time of the two lidar acquisitions.
+:::
+
+For any overlapping portion of two DTMs, we can find an optimal set of values for $\Delta x, \Delta y$, and the $\beta$s. In doing this, we want to exclude portions of the DTMs where elevation changes did occur. The $\Delta e$ values for those sites would not be a consequence of a systematic shift in the registration between the DTMs and including those in our set of equations would bias the resulting estimates for $\Delta x, \Delta y$, $\Delta z$ and $\beta$. Below we describe a method for differentiating systematic errors and noise from the elevation changes we want to resolve.
 
 We'll use a portion of the Post-Mortem study area with overlap of the 2006 and 2007 lidar DTMs that contains several of the study blocks. The study blocks are shown by the black polygons in the image below. The red box outlines the analysis area.
 
@@ -72,7 +76,7 @@ $$ \sigma_{\Delta z} = \sqrt{\sigma_{2006}^2 + \sigma_{2017}^2} $$ {#eq-DTMerror
 
 For the 2006 lidar, $\sigma_{2006}$ is reported as 0.06m. For the 2017 lidar, $\sigma_{2017}$ is reported as 0.04 m in unvegetated areas and 0.09m in vegetated areas. Using the vegetated value, this gives an estimated $\sigma_{\Delta z}$ of about 0.10 m. Assuming that errors follow a normal distribution centered about zero, we might then assume with 95% confidence (two $\sigma_{\Delta Z}$) that differences greater than 0.2m indicate actual changes in elevation.
 
-This approach does not, however, account for all sources of uncertainty in the DoD. In particular, lidar ground returns do not have a uniform spacing. In areas with forest canopy, there may be gaps that span multiple DTM grid points (discussed in @sec-canopyEffects below). Elevations of the DTM points through these gaps are unknown and must be interpolated from the surrounding ground returns. These gaps may not align between the two DTMs. To account for this, and other, sources of uncertainty, we would prefer a method for estimating the LoD based on the DoD itself.
+This approach does not, however, account for all sources of uncertainty in the DoD. In particular, lidar ground returns do not have a uniform spacing. In areas with forest canopy, there may be gaps that span multiple DTM grid points (discussed in @sec-CanopyEffects below). Elevations of the DTM points through these gaps are unknown and must be interpolated from the surrounding ground returns. These gaps may not align between the two DTMs. To account for this, and other, sources of uncertainty, we would prefer a method for estimating the LoD based on the DoD itself.
 
 To do that, we used the observed frequency distribution of elevation-difference ($\Delta e$) values. We sorted all values from smallest to largest and found the $\Delta e$ value for each quartile; $q_1, q_2, q_3,$ and $q_4$[^2]. The [interquartile range](https://en.wikipedia.org/wiki/Interquartile_range) ($q_3-q_1)$ contains the middle half of all values and provides an indicator of the central tendency and variability of the distribution. We then used [Tukey fences](https://en.wikipedia.org/wiki/Outlier#Tukey's_fences) to identify likely [outliers](https://en.wikipedia.org/wiki/Outlier). Values less that $q1 - k*(q3-q1)$ or greater than $q3 + k*(q3-q1)$, with $k=1.5$, are considered outliers. We have high confidence that these locations indicate sites where elevations have changed between lidar acquisitions. For each bin, we removed these potential outliers and recalculated the quartiles. We then used the resulting Tukey fences to define the upper and lower limit for an LoD.
 
@@ -152,10 +156,9 @@ library(RColorBrewer)
 datafile <- paste0(outbins,"_0.csv")
 e0 <- as.data.table(read.csv(datafile))
 e0 <- e0[, "Aspect" := as.factor(Azimuth)]
-e0 <- e0[, "Gradient" := tan(asin(Slope))]
-e0 <- e0[, "Gradient" := as.factor(Gradient)]
+e0 <- e0[, "Gradient" := as.factor(Slope)]
 
-pq2_slope <- ggplot(e0, aes(x=tan(asin(Slope)), y=Q2, color=Aspect)) + 
+pq2_slope <- ggplot(e0, aes(x=Slope, y=Q2, color=Aspect)) + 
   geom_line(linewidth=1) +
   geom_point(size=2) +
   labs(x = 'Gradient', 
@@ -191,7 +194,7 @@ We use the interquartile range as a measure of the magnitude of random variabili
 #| label: fig-interquartileBefore
 #| fig-cap: "Interquartile range (m) of 2006 and 2017 DTM elevation differencess prior to coregistration, after removal of apparent outliers."
 
-pinter_slope <- ggplot(e0, aes(x=tan(asin(Slope)), y=InterQuartile, color=Aspect)) +
+pinter_slope <- ggplot(e0, aes(x=Slope, y=InterQuartile, color=Aspect)) +
   geom_line(linewidth=1) +
   geom_point(size=2) +
   labs(x = 'Gradient', 
@@ -219,7 +222,7 @@ pinter <- pinter + plot_annotation(title = "Interquartile range (m) prior to cor
 pinter
 ```
 
-In low-gradient terrain, the interquartile range is close to the standard deviation estimated with @eq-DTM above. It then increases with slope steepness. This provides a characterization of the noise in the DoD obtained by subtracting the 2017 lidar DTM from the 2006 lidar DTM.
+In low-gradient terrain, the interquartile range is close to the standard deviation estimated with @eq-DTMerror above. It then increases with slope steepness. This provides a characterization of the noise in the DoD obtained by subtracting the 2017 lidar DTM from the 2006 lidar DTM.
 
 Can we define a function of slope and aspect that reflects the behavior observed in the graphs above? For a single aspect, we see that the median error exhibits a slightly curved dependence with gradient. The slope of that dependence varies with the sine of the aspect. This agrees with what we expect if the two DTMs are offset horizontally. Along the fall line, differences in elevation will be maximum; along a contour, differences will be minimum. We define
 
@@ -256,27 +259,26 @@ e0[, "qmin" := Q1 - k*(Q3-Q1)]
 e0[, "qmax" := Q3 + k*(Q3-Q1)]
 qfit <- as.data.table(read.csv(paste0(outbins,"_fit0.csv")))
 qfit <- qfit[, "Aspect" := as.factor(Azimuth)]
-qfit <- qfit[, "Gradient" := tan(asin(Slope))]
-qfit <- qfit[, "Gradient" := as.factor(Gradient)]
+qfit <- qfit[, "Gradient" := as.factor(Slope)]
 
 p0 <- ggplot() +
   geom_point(data=e0[Aspect==0,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=e0[Aspect==0,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==0,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==0,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==0,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==0,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-1.6,1.6)) +
   labs(title='North',
@@ -285,22 +287,22 @@ p0 <- ggplot() +
 
 p45 <- ggplot() +
     geom_point(data=e0[Aspect==45,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=e0[Aspect==45,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==45,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==45,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==45,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==45,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-1.6,1.6)) +
   labs(title='North East',
@@ -309,22 +311,22 @@ p45 <- ggplot() +
 
  p90 <- ggplot() +
   geom_point(data=e0[Aspect==90,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=e0[Aspect==90,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==90,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==90,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==90,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==90,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-1.6,1.6)) +
   labs(title='East',
@@ -333,22 +335,22 @@ p45 <- ggplot() +
  
  p135 <- ggplot() +
   geom_point(data=e0[Aspect==135,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=e0[Aspect==135,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==135,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==135,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==135,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==135,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-1.6,1.6)) +
   labs(title='South East',
@@ -357,22 +359,22 @@ p45 <- ggplot() +
  
  p180 <- ggplot() +
   geom_point(data=e0[Aspect==180,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=e0[Aspect==180,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==180,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==180,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==180,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==180,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-1.6,1.6)) +
   labs(title='South',
@@ -381,22 +383,22 @@ p45 <- ggplot() +
  
  p225 <- ggplot() +
    geom_point(data=e0[Aspect==225,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=e0[Aspect==225,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==225,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==225,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==225,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==225,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-1.6,1.6)) +
   labs(title='South West',
@@ -405,22 +407,22 @@ p45 <- ggplot() +
  
  p270 <- ggplot() +
    geom_point(data=e0[Aspect==270,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=e0[Aspect==270,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==270,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==270,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==270,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==270,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-1.6,1.6)) +
   labs(title='West',
@@ -429,22 +431,22 @@ p45 <- ggplot() +
    
  p315 <- ggplot() +
    geom_point(data=e0[Aspect==315,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=e0[Aspect==315,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==315,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==315,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==315,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==315,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-1.6,1.6)) +
   labs(title='North West',
@@ -471,10 +473,9 @@ Here are results after coregistration.
 datafile <- paste0(outbins,"_final.csv")
 efinal <- as.data.table(read.csv(datafile))
 efinal <- efinal[, "Aspect" := as.factor(Azimuth)]
-efinal <- efinal[, "Gradient" := tan(asin(Slope))]
-efinal <- efinal[, "Gradient" := as.factor(Gradient)]
+efinal <- efinal[, "Gradient" := as.factor(Slope)]
 
-pq2f_slope <- ggplot(efinal, aes(x=tan(asin(Slope)), y=Q2, color=Aspect)) + 
+pq2f_slope <- ggplot(efinal, aes(x=Slope, y=Q2, color=Aspect)) + 
   geom_line(linewidth=1) +
   geom_point(size=2) +
   labs(x = 'Gradient', 
@@ -509,7 +510,7 @@ This procedure has greatly reduced the systematic differences. Let's look at the
 #| fig-cap: "Interquartile range (m) of 2006 and 2017 DTM elevation differences after coregistration."
 
 efinal[, "InterQuartile" := Q3 - Q1]
-pinterf_slope <- ggplot(efinal, aes(x=tan(asin(Slope)), y=InterQuartile, color=Aspect)) + 
+pinterf_slope <- ggplot(efinal, aes(x=Slope, y=InterQuartile, color=Aspect)) + 
   geom_line(linewidth=1) +
   geom_point(size=2) +
   labs(x = 'Gradient', 
@@ -607,7 +608,7 @@ p
 
 We've narrowed the range of median and mean values and shifted the interquartiles to lower values. Here's the elevation differences after alignment:
 
-![Elevation differences (2017 minus 2006) after coregistration.](images/clipboard-292234770.png){#fig_dif fig-align="center" width="500"}
+![](images/clipboard-1486922337.png){#fig-dif width="500"}
 
 We still see random noise, but the systematic errors aligned with slope aspect are gone. Distinct changes are visible along many stream channels. The curves in @fig-curvesFinal below show the interquarile range and Tukey's fences after coregistration. Note the change in y-axis scale relative to @fig-curves0.
 
@@ -621,27 +622,26 @@ efinal[, "qmin" := Q1 - 1.5*(Q3-Q1)]
 efinal[, "qmax" := Q3 + 1.5*(Q3-Q1)]
 qfit <- as.data.table(read.csv(paste0(outbins,"_fitfinal.csv")))
 qfit <- qfit[, "Aspect" := as.factor(Azimuth)]
-qfit <- qfit[, "Gradient" := tan(asin(Slope))]
-qfit <- qfit[, "Gradient" := as.factor(Gradient)]
+qfit <- qfit[, "Gradient" := as.factor(Slope)]
 
 p0f <- ggplot() +
   geom_point(data=efinal[Aspect==0,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=efinal[Aspect==0,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==0,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==0,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==0,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==0,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-0.6,0.6)) +
   labs(title='North',
@@ -650,22 +650,22 @@ p0f <- ggplot() +
 
 p45f <- ggplot() +
     geom_point(data=efinal[Aspect==45,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=efinal[Aspect==45,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==45,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==45,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==45,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==45,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-0.6,0.6)) +
   labs(title='North East',
@@ -674,22 +674,22 @@ p45f <- ggplot() +
 
 p90f <- ggplot() +
   geom_point(data=efinal[Aspect==90,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=efinal[Aspect==90,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==90,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==90,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==90,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==90,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-0.6,0.6)) +
   labs(title='East',
@@ -698,22 +698,22 @@ p90f <- ggplot() +
  
 p135f <- ggplot() +
   geom_point(data=efinal[Aspect==135,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=efinal[Aspect==135,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==135,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==135,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==135,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==135,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-0.6,0.6)) +
   labs(title='South East',
@@ -722,22 +722,22 @@ p135f <- ggplot() +
  
 p180f <- ggplot() +
   geom_point(data=efinal[Aspect==180,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=efinal[Aspect==180,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==180,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==180,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==180,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==180,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-0.6,0.6)) +
   labs(title='South',
@@ -746,22 +746,22 @@ p180f <- ggplot() +
  
 p225f <- ggplot() +
    geom_point(data=efinal[Aspect==225,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=efinal[Aspect==225,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==225,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==225,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==225,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==225,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-0.6,0.6)) +
   labs(title='South West',
@@ -770,22 +770,22 @@ p225f <- ggplot() +
  
 p270f <- ggplot() +
    geom_point(data=efinal[Aspect==270,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=efinal[Aspect==270,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==270,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==270,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==270,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==270,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-0.6,0.6)) +
   labs(title='West',
@@ -794,22 +794,22 @@ p270f <- ggplot() +
    
  p315f <- ggplot() +
    geom_point(data=efinal[Aspect==315,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_point(data=efinal[Aspect==315,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=qfit[Aspect==315,],
-            aes(x=tan(asin(Slope)),y=Q1fit),
+            aes(x=Slope,y=Q1fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==315,],
-            aes(x=tan(asin(Slope)),y=Q3fit),
+            aes(x=Slope,y=Q3fit),
             linewidth=0.5) +
   geom_line(data=qfit[Aspect==315,],
-            aes(x=tan(asin(Slope)),y=Qmin),
+            aes(x=Slope,y=Qmin),
             linewidth=1) +
   geom_line(data=qfit[Aspect==315,],
-            aes(x=tan(asin(Slope)),y=Qmax),
+            aes(x=Slope,y=Qmax),
             linewidth=1) +
   coord_cartesian(y=c(-0.6,0.6)) +
   labs(title='North West',
@@ -881,10 +881,9 @@ ecanopy <- as.data.table(read.csv(paste0(outbins,"_canopy.csv")))
 ecanopy[, "qmin" := 2.5*Q1fit - 1.5*Q3fit]
 ecanopy[, "qmax" := 2.5*Q3fit - 1.5*Q1fit]
 ecanopy <- ecanopy[, "Tree" := as.factor(Height)]
-ecanopy <- ecanopy[, "Gradient" := tan(asin(Slope))]
-ecanopy <- ecanopy[, "Gradient" := as.factor(Gradient)]
+ecanopy <- ecanopy[, "Gradient" := as.factor(Slope)]
 
-pinterc_slope <- ggplot(ecanopy, aes(x=tan(asin(Slope)), y=InterQuartile, color=Tree)) + 
+pinterc_slope <- ggplot(ecanopy, aes(x=Slope, y=InterQuartile, color=Tree)) + 
   geom_line(linewidth=1) +
   geom_point(size=2) +
   labs(x = 'Gradient', 
@@ -893,7 +892,7 @@ pinterc_slope <- ggplot(ecanopy, aes(x=tan(asin(Slope)), y=InterQuartile, color=
   scale_color_brewer(palette = 'Spectral',
                      labels=c("< 2","5","10","15","20","25","30","35","40",">40")) +
   scale_x_continuous(labels=scales::percent) +
-  coord_cartesian(y=c(0.1,0.31))
+  coord_cartesian(y=c(0.0,0.45))
 
 pinterc_canopy <- ggplot(ecanopy, aes(x=Height, y=InterQuartile, color=Gradient)) + 
   geom_line(linewidth=1) +
@@ -903,7 +902,7 @@ pinterc_canopy <- ggplot(ecanopy, aes(x=Height, y=InterQuartile, color=Gradient)
   theme(legend.position="right") +
   scale_color_brewer(palette = 'Spectral',
                      labels=c("0-15%", "15-30%", "30-45%", "45-60%", "60-75%", "75-90%", "90-105%")) +
-  coord_cartesian(y=c(0.1,0.31))
+  coord_cartesian(y=c(0.0,0.45))
 
 pinterc <- pinterc_slope / pinterc_canopy
 pinterc <- pinterc + plot_annotation(title = "Interquartile range (m) after coregistration",
@@ -911,19 +910,17 @@ pinterc <- pinterc + plot_annotation(title = "Interquartile range (m) after core
 pinterc
 ```
 
-The upper panel in @fig-interquartileCanopy shows the increase in interquartile range with hillslope gradient; the lower panel shows a slight increase in interquartile range with canopy height. To characterize the combined hillslope-gradient and canopy-height dependence, we fit the $q_1$ and $q_3$ values over all gradient-canopy height bins with an equation of the form:
+The upper panel in @fig-interquartileCanopy shows the increase in interquartile range with hillslope gradient; the lower panel shows a slight increase in interquartile range with canopy height. To characterize the combined hillslope-gradient and canopy-height dependence, we fit the $q_1$ and $q_3$ values over all gradient-canopy height bins with an equation quadratic in both canopy height H and hillslope gradient $\theta$:
 
 $$
-q = (\beta_0 + \beta_1 \theta + \beta_2 \theta^2) + (\beta_3 + \beta_4 \theta + \beta_5 \theta^2)H
-$$ {#eq-byCanopy}
-
-where $\theta$ is hillslope gradient and $H$ is canopy height. @fig-curvesCanopy below shows the interquartile range and Tukey fences as functions of canopy height for a range of gradient interval. The black circles show $q_1$ and $q_3$ from the binned $\Delta e$ values, the thin black lines show the curves fit to the $q_1$ and $q_3$ values using @eq-byCanopy, and the thick black lines show the Tukey fences with $k=1.5$.
+q = (\beta_0 + \beta_1 \theta + \beta_2 \theta^2) + (\beta_3 + \beta_4 H + \beta_5 H^2) + \beta_6 H \theta + \beta_7H^2\theta + \beta_8H\theta^2 + \beta_9H^2\theta^2
+$$ {#eq-byCanopy}@fig-curvesCanopy below shows the interquartile range and Tukey fences as functions of canopy height for a range of gradient interval. The black circles show $q_1$ and $q_3$ from the binned $\Delta e$ values, the thin black lines show the curves fit to the $q_1$ and $q_3$ values using @eq-byCanopy, and the thick black lines show the Tukey fences with $k=1.5$.
 
 ```{r}
 #| label: fig-curvesCanopy
 #| fig-cap: "The interquartile range and LoD (Tukey's fences with k=1.5) plotted as a function of canopy height for different increments in hillslope gradient."
 #| warning: false
-#| fig-height: 9.5
+#| fig-height: 10.5
 
 g1 <- ecanopy[,Gradient[1]]
 p1c <- ggplot() +
@@ -952,7 +949,8 @@ p1c <- ggplot() +
   labs(title='Gradient 5%',
        x = "Tree Height (m)",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6))
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6))
 
 g2 <- ecanopy[,Gradient[11]]
 p2c <- ggplot() +
@@ -981,7 +979,8 @@ p2c <- ggplot() +
   labs(title='Gradient 15%',
        x = "Tree Height (m)",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6))
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6))
 
 g3 <- ecanopy[,Gradient[21]]
 p3c <- ggplot() +
@@ -1010,7 +1009,8 @@ p3c <- ggplot() +
   labs(title='Gradient 26%',
        x = "Tree Height (m)",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6))
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6))
 
 g4 <- ecanopy[,Gradient[31]]
 p4c <- ggplot() +
@@ -1039,7 +1039,8 @@ p4c <- ggplot() +
   labs(title='Gradient 38%',
        x = "Tree Height (m)",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6))
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6))
 
 g5 <- ecanopy[,Gradient[41]]
 p5c <- ggplot() +
@@ -1068,7 +1069,8 @@ p5c <- ggplot() +
   labs(title='Gradient 51%',
        x = "Tree Height (m)",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6))
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6))
 
 g6 <- ecanopy[,Gradient[51]]
 p6c <- ggplot() +
@@ -1097,7 +1099,8 @@ p6c <- ggplot() +
   labs(title='Gradient 67%',
        x = "Tree Height (m)",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6))
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6))
 
 g7 <- ecanopy[,Gradient[61]]
 p7c <- ggplot() +
@@ -1126,7 +1129,8 @@ p7c <- ggplot() +
   labs(title='Gradient 87%',
        x = "Tree Height (m)",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6))
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6))
 
 p1 <- p1c + p2c
 p2 <- p3c + p4c
@@ -1146,181 +1150,187 @@ p5
 h1 <- ecanopy[,Tree[1]]
 p1c <- ggplot() +
   geom_point(data=ecanopy[Tree == h1,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_line(data=ecanopy[Tree == h1,],
-              aes(x=tan(asin(Slope)),y=Q1fit),
+              aes(x=Slope,y=Q1fit),
               color="black",
               linewidth=0.5) +
   geom_point(data=ecanopy[Tree == h1,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=ecanopy[Tree == h1,],
-              aes(x=tan(asin(Slope)),y=Q3fit),
+              aes(x=Slope,y=Q3fit),
               color="black",
               linewidth=0.5) +
   geom_line(data=ecanopy[Tree == h1,],
-            aes(x=tan(asin(Slope)),y=qmin),
+            aes(x=Slope,y=qmin),
             color="black",
             linewidth=1.5) +
   geom_line(data=ecanopy[Tree == h1,],
-            aes(x=tan(asin(Slope)),y=qmax),
+            aes(x=Slope,y=qmax),
             color="black",
             linewidth=1.5) +
   labs(title='Tree Height 0.2m',
        x = "Gradient",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6)) +
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6)) +
   scale_x_continuous(labels=scales::percent)
 
 h3 <- ecanopy[, Tree[3]]
 p3c <- ggplot() +
   geom_point(data=ecanopy[Tree == h3,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_line(data=ecanopy[Tree == h3,],
-              aes(x=tan(asin(Slope)),y=Q1fit),
+              aes(x=Slope,y=Q1fit),
               color="black",
               linewidth=0.5) +
   geom_point(data=ecanopy[Tree == h3,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=ecanopy[Tree == h3,],
-              aes(x=tan(asin(Slope)),y=Q3fit),
+              aes(x=Slope,y=Q3fit),
               color="black",
               linewidth=0.5) +
   geom_line(data=ecanopy[Tree == h3,],
-            aes(x=tan(asin(Slope)),y=qmin),
+            aes(x=Slope,y=qmin),
             color="black",
             linewidth=1.5) +
   geom_line(data=ecanopy[Tree == h3,],
-            aes(x=tan(asin(Slope)),y=qmax),
+            aes(x=Slope,y=qmax),
             color="black",
             linewidth=1.5) +
   labs(title='Tree Height 10m',
        x = "Gradient",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6)) +
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6)) +
   scale_x_continuous(labels=scales::percent)
 
 h5 <- ecanopy[, Tree[5]]
 p5c <- ggplot() +
   geom_point(data=ecanopy[Tree == h5,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_line(data=ecanopy[Tree == h5,],
-              aes(x=tan(asin(Slope)),y=Q1fit),
+              aes(x=Slope,y=Q1fit),
               color="black",
               linewidth=0.5) +
   geom_point(data=ecanopy[Tree == h5,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=ecanopy[Tree == h5,],
-              aes(x=tan(asin(Slope)),y=Q3fit),
+              aes(x=Slope,y=Q3fit),
               color="black",
               linewidth=0.5) +
   geom_line(data=ecanopy[Tree == h5,],
-            aes(x=tan(asin(Slope)),y=qmin),
+            aes(x=Slope,y=qmin),
             color="black",
             linewidth=1.5) +
   geom_line(data=ecanopy[Tree == h5,],
-            aes(x=tan(asin(Slope)),y=qmax),
+            aes(x=Slope,y=qmax),
             color="black",
             linewidth=1.5) +
   labs(title='Tree Height 20m',
        x = "Gradient",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6)) +
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6)) +
   scale_x_continuous(labels=scales::percent)
 
 h7 <- ecanopy[, Tree[7]]
 p7c <- ggplot() +
   geom_point(data=ecanopy[Tree == h7,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_line(data=ecanopy[Tree == h7,],
-              aes(x=tan(asin(Slope)),y=Q1fit),
+              aes(x=Slope,y=Q1fit),
               color="black",
               linewidth=0.5) +
   geom_point(data=ecanopy[Tree == h7,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=ecanopy[Tree == h7,],
-              aes(x=tan(asin(Slope)),y=Q3fit),
+              aes(x=Slope,y=Q3fit),
               color="black",
               linewidth=0.5) +
   geom_line(data=ecanopy[Tree == h7,],
-            aes(x=tan(asin(Slope)),y=qmin),
+            aes(x=Slope,y=qmin),
             color="black",
             linewidth=1.5) +
   geom_line(data=ecanopy[Tree == h7,],
-            aes(x=tan(asin(Slope)),y=qmax),
+            aes(x=Slope,y=qmax),
             color="black",
             linewidth=1.5) +
   labs(title='Tree Height 30m',
        x = "Gradient",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6)) +
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6)) +
   scale_x_continuous(labels=scales::percent)
 
 h9 <- ecanopy[, Tree[9]]
 p9c <- ggplot() +
   geom_point(data=ecanopy[Tree == h9,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_line(data=ecanopy[Tree == h9,],
-              aes(x=tan(asin(Slope)),y=Q1fit),
+              aes(x=Slope,y=Q1fit),
               color="black",
               linewidth=0.5) +
   geom_point(data=ecanopy[Tree == h9,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=ecanopy[Tree == h9,],
-              aes(x=tan(asin(Slope)),y=Q3fit),
+              aes(x=Slope,y=Q3fit),
               color="black",
               linewidth=0.5) +
   geom_line(data=ecanopy[Tree == h9,],
-            aes(x=tan(asin(Slope)),y=qmin),
+            aes(x=Slope,y=qmin),
             color="black",
             linewidth=1.5) +
   geom_line(data=ecanopy[Tree == h9,],
-            aes(x=tan(asin(Slope)),y=qmax),
+            aes(x=Slope,y=qmax),
             color="black",
             linewidth=1.5) +
   labs(title='Tree Height 40m',
        x = "Gradient",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6)) +
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6)) +
   scale_x_continuous(labels=scales::percent)
 
 h10 <- ecanopy[, Tree[10]]
 p10c <- ggplot() +
   geom_point(data=ecanopy[Tree == h10,],
-             aes(x=tan(asin(Slope)),y=Q1),
+             aes(x=Slope,y=Q1),
              size=2) +
   geom_line(data=ecanopy[Tree == h10,],
-              aes(x=tan(asin(Slope)),y=Q1fit),
+              aes(x=Slope,y=Q1fit),
               color="black",
               linewidth=0.5) +
   geom_point(data=ecanopy[Tree == h10,],
-             aes(x=tan(asin(Slope)),y=Q3),
+             aes(x=Slope,y=Q3),
              size=2) +
   geom_line(data=ecanopy[Tree == h10,],
-              aes(x=tan(asin(Slope)),y=Q3fit),
+              aes(x=Slope,y=Q3fit),
               color="black",
               linewidth=0.5) +
   geom_line(data=ecanopy[Tree == h10,],
-            aes(x=tan(asin(Slope)),y=qmin),
+            aes(x=Slope,y=qmin),
             color="black",
             linewidth=1.5) +
   geom_line(data=ecanopy[Tree == h10,],
-            aes(x=tan(asin(Slope)),y=qmax),
+            aes(x=Slope,y=qmax),
             color="black",
             linewidth=1.5) +
   labs(title='Tree Height 60m',
        x = "Gradient",
        y = "Qmin - Q1 -- Q3 - Qmax") +
-  coord_cartesian(y=c(-0.6,0.6)) +
+  theme(plot.title = element_text(size=12)) +
+  coord_cartesian(y=c(-0.64,0.6)) +
   scale_x_continuous(labels=scales::percent)
 
 p1 <- p1c + p3c
@@ -1330,9 +1340,33 @@ p6 <- p1 / p2 / p3 + plot_layout(heights=unit(c(1.5,1.5,1.5),c("in","in","in")))
 p6
 ```
 
-The variation of interquartile range with gradient (\~20cm) is considerabley greater than that associated with canopy height (\~5cm). These curves account for both effects.
+Variability in the range of elevation differences varies with both hillslope gradient and forest-canopy height. These curves account for both effects.
 
-We are using the LoD defined by these graphs to identify "stable" locations where elevations have probably not changed between the 2006 and 2017 lidar acquisitions. We used the elevation differences over these stable locations to solve for the horizontal ($\Delta x, \Delta y$) and vertical ($\Delta z$) shifts needed to bring the 2017 DTM into alignment with the 2006 DTM, using @eq-shifts2. The range spanned by this LoD, ± 0.5m, is sufficient, however, to include things like flood plain or fan aggradation. Likewise, there may be systematic biases in the random errors associated with lidar signal reflections from vegetation interpreted as ground returns. A plantation that grows 2 meters over that 11 years may generate larger mean positive errors in 2017 DTM elevations than in 2006 DTM elevations, resulting in a positive bias in elevation differences measured over that area. Likewise, an area harvested between 2006 and 2017 will generate a negative bias. Aerially extensive small changes in elevation and systematic changes in vegetation height and density will affect the results we obtain in solving @eq-shifts2. We have not yet attempted to identify or remove those biases.
+We are using the LoD defined by these graphs to identify "stable" locations where elevations have probably not changed between the 2006 and 2017 lidar acquisitions. We used the elevation differences over these stable locations to solve for the horizontal ($\Delta x, \Delta y$) and vertical ($\Delta z$) shifts needed to bring the 2017 DTM into alignment with the 2006 DTM, using @eq-shifts2. The range spanned by this LoD, ± 0.5m, is sufficient, however, to include things like flood plain or fan aggradation.
+
+There may stil be systematic biases in the random errors associated with lidar signal reflections from vegetation interpreted as ground returns. A plantation that grows 2 meters over that 11 years may generate larger mean positive errors in 2017 DTM elevations than in 2006 DTM elevations, resulting in a positive bias in elevation differences measured over that area. Likewise, an area harvested between 2006 and 2017 will generate a negative bias. @fig-DeltaH below shows quartiles of $\Delta e$ measured over 5-meter increments of canopy-height change between 2006 and 2007. Negative $\Delta H$ values indicate a loss of canopy (timber harvest) or vegetation (mowing of a pasture). Positive values indicate canopy or vegetation growth.
+
+```{r}
+#| label: fig-DeltaH
+#| fig-cap: "First, second, and third quartiles of Δe for increments of change in canopy height (ΔH) between 2006 and 2007."
+data <- as.data.table(read.csv(paste0(outbins, "_dzbyDelH.csv")))
+data[, "qmin" := Q1 - 1.5*(Q3-Q1)]
+data[, "qmax" := Q3 + 1.5*(Q3-Q1)]
+data_wide <- melt(data, id.vars = "DelH", measure.vars = c("qmin", "Q1", "Q2", "Q3", "qmax"))
+p_delH <- ggplot() +
+  geom_point(data=data_wide[variable=="Q1" | variable=="Q2" | variable=="Q3",],aes(x=DelH, y = value, color=variable), size=3) +
+  geom_smooth(data=data_wide[variable=="Q1",], aes(x=DelH, y=value, color=variable), method="lm", se=FALSE, linewidth=1.2) +
+  geom_smooth(data=data_wide[variable=="Q2",], aes(x=DelH, y=value, color=variable), method="lm", se=FALSE, linewidth=1.2) + 
+  geom_smooth(data=data_wide[variable=="Q3",], aes(x=DelH, y=value, color=variable), method="lm",se=FALSE, linewidth=1.2) +
+  coord_cartesian(x=c(-30,20)) +
+  labs(title="Quartiles of Δe for 5-m increments in ΔH",
+       x = "ΔH (change in canopy height in meters)",
+       y = "Δe in meters") +
+  theme(legend.title = element_blank())
+p_delH
+```
+
+We see a slight trend for increasing $\Delta e$ values moving from negative to positive $\Delta H$ values. This is consistent with the expectation that a loss of canopy (negative $\Delta H$) will generate a negative bias and that canopy growth will generate a positive bias. The deviation is small, on the order of 5 cm. However, this observation prompted inclusion of the $\Delta H$ term in @eq-shifts2.
 
 Next: identify landslide scars using the DoD.
 
