@@ -1,10 +1,12 @@
 ---
-title: "Coregistration"
+title: "Coregistration" {#sec-coregistration}
 author: "Dan"
 date: today
-format: html
-#format: gfm
-#format: docx
+format: 
+  html:
+    code-fold: true
+  docx: default
+  pdf: default
 editor: visual
 execute:
   echo: false
@@ -18,7 +20,7 @@ Our goal is to identify landslide sites using changes in ground-surface elevatio
 
 [^1]: The terms "DEM", for Digital Elevation Model, and "DTM", for Digital Terrain Model, are not used consistently in the literature (e.g., see [Wikipedia](https://en.wikipedia.org/wiki/Digital_elevation_model)). We are using the term "DTM" because that is the term used on the Washington Lidar Portal. These DTMs are intended to represent the ground surface with all overlying vegetation and buildings removed.
 
-In using two (or more) lidar data sets to detect elevation change, it is necessary to ensure that the data sets are spatially aligned [@cucchiaro2020]. Differences in spatial registration between the data sets will produce systematic errors in measured elevation differences. In the study design, we described approaches that have been used for co-registration of lidar datasets. These involve two strategies:
+In using two (or more) lidar data sets to detect elevation change, it is necessary to ensure that the data sets are spatially aligned [@cucchiaro2020]. Differences in spatial registration will produce systematic errors in measured elevation differences. In the study design, we described approaches that have been used for co-registration of lidar datasets. These involve two strategies:
 
 -   Co-register the lidar point-cloud ground returns, then build the two DTMs.
 
@@ -32,7 +34,7 @@ The magnitude of these errors and uncertainty affect the confidence we can place
 
 In the next sections we describe a method for estimating an LoD value and using it to guide co-registration of the two DTMs and identification of landslide scars and deposits.
 
-# Coregistration {#sec-coregister}
+# Aligning one DTM to another {#sec-coregister}
 
 Consider two DTMs for the same site. One may be slightly shifted horizontally and vertically from the other, and/or slightly tilted or rotated. Over all or some portion of the DTMs, we can seek to shift and rotate one so as to minimize differences with the other [@d.rosenholm1988]. We assume that, over the spatial extents of aerial lidar acquisitions (as opposed to those of satellite-acquired lidar), registration of the point clouds and derived surface models is sufficiently accurate that differences in the tilt and rotation of the coordinate systems is minimal. We focus on a linear displacement of one DTM from the other by an amount $\Delta x, \Delta y, \Delta z$. We express the elevation difference $\Delta e_i$ between the two DTMs at a grid-point $i$ as
 
@@ -93,8 +95,9 @@ library(TerrainWorksUtils)
 library(stringr)
 
 inputPath <- "c:/work/data/postmortem/"
+outOutlier <- paste0(inputPath, "outlierN0")
 refDTM <- paste0(inputPath, "elev_2006N.flt") # reference DTM, pre landslide
-alignDTM <- paste0(inputPath, "elev_2017N.flt") # DTM to be aligned, post landslide
+alignDTM <- paste0(inputPath, "elev_2017N.flt") # DTM to align, post  landslide
 refDSM <- paste0(inputPath, "dsm2006N.flt") # reference DSM, pre landslide
 alignDSM <- paste0(inputPath, "dsm2017N.flt") # DSM to be aligned, post landslide
 iterations <- 4 # number of times to repeat the alignment calculation
@@ -110,35 +113,36 @@ maxSlope <- 1.0 # maximum slope gradient to include in bins
 nAzimuth <- 8 # number of aspect bins
 outbins <- paste0(inputPath, "outbins0") # output csv file names
 outDif <- paste0(inputPath, "difN0") # output difference raster
-outOutlier <- paste0(inputPath, "outlierN0")
 scratch_dir <- "c:/work/scratch"
 executable_dir <- "c:/work/sandbox/gridutilities/projects/align/x64/release/"
 program_name = "align"
 
-returnCode <- TerrainWorksUtils::align(refDTM,
-               alignDTM,
-               refDSM,
-               alignDSM,
-               iterations,
-               k,
-               dampener,
-               outDTM,
-               tileNx,
-               tileNy,
-               overlap,
-               radius,
-               nslope,
-               maxSlope,
-               nAzimuth,
-               outbins,
-               outDif,
-               outOutlier,
-               scratch_dir,
-               executable_dir,
-               program_name)
+if (!file.exists(paste0(outOutlier, ".flt"))) {
+  returnCode <- TerrainWorksUtils::align(refDTM,
+                                   alignDTM,
+                                   refDSM,
+                                   alignDSM,
+                                   iterations,
+                                   k,
+                                   dampener,
+                                   outDTM,
+                                   tileNx,
+                                   tileNy,
+                                   overlap,
+                                   radius,
+                                   nslope,
+                                   maxSlope,
+                                   nAzimuth,
+                                   outbins,
+                                   outDif,
+                                   outOutlier,
+                                   scratch_dir,
+                                   executable_dir,
+                                   program_name)
 
-if (returnCode != 0) {
-  stop("Error in align")
+  if (returnCode != 0) {
+    stop("Error in align")
+  }
 }
 ```
 
