@@ -141,7 +141,7 @@ if (!file.exists(paste0(outOutlier, ".flt"))) {
                                    program_name)
 
   if (returnCode != 0) {
-    stop("Error in align")
+    stop("Error in HuntLS")
   }
 }
 ```
