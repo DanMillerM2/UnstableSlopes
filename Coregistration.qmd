@@ -9,7 +9,6 @@ format:
   pdf: default
 editor: visual
 execute:
-  echo: false
   warning: false
 bibliography: references.bib
 ---
@@ -846,7 +845,7 @@ The first of these is illustrated in @fig-groundReturns and @fig-density below.
 
 ![The left panel shows the number of lidar ground returns within each cell of the 2006 DTM (3-foot DTM point spacing). The right panel zooms into the area within the box of the left panel. Black dots indicate ground returns.](images/clipboard-1515199096.png){#fig-groundReturns fig-cap="Left panel shows the number of lidar ground returns within each cell of the 2006 DTM (3-foot DTM point spacing). Right panel zooms into the area within the box of the left panel. Black dots indicate ground returns."}
 
-![The left panel shows the ground-return point density for the 2006 lidar measured over a 7.5-m radius. The right panel shows an areal view of the area in the summer of 2006. Low point densities (blues) align with unforested fields and clearcuts.](images/clipboard-1076959254.png){#fig-density}
+![The left panel shows the ground-return point density for the 2006 lidar measured over a 7.5-m radius. The right panel shows an areal view of the area in the summer of 2006. Low point densities (blues) align with forested areas, high point densities (red) align with fields and clearcuts.](images/clipboard-1076959254.png){#fig-density}
 
 Variation in ground-return spacing results in variable-sized gaps with no returns and variable spatial density in the number of signals per DTM cell. The bar chart in @fig-barChart below shows the proportion of all cells in the 2006 DTM that overlapped the 2017 DTM containing a given number of ground returns.
 
@@ -918,7 +917,9 @@ The upper panel in @fig-interquartileCanopy shows the increase in interquartile 
 
 $$
 q = (\beta_0 + \beta_1 \theta + \beta_2 \theta^2) + (\beta_3 + \beta_4 H + \beta_5 H^2) + \beta_6 H \theta + \beta_7H^2\theta + \beta_8H\theta^2 + \beta_9H^2\theta^2
-$$ {#eq-byCanopy}@fig-curvesCanopy below shows the interquartile range and Tukey fences as functions of canopy height for a range of gradient interval. The black circles show $q_1$ and $q_3$ from the binned $\Delta e$ values, the thin black lines show the curves fit to the $q_1$ and $q_3$ values using @eq-byCanopy, and the thick black lines show the Tukey fences with $k=1.5$.
+$$ {#eq-byCanopy}
+
+@fig-curvesCanopy below shows the interquartile range and Tukey fences as functions of canopy height for a range of gradient interval. The black circles show $q_1$ and $q_3$ from the binned $\Delta e$ values, the thin black lines show the curves fit to the $q_1$ and $q_3$ values using @eq-byCanopy, and the thick black lines show the Tukey fences with $k=1.5$.
 
 ```{r}
 #| label: fig-curvesCanopy
