@@ -1,5 +1,5 @@
 ---
-title: "Coregistration" {#sec-coregistration}
+title: "Coregistration"
 author: "Dan"
 date: today
 format: 
@@ -52,7 +52,7 @@ For example, if the ground-surface gradient at the center point were 80% on a no
 ::: callout-note
 We found, however, that $\Delta z$ was not constant with location, but varied nonlinearly with hillslope gradient $\theta$ and varied with changes in forest-canopy height $\Delta H$ (see @sec-CanopyEffects below). We therefore modified @eq-shifts to: $$
 \Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + ((\beta_0 + \beta_1\theta + \beta_2\theta^2) + (\beta_3 + \beta_4\theta)\Delta H))
-$$ {#eq-shifts2}
+$$ \$\$ {#eq-shifts2}
 
 The $\Delta x$ and $\Delta y$ terms determine the horizontal shift needed to align the DTMs, the $(\beta_0 + \beta_1\theta + \beta_2\theta^2)$ term determines the hillslope-gradient-dependent vertical shift, and the $(\beta_3 + \beta_4\theta)\Delta H)$ term accounts for systematic errors associated with changes in canopy height from forest growth and timber harvest, and for variations in vegetation height in agricultural areas, between the time of the two lidar acquisitions.
 :::
@@ -88,8 +88,6 @@ The calculations are performed by program Align[^3].
 [^3]: Program Align is included in the [Netstream](https://danmillerm2.github.io/NetStream_Doc/) suite of Fortran programs.
 
 ```{r}
-# Run program Align. This code chunk calls an R wrapper for running the program.
-
 library(TerrainWorksUtils)
 library(stringr)
 
