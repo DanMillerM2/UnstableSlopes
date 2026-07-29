@@ -1,0 +1,91 @@
+---
+title: "Mosaic_Reproject_DTM"
+author: "Elise Freeman"
+format: html
+editor: visual
+---
+
+## Mosaic & Reproject DTM
+
+Mosaic DTM tiles (downloaded from lidar portal), convert vertical units to meters, and reproject to NAD 1983 HARN StatePlane Washington South FIPS 4602 (Meters) \[EPSG:2856\]
+
+Requires terra package \[install.packages("terra")\]
+
+## Inputs
+
+```{r}
+library(terra)
+# Folder containing the individual DTM tiles
+input_dir   <- "path/to/DTMs"
+# File pattern to match your tiles
+file_pattern <- "\\.tif$"
+
+# Output folder
+output_dir <- "path/to/output/location"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+# Target CRS: NAD83(HARN) / Washington South (Meters)
+target_crs <- "EPSG:2856"
+
+# Vertical unit conversion factor.
+# If DTM is already in meters, set to 1 (no-op) and skip the calc step.
+ft_to_m <- 0.3048   
+```
+
+## Mosaic tiles & convert vertical units
+
+Can specify mosaic operator in bottom code chunk if you want something other than mean/blend.
+
+```{r}
+tile_files <- list.files(input_dir, pattern = file_pattern,
+                         full.names = TRUE, ignore.case = TRUE)
+
+if (length(tile_files) == 0) {
+  stop("No tiles found in input_dir matching file_pattern. Check the path/pattern.")
+}
+
+
+# Read all tiles into a SpatRasterCollection (better to use for large number of tiles)
+tile_list <- lapply(tile_files, rast)
+rsrc <- sprc(tile_list)
+
+# Mosaic. fun options: "mean" (default, blends overlaps), "min", "max",
+# "median", "first" (use first raster's value where tiles overlap)
+message("Mosaicking tiles...")
+dtm_mosaic <- mosaic(rsrc, fun = "mean")
+
+names(dtm_mosaic) <- "elevation"
+```
+
+Then convert vertical units
+
+```{r}
+dtm_mosaic_m <- dtm_mosaic * ft_to_m
+```
+
+Reproject to NAD83 Harn Stateplane WA South FIPS 4602 (meters) with bilinear resampling
+
+```{r}
+dtm_final <- project(dtm_mosaic_m, target_crs, method = "bilinear")
+```
+
+Write output
+
+```{r}
+out_path <- file.path(output_dir, "dtm_mosaic_m_epsg2856.tif")
+
+writeRaster(
+  dtm_final,
+  out_path,
+  overwrite  = TRUE,
+  datatype   = "FLT4S",              # 32-bit float
+  gdal       = c("COMPRESS=LZW", "TILED=YES")
+)
+```
+
+Quick check to see if it worked
+
+```{r}
+print(dtm_final)
+plot(dtm_final, main = "Mosaicked DTM (meters) - EPSG:2856")
+```
