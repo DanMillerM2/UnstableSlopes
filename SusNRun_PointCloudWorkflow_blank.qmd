@@ -1,0 +1,194 @@
+---
+title: "SusNRunPointCloud_Workflow"
+author: "Elise Freeman"
+format: html
+editor: visual
+---
+
+## Point Cloud Pre-Processing Workflow
+
+1.  Merge LAZ tiles from a directory
+
+2.  Filter ground returns (Classification == 2) and write to a GeoPackage as a point feature class
+
+3.  Compute a point density raster from ground return points (target pixel size = 3 m)
+
+4.  Reproject density (and raw count) rasters to EPSG:2856
+
+Requires: lasR, terra, sf
+
+For terra and sf: install.packages(c("terra", "sf"))
+
+lasR is not on CRAN (by design, not due to archival)
+
+Install with: install.packages("lasR", repos = "[https://r-lidar.r-universe.dev")](https://r-lidar.r-universe.dev%22))
+
+## Inputs
+
+```{r}
+library(lasR)
+library(terra)
+library(sf)
+
+# Folder containing the laZ files
+input_dir   <- "path/to/laz"
+
+# Output folder
+output_dir <- "path/to/output/location"
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)
+
+merged_las_path <- file.path(output_dir, "merged.laz")
+
+# Path to geopackage output location
+gpkg_path  <- file.path(output_dir, "ground_points.gpkg")
+gpkg_layer <- "ground_points"
+
+density_tif_native_path <- file.path(output_dir, "ground_density_native_crs.tif")
+density_tif_2856_path   <- file.path(output_dir, "ground_density_epsg2856.tif")
+count_tif_native_path   <- file.path(output_dir, "ground_count_native_crs.tif")
+count_tif_2856_path     <- file.path(output_dir, "ground_count_epsg2856.tif")
+
+
+target_pixel_size_m <- 3 #in meters
+target_crs <- "EPSG:2856"  # NAD83(HARN) / Washington South (Meters)
+```
+
+## Merge laz tiles
+
+Merges individual laz tiles into one file
+
+```{r}
+las_files <- list.files(input_dir, pattern = "\\.(laz|las)$",
+                        full.names = TRUE, ignore.case = TRUE)
+
+if (length(las_files) == 0) {
+  stop("No LAS/LAZ files found in input_dir. Check the path.")
+}
+
+read      <- reader_las()
+write_out <- write_las(merged_las_path)   # no "*" -> single merged file
+merge_pipeline <- read + write_out
+
+exec(merge_pipeline, on = las_files)
+message("Merged point cloud written to: ", merged_las_path) #just tells you that it worked and where to find it
+```
+
+This detects the native CRS and units of the las file, which are needed for the GeoPackage and density raster.
+
+```{r}
+read_probe <- reader_las()
+probe_pipeline <- read_probe + lasR::rasterize(1, "count")  # res=1 just to read CRS
+probe_rast <- exec(probe_pipeline, on = merged_las_path)
+
+native_crs <- st_crs(probe_rast)
+native_units <- native_crs$units_gdal
+if (is.null(native_units)) {
+  stop("Could not determine linear units of the LAS file's CRS. ",
+       "Check that the point cloud has a valid projected CRS assigned.")
+}
+message("Detected native CRS units: ", native_units)
+
+is_us_survey_feet <- grepl("us survey", native_units, ignore.case = TRUE)
+is_feet           <- grepl("foot", native_units, ignore.case = TRUE)
+
+if (is_us_survey_feet) {
+  native_res <- target_pixel_size_m * (3937 / 1200)   # US survey foot
+} else if (is_feet) {
+  native_res <- target_pixel_size_m / 0.3048            # international foot
+} else {
+  native_res <- target_pixel_size_m                     # already metres
+}
+message("Native-CRS resolution corresponding to ", target_pixel_size_m,
+        " m pixels: ", round(native_res, 6), " (", native_units, ")")
+```
+
+## Filter Ground Returns & Write GeoPackage
+
+(Classification == 2)
+
+```{r}
+extract_points <- function(data) return(data)
+read_all <- reader_las()
+cb       <- callback(extract_points, expose = "xyzc", no_las_update = TRUE)
+read_pipeline <- read_all + cb
+
+all_df <- exec(read_pipeline, on = merged_las_path)
+
+if (is.null(all_df)) {
+  stop("exec() returned NULL when reading the merged point cloud. ",
+       "Check that merged_las_path exists and is a valid, non-empty ",
+       "LAS/LAZ file.")
+}
+if (is.list(all_df) && !is.data.frame(all_df)) {
+  message("exec() returned a list; combining chunks into one data.frame...")
+  all_df <- do.call(rbind, all_df)
+}
+
+message("Read ", nrow(all_df), " total points. Columns: ",
+        paste(names(all_df), collapse = ", "))
+if (!"Classification" %in% names(all_df)) {
+  stop("all_df has no 'Classification' column. Columns found: ",
+       paste(names(all_df), collapse = ", "),
+       ". Check the expose= argument on callback().")
+}
+
+if (nrow(ground_df) == 0) {
+  stop("No points with Classification == 2 found. Is the point cloud ",
+       "already ground-classified?")
+}
+
+# Build point geometries in the native CRS first, then a reprojected copy for the GeoPackage output.
+ground_sf_native <- st_as_sf(ground_df, coords = c("X", "Y"), crs = native_crs)
+ground_sf_2856   <- st_transform(ground_sf_native, target_crs)
+
+st_write(ground_sf_2856, gpkg_path, layer = gpkg_layer,
+         driver = "GPKG", delete_layer = TRUE)
+message("Ground return points written to: ", gpkg_path,
+        " (layer: ", gpkg_layer, ")")
+```
+
+## Create Point Density Raster
+
+Ground points only. Rasterizes the ground-only points directly with terra, using a template raster at native_res (native CRS units) so density matches the intended 3m pixel size once reprojected.
+
+```{r}
+ground_vect <- vect(ground_sf_native)
+
+# Template raster spanning the ground points' extent, at native_res
+template <- rast(ground_vect, resolution = native_res)
+
+bg_value <- if (fill_empty_cells_with_zero) 0 else NA
+count_rast <- terra::rasterize(ground_vect, template, field = 1, fun = sum,
+                               background = bg_value)
+names(count_rast) <- "ground_point_count"
+
+n_na <- global(count_rast, fun = "isNA")[1, 1]
+n_total <- ncell(count_rast)
+
+#Normalized density (ground points per square meter)
+cell_area  <- target_pixel_size_m^2   # true physical cell area, in m^2 instead of native_res^2, which would be in native (e.g. square feet) units and give density in the wrong units
+density_rast <- count_rast / cell_area
+names(density_rast) <- "ground_point_density"
+
+writeRaster(density_rast, density_tif_native_path, overwrite = TRUE)
+message("Native-CRS ground density raster written to: ", density_tif_native_path)
+
+```
+
+# Project Density Raster to ESPG:2856
+
+Resampling is bilinear, can change to "near" if appropriate.
+
+```{r}
+density_rast_2856 <- project(density_rast, target_crs, method = "bilinear",
+                             res = target_pixel_size_m)
+writeRaster(density_rast_2856, density_tif_2856_path, overwrite = TRUE)
+message("Reprojected ground density raster written to: ", density_tif_2856_path)
+```
+
+Quick check to see if it worked
+
+```{r}
+print(density_rast_2856)
+print(ground_sf_2856[1:min(5, nrow(ground_sf_2856)), ])
+```
