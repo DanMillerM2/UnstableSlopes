@@ -21,9 +21,9 @@ Our goal is to identify landslide sites using changes in ground-surface elevatio
 
 In using two (or more) lidar data sets to detect elevation change, it is necessary to ensure that the data sets are spatially aligned [@cucchiaro2020]. Differences in spatial registration will produce systematic errors in measured elevation differences. In the study design, we described approaches that have been used for co-registration of lidar datasets. These involve two strategies:
 
--   Co-register the lidar point-cloud ground returns, then build the two DTMs.
+- Co-register the lidar point-cloud ground returns, then build the two DTMs.
 
--   Build the two DTMs, then coregister one DTM to align with the other.
+- Build the two DTMs, then coregister one DTM to align with the other.
 
 The first approach seems likely to be the more consistent of the two, because consistent methods can be used for filtering ground returns from both point clouds and for interpolation of the DTMs from the ground returns. When using existing DTMs, e.g., those downloaded from the [Washington Lidar Portal](https://lidarportal.dnr.wa.gov/), they may have been generated with different point-filtering algorithms and interpolation schemes. However, working with point clouds directly is computationally intensive and time consuming. If we can obtain good results with the existing DTMs, that will reduce time and computer requirements [@li2023].
 
@@ -37,9 +37,7 @@ In the next sections we describe a method for estimating an LoD value and using 
 
 Consider two DTMs for the same site. One may be slightly shifted horizontally and vertically from the other, and/or slightly tilted or rotated. Over all or some portion of the DTMs, we can seek to shift and rotate one so as to minimize differences with the other [@d.rosenholm1988]. We assume that, over the spatial extents of aerial lidar acquisitions (as opposed to those of satellite-acquired lidar), registration of the point clouds and derived surface models is sufficiently accurate that differences in the tilt and rotation of the coordinate systems is minimal. We focus on a linear displacement of one DTM from the other by an amount $\Delta x, \Delta y, \Delta z$. We express the elevation difference $\Delta e_i$ between the two DTMs at a grid-point $i$ as
 
-$$
-\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + \frac{\partial{\Delta e_i}}{\partial{z_i}}\Delta z
-$$ {#eq-shifts}
+$$\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + \frac{\partial{\Delta e_i}}{\partial{z_i}}\Delta z$$ {#eq-shifts}
 
 where $\frac{\partial{\Delta e_i}}{\partial{x_i}}$ is the partial derivative of the elevation difference with respect to $x_i$, and similarly for $y_i$ and $z_i$. For $n$ DTM grid points, we then have $n$ equations, each with a unique $\Delta e_i, \frac{\partial{\Delta e_i}}{\partial{x_i}}$, and $\frac{\partial{\Delta e_i}}{\partial{y_i}}$ (the value of $\frac{\partial{\Delta e_i}}{\partial{z_i}}$ is simply 1) and with single values for each of $\Delta x, \Delta y$, and $\Delta z$. We seek the $\Delta x, \Delta y$, and $\Delta z$ values that provide the best estimates of all the $\Delta e_i$. We can treat this as a [linear least-squares problem](https://en.wikipedia.org/wiki/Linear_least_squares). In matrix notation, we seek to minimize $||\boldsymbol{A}\boldsymbol{x} - \boldsymbol{b}||^2$ where $\boldsymbol{A}$ is a 3 by $n$ matrix containing the partial derivatives, $\boldsymbol{x}$ is a 3-element vector containing the the $\Delta x, \Delta y$, and $\Delta z$ values, and $\boldsymbol{b}$ is an $n$-element array containing the $\Delta e_i$.
 
@@ -50,9 +48,7 @@ For example, if the ground-surface gradient at the center point were 80% on a no
 ![Shifting of the red DTM so that elevations at the black reference DTM center point (point 5) match as closely as possible.](images/clipboard-2384403491.png){#fig-grid fig-align="center" width="400"}
 
 ::: callout-note
-We found, however, that $\Delta z$ was not constant with location, but varied nonlinearly with hillslope gradient $\theta$ and varied with changes in forest-canopy height $\Delta H$ (see @sec-CanopyEffects below). We therefore modified @eq-shifts to: $$
-\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + ((\beta_0 + \beta_1\theta + \beta_2\theta^2) + (\beta_3 + \beta_4\theta)\Delta H))
-$$ \$\$ {#eq-shifts2}
+We found, however, that $\Delta z$ was not constant with location, but varied nonlinearly with hillslope gradient $\theta$ and varied with changes in forest-canopy height $\Delta H$ (see @sec-CanopyEffects below). We therefore modified @eq-shifts to: $$\Delta e_i = \frac{\partial{\Delta e_i}}{\partial{x_i}}\Delta x + \frac{\partial{\Delta e_i}}{\partial{y_i}}\Delta y + ((\beta_0 + \beta_1\theta + \beta_2\theta^2) + (\beta_3 + \beta_4\theta)\Delta H))$$ \$\$ {#eq-shifts2}
 
 The $\Delta x$ and $\Delta y$ terms determine the horizontal shift needed to align the DTMs, the $(\beta_0 + \beta_1\theta + \beta_2\theta^2)$ term determines the hillslope-gradient-dependent vertical shift, and the $(\beta_3 + \beta_4\theta)\Delta H)$ term accounts for systematic errors associated with changes in canopy height from forest growth and timber harvest, and for variations in vegetation height in agricultural areas, between the time of the two lidar acquisitions.
 :::
@@ -88,7 +84,7 @@ The calculations are performed by program Align[^3].
 [^3]: Program Align is included in the [Netstream](https://danmillerm2.github.io/NetStream_Doc/) suite of Fortran programs.
 
 ```{r}
-library(TerrainWorksUtils)
+library(TWutils)
 library(stringr)
 
 inputPath <- "c:/work/data/postmortem/"
@@ -115,7 +111,7 @@ executable_dir <- "c:/work/sandbox/gridutilities/projects/align/x64/release/"
 program_name = "align"
 
 if (!file.exists(paste0(outOutlier, ".flt"))) {
-  returnCode <- TerrainWorksUtils::align(refDTM,
+  returnCode <- TWutils::align(refDTM,
                                    alignDTM,
                                    refDSM,
                                    alignDSM,
@@ -231,9 +227,7 @@ $$\mu = \sin(A+\alpha)$$
 
 where $A$ is the azimuth measured from north and $\alpha$ is the angular shift such that variation in $\mu$ aligns with that seen in @fig-medianErrorBefore. We then define a quadratic function of gradient with coefficients that vary with $\mu$:
 
-$$
-q_1 = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)\theta + (\beta_4 + \beta_5 \mu)\theta^2
-$$
+$$q_1 = (\beta_0 + \beta_1\mu) + (\beta_2 + \beta_3\mu)\theta + (\beta_4 + \beta_5 \mu)\theta^2$$
 
 where $\theta$ is slope gradient and the $\beta$ are empirical coefficients. This defines an equation with seven coefficients, $\alpha$ and the six $\beta$ values. We use the same equation for $q_3$ and solve again for the seven coefficients.
 
@@ -913,9 +907,7 @@ pinterc
 
 The upper panel in @fig-interquartileCanopy shows the increase in interquartile range with hillslope gradient; the lower panel shows a slight increase in interquartile range with canopy height. To characterize the combined hillslope-gradient and canopy-height dependence, we fit the $q_1$ and $q_3$ values over all gradient-canopy height bins with an equation quadratic in both canopy height H and hillslope gradient $\theta$:
 
-$$
-q = (\beta_0 + \beta_1 \theta + \beta_2 \theta^2) + (\beta_3 + \beta_4 H + \beta_5 H^2) + \beta_6 H \theta + \beta_7H^2\theta + \beta_8H\theta^2 + \beta_9H^2\theta^2
-$$ {#eq-byCanopy}
+$$q = (\beta_0 + \beta_1 \theta + \beta_2 \theta^2) + (\beta_3 + \beta_4 H + \beta_5 H^2) + \beta_6 H \theta + \beta_7H^2\theta + \beta_8H\theta^2 + \beta_9H^2\theta^2$$ {#eq-byCanopy}
 
 @fig-curvesCanopy below shows the interquartile range and Tukey fences as functions of canopy height for a range of gradient interval. The black circles show $q_1$ and $q_3$ from the binned $\Delta e$ values, the thin black lines show the curves fit to the $q_1$ and $q_3$ values using @eq-byCanopy, and the thick black lines show the Tukey fences with $k=1.5$.
 

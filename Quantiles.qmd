@@ -13,9 +13,8 @@ Even after alignment of two sequential DTMs, there will be persistent errors in 
 
 Error statistics compiled for each DTM can be used to estimate a theoretical LoD based on concepts of error propagation [@brasington2003; @lane2003]. These statistics are based on comparison of ground control points with lidar ground-return elevations. Using the standard deviation of elevation errors estimated for each DTM ($\sigma_{2006}$ for the 2006 lidar and $\sigma_{2017}$ for the 2007 lidar), the standard deviation of differences in elevations between the DTMs ($\sigma_{\Delta z}$) is estimated as
 
-$$
-\sigma_{\Delta z} = \sqrt{\sigma_{2006}^2 + \sigma_{2017}^2}
-$$ {#eq-sigmaDeltaZ}
+$$\sigma_{\Delta z} = \sqrt{\sigma_{2006}^2 + \sigma_{2017}^2}$$
+ {#eq-sigmaDeltaZ}
 
 For the 2006 lidar, $\sigma_{2006}$ is reported as 0.06m. For the 2017 lidar, $\sigma_{2017}$ is reported as 0.04 m in unvegetated areas and 0.09m in vegetated areas. Using the vegetated value, this gives an estimated $\sigma_{\Delta z}$ of about 0.10 m. Assuming that errors follow a normal distribution centered about zero, we might then assume with 95% confidence (two $\sigma_{\Delta Z}$) that differences greater than 0.2m indicate actual changes in elevation.
 
@@ -56,7 +55,7 @@ library(RColorBrewer)
 
 
 inputPath <- "c:/work/data/postmortem/"
-outbins <- paste0(inputPath, "outbins")
+outbins <- paste0(inputPath, "bins_06_17")
 datafile <- paste0(outbins,"_final.csv")
 efinal <- as.data.table(read.csv(datafile))
 efinal <- efinal[, "Aspect" := as.factor(Azimuth)]
@@ -88,7 +87,7 @@ library(TerrainWorksUtils)
 library(stringr)
 
 inputPath <- "c:/work/data/postmortem/"
-in_raster <- paste0(inputPath, "difN.flt")
+in_raster <- paste0(inputPath, "dif_06_17.flt")
 radius <- 25. # radius of the moving circular window
 buffer <- 2 # spacing in pixels between window centers
 out_outlier <- paste0(inputPath, "outlier_50")

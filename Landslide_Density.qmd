@@ -1,0 +1,248 @@
+---
+title: "Landslide Density"
+author: "Dan"
+date: today
+format: 
+  html:
+    code-fold: true
+  docx: default
+  pdf: default
+editor: visual
+execute:
+  warning: false
+bibliography: references.bib
+---
+
+# Outline
+
+- Definition
+  - Number, area, volume per unit area by landform type
+  - Number, area, volume per unit area as functions of terrain elements
+- RILs, virtual watershed
+  - Density by RIL type
+- Geomorphons?
+  - Density by landform type
+- Terrain Elements
+  - Partial contributing area
+  - Gradient
+  - Factor of Safety
+  - Curvature
+  - Geology
+  - Soils
+  - Land cover
+  - Precipitation
+  - Landslide density as a function of terrain elements
+    - ROC, AUC
+    - Multivariate, GAM, ...?
+- 
+
+# Introduction {#sec-Intro}
+
+In previous sections, we have provided methods to align two DTMs, to determe an appropriate elevation-difference level-of-detection, and to use lidar-change-detection to delineate a set of landslide-scar polygons. Now we want to develop methods using these polygons to map landslide density across the landscape. We will look at variations in landslide density across landform types, including certain RILs, and as a function of terrain elements, including topographic attributes, substrate, land cover, and precipitation. Density provides a measure of landslide susceptibility, in this case, the likelihood of encountering a landslide scar, since we are basing measures of density on past landslide occurrences identified with lidar change detection. We will also translate measures of density to determine where across the landscape most landslides occurred.
+
+## Density
+
+We define "landslide density" in three ways:
+
+1)  the number of landslides per unit area,
+2)  the area of landslide scars per unit area,
+3)  the volume of landslide scars per unit area.
+
+We can compare these different measures of density across landform types, e.g., what is the density of landslides in bedrock hollows versus planar hillslopes? We can also calculate density as a function of terrain elements, e.g., how does landslide density vary with slope gradient? Landforms are also defined as functions of terrain-element values, so this combination of perspectives will help in evaluating potential modifications of landform and RIL definitions that might better differentiate more and less landslide-prone terrain.
+
+## Landslides
+
+```{r}
+#| label: Set path
+#|  
+path <- "c:\\work\\data\\postmortem\\"
+dem_name <- "elev"
+dem_id <- "smooth"
+data_id <- "06_17"
+executable_path <- "c:\\work\\sandbox\\"
+scratch_dir <- "c:\\work\\scratch"
+NOFILE <- "NOFILE"
+
+```
+
+```{r}
+#| label: LShunter
+# Identify files to use, set parameter values
+
+library(TWutils)
+
+dem <- paste0(path, dem_name, "_", dem_id)
+accum <- paste0(path, "accum_", dem_id)
+outlier <- paste0(path, "outlier_", data_id)
+roads <- paste0(path, "roads")
+in_grad <- paste0(path, "grad_15")
+threshold1 <- -5.0
+threshold2 <- -2.5
+min1 <- 0.4
+min2 <- 0.3
+max_accum1 <- 1000.
+max_accum2 <- 1000.
+minSize <- 10. # minimum patch size, see figures above
+grad_length <- 15.
+road_buffer <- 20.
+out_grad <- "NOFILE"
+out_patch <- paste0(path, "patch_", data_id)
+executable_dir <- paste0(executable_path, "landslideutilities\\projects\\LShunter\\x64\\release")
+
+returnCode <- TWutils::LShunter(
+  dem,
+  outlier,
+  threshold1,
+  threshold2,
+  in_grad,
+  min1,
+  min2,
+  accum,
+  max_accum1,
+  max_accum2,
+  roads,
+  road_buffer,
+  minSize,
+  grad_length,
+  out_grad,
+  out_patch,
+  scratch_dir,
+  executable_dir) 
+
+if (returnCode != 0) {
+  return(returnCode)
+  stop("Error in LShunter")
+}
+
+```
+
+## Landforms
+
+```{r}
+#| label: RIL
+# Model landforms
+
+library(TWutils)
+
+out_RIL <- paste0(path, "RIL_", data_id)
+# Check for existing
+if (!file.exists(paste0(out_RIL, ".flt"))) {
+  # set parameter values
+  dem <- paste0(path, dem_name, "_", dem_id)
+  radius <- 7.5
+  closest_node <- c(`NUM WIDTHS` = 0,
+                   `MAX RADIUS` = 250,
+                   `MIN RADIUS` = 250)
+  as2_threshold <- 1000.
+  plan_curvature_threshold <- 0.005
+  gradient_threshold <- 0.5
+  fluvial_area_threshold <- 0.07
+  valley_depth_max <- 5.0
+  valley_buffer <- 2.5
+  valley_max_hole <- 1000.
+  valley_min_patch <- 20.
+  hollow_gradient <- c(PRIMARY = 0.3,
+                       SECONDARY = 0.25,
+                       DIF1 = 1.0,
+                       DIF2 = 0.45,
+                      `MIN POLY GRAD` = 0.2)
+  hollow_tangential <- c(PRIMARY = -0.005,
+                         SECONDARY = -0.02,
+                        `MIN POLY TAN` = 0.0)
+  hollow_profile <- c(PRIMARY = -0.01,
+                      SECONDARY = -0.06,
+                     `MIN POLY PROF` = -0.015)
+  grad_proportion <- c(GRAD = 0.5, PROP = 0.1)
+  tan_proportion <- c(TAN = 0.0, PROP = 0.5)
+  fill_hollow_embayments <- TRUE
+  hollow_area_threshold <- 5.
+  hollow_max_hole <- 1000.
+  hollow_min_patch <- c(INITIAL = 0, FINAL = 300)
+  gorge_gradient <- c(PRIMARY = 0.7,
+                     SECONDARY = 0.45,
+                     DIF1 = 0.95,
+                     DIF2 = 0.7)
+  gorge_max_hole <- 1000.
+  gorge_min_patch <- 0
+  slope_thresholds <- c(SLOPE = 0.4,
+                        STEEP = 0.7)
+  curve_thresholds <- c(CONVERGENT = 0.01,
+                        DIVERGENT = -0.01)
+  edge_smoothing_iterations <- 11
+  road_shapefile <- NOFILE
+  road_buffer <- 15.
+  in_closest_node <- NOFILE
+  in_dist_to_channel <- NOFILE
+  in_drainage_wing <- NOFILE
+  in_valley_floor <- NOFILE
+  in_upgrad <- NOFILE
+  in_downgrad <- NOFILE
+  in_tangential <- NOFILE
+  in_plan <- NOFILE
+  out_closest_node <- paste0(path, "closestNode_", data_id)
+  out_dist_to_channel <- paste0(path, "distToChan_", data_id)
+  out_drainage_wing <- paste0(path, "wings_", data_id)
+  out_valley_floor <- paste0(path, "valley_", data_id)
+  out_upgrad <- paste0(path, "upgrad_", data_id)
+  out_downgrad <- paste0(path, "downgrad_", data_id)
+  out_tangential <- paste0(path, "tan_", data_id)
+  out_plan <- paste0(path, "plan_", data_id)
+  out_nodes <- NOFILE
+  out_zero_order <- NOFILE
+  attribute_list <- ril_default_attributes("c:\\work\\data\\postmortem\\prism_wasp_m")
+  overwrite <- TRUE
+  executable_dir <- paste0(executable_path, "channelutilities\\projects\\RIL\\x64\\release")
+
+  ril_return <- TWutils::RIL(dem,
+                      scratch_dir,
+                      out_RIL,
+                      radius,
+                      closest_node,
+                      as2_threshold,
+                      plan_curvature_threshold,
+                      gradient_threshold,
+                      fluvial_area_threshold,
+                      valley_depth_max,
+                      valley_buffer,
+                      valley_max_hole,
+                      valley_min_patch,
+                      hollow_gradient,
+                      hollow_tangential,
+                      hollow_profile,
+                      grad_proportion,
+                      tan_proportion,
+                      fill_hollow_embayments,
+                      hollow_area_threshold,
+                      hollow_max_hole,
+                      hollow_min_patch,
+                      gorge_gradient,
+                      gorge_max_hole,
+                      gorge_min_patch,
+                      slope_thresholds,
+                      curve_thresholds,
+                      edge_smoothing_iterations,
+                      road_shapefile,
+                      road_buffer,
+                      in_closest_node,
+                      in_dist_to_channel,
+                      in_drainage_wing,
+                      in_valley_floor,
+                      in_upgrad,
+                      in_downgrad,
+                      in_tangential,
+                      in_plan,
+                      out_closest_node,
+                      out_dist_to_channel,
+                      out_drainage_wing,
+                      out_valley_floor,
+                      out_upgrad,
+                      out_downgrad,
+                      out_tangential,
+                      out_plan,
+                      out_nodes,
+                      out_zero_order,
+                      attribute_list,
+                      overwrite,
+                      executable_dir=executable_dir)
+}
+```
