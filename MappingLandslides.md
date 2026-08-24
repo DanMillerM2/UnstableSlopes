@@ -1,11 +1,11 @@
 # MappingLandslides
 Dan
-2025-05-13
+2025-05-23
 
 ## Introduction
 
-In **?@sec-coregistration**, we looked at how the frequency distribution
-of elevation differences between two sequential lidar DTMs, after
+In CoRegistration, we looked at how the frequency distribution of
+elevation differences between two sequential lidar DTMs, after
 coregistration, varied with both hillslope gradient and forest-stand
 height. We documented these variations using the interquartile range of
 elevation-difference values observed over increments of gradient and
@@ -112,6 +112,7 @@ GradLength <- 10.
 OutlierThreshold <- -1.5
 ScratchDir <- "c:\\work\\scratch"
 OutPatch <- paste0(path, "patch_30")
+OutGrad <- paste0(path, "grad_10")
 OutTable <- paste0(path, "table_1")
 executable_dir <- "c:\\work\\sandbox\\landslideutilities\\projects\\HuntLS\\x64\\release\\"
 
@@ -129,7 +130,7 @@ if (!file.exists(paste0(OutTable, "_match.csv"))) {
                                           OutlierThreshold,
                                           ScratchDir,
                                           OutPatch,
-                                          OutTable,
+                                          OutGrad,                                                                                     OutTable,
                                           executable_dir)
 
   if (returnCode != 0) {
@@ -141,8 +142,8 @@ if (!file.exists(paste0(OutTable, "_match.csv"))) {
 HuntLS outputs a raster file of the mapped patches that matched the
 inventoried landslides based on proximity and aspect. It also outputs
 three comma-delimited (csv) files. The file names are derived from the
-“OutTable” variable specified in the (**HuntLS?**) code chunk above. The
-suffix distinguishes each file.
+“OutTable” variable specified in the code chunk above. The suffix
+distinguishes each file.
 
 1.  OutTable_dist.csv. Each record gives the patch ID, the outlier
     value, and the hillslope gradient for each pixel within all patches
@@ -344,31 +345,19 @@ when calculating the size of DoD-inventoried landslides.
 What about the field-observed landslides that we were unable to resolve
 from the DoD?
 
-``` r
-nomatch
-```
-
-       Record            LSID             RIL     TYPE   LSarea LSvolume LSmaxDepth
-        <int>          <char>          <char>    <num>    <num>    <num>     <lgcl>
-    1:    417 Inner gorge     Debris flow     83.61274 76.45549   1.5240         NA
-    2:   1118                                  0.00000  0.00000   0.0000         NA
-    3:   1119                                  0.00000  0.00000   0.0000         NA
-    4:    590 Inner gorge     Debris slide    76.64501 23.36140   0.9144         NA
-    5:    440 Inner gorge     Debris slide    55.74182 16.99011   0.6096         NA
-    6:   1117                                  0.00000  0.00000   0.0000         NA
-
 ## Thresholds
 
-It appears that we can use the outlier raster to identify potential
-landslide scars. We can use the outlier patches that matched
-field-surveyed landslides to characterize the frequency distribution of
-outlier and slope gradient values within a landslide patch. Our goal is
-to identify threshold values that can be used to filter the patches to
-include those most likely to be associated with landslides.
+These results using program HuntLS suggests that we can use the outlier
+raster to identify potential landslide scars. We can use the outlier
+patches that matched field-surveyed landslides to characterize the
+frequency distribution of outlier and slope gradient values within a
+landslide patch. Our goal is to identify threshold values that can be
+used to filter the patches to include those most likely to be associated
+with landslides.
 
 In <a href="#fig-outlierSlope" class="quarto-xref">Figure 6</a> below,
-we show the maximum outlier k value for each patch and the slope
-gradient at the DoD cell with the maximum
+we show box plots of the maximum outlier k value for each patch and the
+slope gradient at the DoD cell with that maximum maximum k value.
 
 ``` r
 data <- as.data.table(read.csv(paste0(OutTable, "_outlierSlope.csv")))
@@ -380,7 +369,7 @@ pbox1 <- ggplot(data, aes(x="MaxOutlier", y=Outlier)) +
         legend.position.inside = c(0.5, 0.3),
         legend.title = element_blank(),
         axis.title.x = element_blank()) +
-  labs(title="Maximum Outlier (k) value",
+  labs(title="Maximum Outlier (abs(k)) value",
        subtitle = "In each patch",
        y="Outlier (k)")
 pbox2 <- ggplot(data, aes(x="MaxOutlier", y=Slope)) + 
@@ -390,33 +379,151 @@ pbox2 <- ggplot(data, aes(x="MaxOutlier", y=Slope)) +
         legend.title = element_blank(),
         axis.title.x = element_blank()) +
   labs(title = "Slope Gradient",
-       subtitle = "At points of maximum outlier",
-       y = "Slope Gradient")
+       subtitle = "At the maximum outlier point",
+       y = "Slope Gradient") +
+  scale_y_continuous(labels = scales::percent)
 pboxes <- pbox1 + pbox2
 pboxes
 ```
 
 <div id="fig-outlierSlope">
 
-<img
-src="MappingLandslides_files/figure-commonmark/fig-outlierSlope-1.png"
-id="fig-outlierSlope" />
+![](MappingLandslides_files/figure-commonmark/fig-outlierSlope-1.png)
 
-Figure 6
+Figure 6: Box and whisker plots of patch outlier and slope values. The
+left panel shows the maximum absolute outlier (k) value within each
+patch. The right panel shows the slope gradient at the DoD cell where
+the maximum outlier occurs.
 
 </div>
+
+The outlier raster produced by program Align only plotted k values
+outside the range of -1.5 to +1.5. We are looking for elevation losses,
+negative k values, so the maximum absolute k value can be no less than
+1.5. A scatter plot with marginal density plots of the values is shown
+in <a href="#fig-pscat" class="quarto-xref">Figure 7</a> below. Modal
+values lie around -10 for k and 65% for gradient, but the distribution
+of values extend broadly on either side.
 
 ``` r
 pscat <- ggplot(data[Type=="MaxOutlier",], aes(x=Outlier, y=Slope)) + 
   geom_point(size=1.6, alpha=0.6) +
   theme(legend.position = "inside",
         legend.position.inside = c(0.2, 0.8),
-        legend.title = element_blank()) 
+        legend.title = element_blank()) +
+  scale_x_continuous(breaks = seq(-30, 0, by = 5)) +
+  scale_y_continuous(labels = scales::percent) +
+  coord_cartesian(x=c(-30,0), y=c(0.2,1.0)) +
+  labs(x = "Outlier (k)")
 pscat <- ggMarginal(pscat)
 pscat
 ```
 
-![](MappingLandslides_files/figure-commonmark/unnamed-chunk-3-1.png)
+<div id="fig-pscat">
+
+![](MappingLandslides_files/figure-commonmark/fig-pscat-1.png)
+
+Figure 7: Scatter plot of maximum negative outlier (k) values and slope
+gradients at the maximum outlier point. The black lines above and to the
+right indicate relative point densities.
+
+</div>
+
+<a href="#fig-pcum" class="quarto-xref">Figure 8</a> below shows
+cumulative frequency distributions of the maximum negative outlier (k)
+values from each patch and of the slope gradients at the maximum
+negative outlier points.
+
+``` r
+pcum_outlier <- ggplot(data[Type=="MaxOutlier", ], aes(x=Outlier)) + 
+  stat_ecdf(geom="step", linewidth = 0.8) +
+  coord_cartesian(x=c(-30,0)) +
+  scale_x_continuous(breaks = seq(-30, 0, by = 5)) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "Outlier (k) value",
+       y = "Proportion of patches",
+       title = "Cumulative frequency of maximum negative outlier values") 
+pcum_slope <- ggplot(data[Type=="MaxOutlier", ], aes(x=Slope)) + 
+  stat_ecdf(geom="step", linewidth = 0.8) +
+  coord_cartesian(x=c(0.2,1.0)) + 
+  scale_x_continuous(labels = scales::percent) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(x = "Slope Gradient",
+       y = "Proportion of patches",
+       title = "Cumulative frequency of slope gradient at maximum negative outlier point")
+pcum <- pcum_outlier / pcum_slope
+pcum
+```
+
+<div id="fig-pcum">
+
+![](MappingLandslides_files/figure-commonmark/fig-pcum-1.png)
+
+Figure 8: Cumulative frequency of maximum negative outlier (k) values
+(upper panel) and slope gradients at the maximum negative outlier point
+(lower panel).
+
+</div>
+
+To include all the patches matched to inventoried landslides, we would
+need to set a threshold for k at -1.5 and for slope gradient no greater
+than 21%. We can use the cumulative distribution curves in
+<a href="#fig-pcum" class="quarto-xref">Figure 8</a> to determine what
+proportion of the matched landslide points different threshold values
+would preclude. Using these threshold values to flag patches as
+candidate landslide sites, we would include 145 of the 151 inventoried
+landslides in the study area used here, but we would also include many
+patches that are not landslides. Setting lower thresholds for k (e.g.,
+-10) and higher thresholds for gradient (e.g., 40%) would give us
+greater confidence that flagged patches are associated with landslides,
+but would also miss some proportion of actual landslide sites. We will
+experiment with these thresholds now, but may find that we need to
+include other factors. For example, we could set different threshold
+values for different landforms, e.g., inner gorges, terrace margins,
+hollows, planar slopes, divergent slopes, ridges.
+
+Program LShunter will read the DoD and outlier rasters created by
+program Align and a gradient raster created by program HuntLS. (LShunter
+uses the gradient raster created by HuntLS because gradient values
+depend on the length scale over which they are measured and we want to
+ensure that the same gradients are used here as in HuntLS).
+
+``` r
+# LShunter can use the same DoD, Outlier, OutGrad, and Accum inputs as HuntLS, 
+# so we won't repeat those here.
+threshold1 <- -5.0
+threshold2 <- -1.5
+min1 <- 0.2
+min2 <- 0.1
+maxAccum1 <- 1000.
+maxAccum2 <- 1000.
+minSize <- 10. # minimum patch size, see figures above
+OutPatch <- paste0(path, "patch_test")
+OutGrad <- paste0(OutGrad, ".flt")
+ScratchDir <- "c:\\work\\scratch"
+executable_dir <- "c:/work/sandbox/landslideutilities/projects/LShunter/x64/release"
+
+returnCode <- TerrainWorksUtils::LShunter(
+    DoD,
+    Outlier,
+    threshold1,
+    threshold2,
+    OutGrad,
+    min1,
+    min2,
+    Accum,
+    maxAccum1,
+    maxAccum2,
+    minSize,
+    OutPatch,
+    ScratchDir,
+    executable_dir) 
+
+if (returnCode != 0) {
+  return(returnCode)
+  stop("Error in LShunter")
+}
+```
 
 <div id="refs" class="references csl-bib-body hanging-indent"
 entry-spacing="0">
