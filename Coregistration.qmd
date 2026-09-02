@@ -21,9 +21,9 @@ Our goal is to identify landslide sites using changes in ground-surface elevatio
 
 In using two (or more) lidar data sets to detect elevation change, it is necessary to ensure that the data sets are spatially aligned [@cucchiaro2020]. Differences in spatial registration will produce systematic errors in measured elevation differences. In the study design, we described approaches that have been used for co-registration of lidar datasets. These involve two strategies:
 
-- Co-register the lidar point-cloud ground returns, then build the two DTMs.
+-   Co-register the lidar point-cloud ground returns, then build the two DTMs.
 
-- Build the two DTMs, then coregister one DTM to align with the other.
+-   Build the two DTMs, then coregister one DTM to align with the other.
 
 The first approach seems likely to be the more consistent of the two, because consistent methods can be used for filtering ground returns from both point clouds and for interpolation of the DTMs from the ground returns. When using existing DTMs, e.g., those downloaded from the [Washington Lidar Portal](https://lidarportal.dnr.wa.gov/), they may have been generated with different point-filtering algorithms and interpolation schemes. However, working with point clouds directly is computationally intensive and time consuming. If we can obtain good results with the existing DTMs, that will reduce time and computer requirements [@li2023].
 
@@ -87,51 +87,57 @@ The calculations are performed by program Align[^3].
 library(TWutils)
 library(stringr)
 
-inputPath <- "c:/work/data/postmortem/"
-outOutlier <- paste0(inputPath, "outlierN0")
-refDTM <- paste0(inputPath, "elev_2006N.flt") # reference DTM, pre landslide
-alignDTM <- paste0(inputPath, "elev_2017N.flt") # DTM to align, post  landslide
-refDSM <- paste0(inputPath, "dsm2006N.flt") # reference DSM, pre landslide
-alignDSM <- paste0(inputPath, "dsm2017N.flt") # DSM to be aligned, post landslide
+inputPath <- "c:/work/data/site1/"
+outOutlier <- paste0(inputPath, "outlier_tiled")
+refDTM <- paste0(inputPath, "elev_2017.flt") # reference DTM, pre landslide
+alignDTM <- paste0(inputPath, "elev_2023.flt") # DTM to align, post  landslide
+refGrnd <- paste0(inputPath, "NP_2017/grnd_den/ground_density_epsg2856.tif")
+alignGrnd <- paste0(inputPath, "cascades_north_wali_2023/grnd_den/ground_density_epsg2856.tif")
+refDSM <- "NOFILE"
+alignDSM <- "NOFILE"
+#refDSM <- paste0(inputPath, "dsm2006N.flt") # reference DSM, pre landslide
+#alignDSM <- paste0(inputPath, "dsm2017N.flt") # DSM to be aligned, post landslide
 iterations <- 4 # number of times to repeat the alignment calculation
 k <- 1.5 # k <= 0, smaller values filter more points as outliers
 dampener <- 1.0 # proportion of calculated shift to apply with each iteration
-outDTM <- paste0(inputPath, "elev_2017Naligned0") # output aligned DTM
-tileNx <- 0 # number of tiles in x (east-west) direction
-tileNy <- 0 # number of tiles in y (north-south) direction
+outDTM <- paste0(inputPath, "elev_2023aligned") # output aligned DTM
+tileNx <- 4 # number of tiles in x (east-west) direction
+tileNy <- 2 # number of tiles in y (north-south) direction
 overlap <- 0.5 # overlap between tiles
 radius <- 15. # radius (m) for calculating slope and aspect
 nslope <- 7 # number of slope bins
 maxSlope <- 1.0 # maximum slope gradient to include in bins
 nAzimuth <- 8 # number of aspect bins
-outbins <- paste0(inputPath, "outbins0") # output csv file names
-outDif <- paste0(inputPath, "difN0") # output difference raster
+outbins <- paste0(inputPath, "outbins") # output csv file names
+outDif <- paste0(inputPath, "dif") # output difference raster
 scratch_dir <- "c:/work/scratch"
 executable_dir <- "c:/work/sandbox/gridutilities/projects/align/x64/release/"
 program_name = "align"
 
 if (!file.exists(paste0(outOutlier, ".flt"))) {
   returnCode <- TWutils::align(refDTM,
-                                   alignDTM,
-                                   refDSM,
-                                   alignDSM,
-                                   iterations,
-                                   k,
-                                   dampener,
-                                   outDTM,
-                                   tileNx,
-                                   tileNy,
-                                   overlap,
-                                   radius,
-                                   nslope,
-                                   maxSlope,
-                                   nAzimuth,
-                                   outbins,
-                                   outDif,
-                                   outOutlier,
-                                   scratch_dir,
-                                   executable_dir,
-                                   program_name)
+                               alignDTM,
+                               refGrnd,
+                               alignGrnd,
+                               refDSM,
+                               alignDSM,
+                               iterations,
+                               k,
+                               dampener,
+                               outDTM,
+                               tileNx,
+                               tileNy,
+                               overlap,
+                               radius,
+                               nslope,
+                               maxSlope,
+                               nAzimuth,
+                               outbins,
+                               outDif,
+                               outOutlier,
+                               scratch_dir,
+                               executable_dir,
+                               program_name)
 
   if (returnCode != 0) {
     stop("Error in Align")

@@ -54,15 +54,15 @@ library(future.apply)  # future_lapply() -- parallel dispatch across batches, us
 # that can oversubscribe the CPU -- if that's a problem, pass an explicit, lower ncores into the
 # exec() calls inside filter_merge_batch/detect_native_crs/rasterize_batch_count (e.g. total
 # cores / n_workers each), or lower n_workers.
-n_workers <- 4
+n_workers <- 6
 
 # Folder containing the laZ files
 #input_dir  <- "path/to/laz_tiles"   # template -- swap in your own project's LAZ folder
-input_dir <- "c:\\work\\data\\site1\\test1"  # folder holding the raw LAZ tiles for this site/date
+input_dir <- "c:\\work\\data\\site1\\cascades_north_wali_2023\\laz"  # folder holding the raw LAZ tiles for this site/date
 
 # Output folder
 #output_dir <- "path/to/output"      # template -- swap in your own output location
-output_dir <- "c:\\work\\data\\site1\\test1\\grnd_den\\"
+output_dir <- "c:\\work\\data\\site1\\cascades_north_wali_2023\\grnd_den\\"
 if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)  # create output_dir (and any missing parent folders) if it doesn't exist yet
 
 # Number of LAS/LAZ tiles processed together in one batch. Splitting the full tile set into
@@ -72,7 +72,7 @@ if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)  # create 
 # 32-bit point-index ceiling (see stream_chunk_size below); raise it if batches come out small
 # enough that merging more tiles together per batch would still be manageable.
 #batch_size_tiles <- 200
-batch_size_tiles <- 3
+batch_size_tiles <- 50
 
 # Builds a batch-specific output path, e.g. batch_path("ground_merged.laz", 3) ->
 # ".../b003_ground_merged.laz". Namespacing every intermediate by batch number keeps batches
@@ -121,7 +121,7 @@ cleanup_intermediate_files <- TRUE
 # that ceiling and bounds memory use. This value doesn't need to be precise for correctness --
 # shrink it if a chunk is still dense enough to overflow (or shrink batch_size_tiles instead,
 # if it's a whole batch, not just a chunk within it, that's overflowing).
-stream_chunk_size <- 1000
+stream_chunk_size <- 100000
 ```
 
 ## Discover and batch LAZ tiles
