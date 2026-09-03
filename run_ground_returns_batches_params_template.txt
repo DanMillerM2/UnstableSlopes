@@ -1,0 +1,38 @@
+# Batch config file for run_ground_returns_batches.R
+#
+# "keyword: value" lines (same rules as ground_returns.R's own parameter file -- order within a
+# section doesn't matter, blank lines and lines starting with "#" are ignored, a trailing
+# "# comment" after a value is stripped, and only the first colon on a line separates the
+# keyword from its value, so a value like "c:\..." or "EPSG:2856" is safe), grouped under
+# [defaults] / [set] section headers.
+#
+# [defaults] is optional and, if present, must come before any [set] sections. Anything set
+# there applies to every [set] below unless that set repeats the same keyword itself to
+# override it. Each [set] section is one run of ground_returns.R and must set input_dir and
+# output_dir -- see param_specs in ground_returns.R for the full list of recognized keywords
+# (n_workers, batch_size_tiles, gpkg_layer, export_ground_points_gpkg, target_pixel_size_m,
+# target_crs, fill_empty_cells_with_zero, cleanup_intermediate_files, stream_chunk_size); any
+# keyword not set in [defaults] or a [set] falls back to ground_returns.R's own built-in default
+# for it.
+
+[defaults]
+n_workers: 6
+batch_size_tiles: 50
+gpkg_layer: ground_points
+export_ground_points_gpkg: FALSE
+target_pixel_size_m: 3
+target_crs: EPSG:2856
+fill_empty_cells_with_zero: FALSE
+cleanup_intermediate_files: TRUE
+stream_chunk_size: 100000
+
+[set]
+input_dir: c:\work\data\site1\cascades_north_wali_2023\laz
+output_dir: c:\work\data\site1\cascades_north_wali_2023\grnd_den
+
+[set]
+input_dir: c:\work\data\site2\NP_2017\laz
+output_dir: c:\work\data\site2\NP_2017\grnd_den
+# n_workers: 4   # example: uncomment to override [defaults] for just this set
+
+# Add further [set] sections here as needed.

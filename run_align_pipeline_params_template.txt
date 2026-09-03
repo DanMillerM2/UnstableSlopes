@@ -1,0 +1,84 @@
+# Pipeline config file for run_align_pipeline.R
+#
+# "keyword: value" lines (same rules as ground_returns.R's and align_dtms.R's own parameter
+# files -- order within a section doesn't matter, blank lines and lines starting with "#" are
+# ignored, a trailing "# comment" after a value is stripped, and only the first colon on a line
+# separates the keyword from its value, so a value like "c:\..." or "EPSG:2856" is safe),
+# grouped under four section headers: [defaults], [ref_set], [align_set], [align].
+#
+# [defaults] is optional and holds ground_returns.R parameters shared by both [ref_set] and
+# [align_set]; a set can repeat a keyword itself to override the shared default just for it.
+# [ref_set] and [align_set] are each one ground_returns.R run (see param_specs in
+# ground_returns.R for the full list of recognized keywords) and must set input_dir and
+# output_dir. [align] holds align_dtms.R / TWutils::align() parameters (see param_specs in
+# align_dtms.R) -- do NOT set refGrnd/alignGrnd there; they are always taken from the density
+# rasters [ref_set]/[align_set] produce.
+
+[defaults]
+n_workers: 6
+batch_size_tiles: 50
+gpkg_layer: ground_points
+export_ground_points_gpkg: FALSE
+target_pixel_size_m: 3
+target_crs: EPSG:2856
+fill_empty_cells_with_zero: FALSE
+cleanup_intermediate_files: TRUE
+stream_chunk_size: 100000
+
+[ref_set]
+input_dir: c:\work\data\site1\NP_2017\laz
+output_dir: c:\work\data\site1\NP_2017\grnd_den
+
+[align_set]
+input_dir: c:\work\data\site1\cascades_north_wali_2023\laz
+output_dir: c:\work\data\site1\cascades_north_wali_2023\grnd_den
+# n_workers: 4   # example: uncomment to override [defaults] for just this set
+
+[align]
+# Reference DTM (pre-change) and the DTM to be shifted/aligned to it (post-change).
+refDTM: c:\work\data\site1\elev_2017.flt
+alignDTM: c:\work\data\site1\elev_2023.flt
+
+# Optional reference/align digital surface models. Leave as NOFILE if not used.
+refDSM: NOFILE
+alignDSM: NOFILE
+
+# Number of times to repeat the alignment calculation.
+iterations: 4
+
+# Tukey-fence multiplier used to identify and exclude outliers (e.g. landslide sites) from the
+# alignment calculation; k <= 0 filters more points as outliers.
+k: 1.5
+
+# Proportion of each iteration's calculated shift to actually apply (1.0 = apply it in full).
+dampener: 1.0
+
+# Output path (no extension) for the aligned DTM.
+outDTM: c:\work\data\site1\elev_2023aligned
+
+# Number of tiles in x (east-west) and y (north-south), and the fractional overlap between them.
+tileNx: 4
+tileNy: 2
+overlap: 0.5
+
+# Radius (m) for calculating local slope and aspect.
+radius: 15
+
+# Number of slope bins, maximum slope gradient to include in bins, and number of aspect bins.
+nslope: 7
+maxSlope: 1.0
+nAzimuth: 8
+
+# Output paths (no extension) for the per-bin csv summary, the difference raster, and the
+# outlier-flagged raster. outOutlier's .flt output is also what run_align_pipeline.R checks for
+# to decide whether Align has already been run.
+outbins: c:\work\data\site1\outbins
+outDif: c:\work\data\site1\dif
+outOutlier: c:\work\data\site1\outlier_tiled
+
+# Scratch folder for Align's intermediate files, and the folder containing the Align executable.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release\
+
+# Name of the Align executable (without extension) inside executable_dir.
+program_name: align

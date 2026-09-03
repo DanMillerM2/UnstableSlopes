@@ -1,0 +1,64 @@
+# Parameter file for align_dtms.R
+#
+# One "keyword: value" pair per line. The order lines appear in is not significant -- every
+# line is self-labeled by its keyword. Blank lines and lines starting with "#" are ignored,
+# and a trailing "# comment" after a value is stripped. A value may contain a colon itself
+# (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
+# from its value, so that's safe.
+#
+# refDTM, alignDTM, refGrnd, alignGrnd, outDTM, outbins, outDif, outOutlier, scratch_dir, and
+# executable_dir have no default and must be set below. Every other keyword falls back to the
+# default noted in param_specs (in align_dtms.R) if you delete or comment out its line here.
+
+# Reference DTM (pre-change) and the DTM to be shifted/aligned to it (post-change).
+refDTM: c:\work\data\site1\elev_2017.flt
+alignDTM: c:\work\data\site1\elev_2023.flt
+
+# Ground-point density rasters corresponding to refDTM/alignDTM (e.g. as produced by
+# ground_returns.R).
+refGrnd: c:\work\data\site1\NP_2017\grnd_den\ground_density_epsg2856.tif
+alignGrnd: c:\work\data\site1\cascades_north_wali_2023\grnd_den\ground_density_epsg2856.tif
+
+# Optional reference/align digital surface models. Leave as NOFILE if not used.
+refDSM: NOFILE
+alignDSM: NOFILE
+
+# Number of times to repeat the alignment calculation.
+iterations: 4
+
+# Tukey-fence multiplier used to identify and exclude outliers (e.g. landslide sites) from the
+# alignment calculation; k <= 0 filters more points as outliers.
+k: 1.5
+
+# Proportion of each iteration's calculated shift to actually apply (1.0 = apply it in full).
+dampener: 1.0
+
+# Output path (no extension) for the aligned DTM.
+outDTM: c:\work\data\site1\elev_2023aligned
+
+# Number of tiles in x (east-west) and y (north-south), and the fractional overlap between them.
+tileNx: 4
+tileNy: 2
+overlap: 0.5
+
+# Radius (m) for calculating local slope and aspect.
+radius: 15
+
+# Number of slope bins, maximum slope gradient to include in bins, and number of aspect bins.
+nslope: 7
+maxSlope: 1.0
+nAzimuth: 8
+
+# Output paths (no extension) for the per-bin csv summary, the difference raster, and the
+# outlier-flagged raster. outOutlier's .flt output is also what align_dtms.R checks for to
+# decide whether Align has already been run.
+outbins: c:\work\data\site1\outbins
+outDif: c:\work\data\site1\dif
+outOutlier: c:\work\data\site1\outlier_tiled
+
+# Scratch folder for Align's intermediate files, and the folder containing the Align executable.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release\
+
+# Name of the Align executable (without extension) inside executable_dir.
+program_name: align

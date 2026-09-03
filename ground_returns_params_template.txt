@@ -1,0 +1,45 @@
+# Parameter file for ground_returns.R
+#
+# One "keyword: value" pair per line. The order lines appear in is not significant -- every
+# line is self-labeled by its keyword. Blank lines and lines starting with "#" are ignored,
+# and a trailing "# comment" after a value is stripped. A value may contain a colon itself
+# (a Windows drive letter, "c:\...", or "EPSG:2856") -- only the first colon on a line
+# separates the keyword from its value, so that's safe.
+#
+# input_dir and output_dir have no default and must be set below. Every other keyword falls
+# back to the default noted in param_specs (in the .R script) if you delete or comment out its
+# line here.
+
+# Folder containing the raw LAZ/LAS tiles for this site/date.
+input_dir: c:\work\data\site1\cascades_north_wali_2023\laz
+
+# Output folder for intermediate and final files (created if it doesn't already exist).
+output_dir: c:\work\data\site1\cascades_north_wali_2023\grnd_den\
+
+# Max number of batches processed at once, in separate worker processes.
+n_workers: 6
+
+# Number of LAS/LAZ tiles merged together per batch.
+batch_size_tiles: 50
+
+# Layer name used inside every batch's GeoPackage.
+gpkg_layer: ground_points
+
+# TRUE to also write each batch's ground-only points out to its own GeoPackage.
+export_ground_points_gpkg: FALSE
+
+# Target pixel size, in meters, for the density raster (and the internal, per-batch count
+# raster it's derived from).
+target_pixel_size_m: 3
+
+# Target CRS the final density raster is reprojected to.
+target_crs: EPSG:2856
+
+# TRUE to fill cells with no ground points as 0 instead of NA.
+fill_empty_cells_with_zero: FALSE
+
+# TRUE to delete per-batch intermediate files once the final raster is written.
+cleanup_intermediate_files: TRUE
+
+# Spatial chunk size (native CRS units) used when streaming a batch's merged LAZ file.
+stream_chunk_size: 100000
