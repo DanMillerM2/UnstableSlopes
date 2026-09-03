@@ -55,7 +55,19 @@
 
 library(TWutils)
 
-pipeline_config_path <- "run_align_pipeline_params_template.txt"  # fallback; overridden by a command-line argument below
+# Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so
+# sibling scripts and template files are found by their location on disk rather than by the
+# caller's working directory -- e.g. `Rscript R/run_align_pipeline.R ...` from the repo root and
+# `Rscript run_align_pipeline.R ...` from inside R/ both correctly find R/ground_returns.R and
+# R/run_align_pipeline_params_template.txt. Falls back to "." (assume cwd) when there's no
+# "--file=" argument to read, e.g. when this script is source()'d from RStudio instead of run
+# via Rscript.
+get_script_dir <- function() {
+  file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
+  if (length(file_arg) == 1) dirname(normalizePath(file_arg, winslash = "/", mustWork = FALSE)) else "."
+}
+
+pipeline_config_path <- file.path(get_script_dir(), "run_align_pipeline_params_template.txt")  # fallback; overridden by a command-line argument below
 
 cli_args <- commandArgs(trailingOnly = TRUE)
 if (length(cli_args) >= 1) pipeline_config_path <- cli_args[1]  # Rscript ... pipeline_config.txt takes precedence over the hardcoded fallback above
@@ -64,17 +76,6 @@ if (!file.exists(pipeline_config_path)) {
   stop("Pipeline config file not found: ", pipeline_config_path, ". Set pipeline_config_path ",
        "in this script, or pass its path as a command-line argument ",
        "(Rscript ... pipeline_config.txt).")
-}
-
-# Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so
-# sibling scripts can be found by their location on disk rather than by the caller's working
-# directory -- e.g. `Rscript R/run_align_pipeline.R ...` from the repo root and
-# `Rscript run_align_pipeline.R ...` from inside R/ both correctly find R/ground_returns.R.
-# Falls back to "." (assume cwd) when there's no "--file=" argument to read, e.g. when this
-# script is source()'d from RStudio instead of run via Rscript.
-get_script_dir <- function() {
-  file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
-  if (length(file_arg) == 1) dirname(normalizePath(file_arg, winslash = "/", mustWork = FALSE)) else "."
 }
 
 ground_returns_script <- file.path(get_script_dir(), "ground_returns.R")  # sibling script, same folder as this one

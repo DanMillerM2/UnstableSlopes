@@ -71,12 +71,24 @@ library(future.apply)  # future_lapply() -- parallel dispatch across batches, us
 ## from its value, so that's safe. input_dir and output_dir have no default and must be present
 ## in the file; every other keyword falls back to the default shown below if omitted.
 
+# Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
+# fallback config_path below (and other scripts' references to a sibling script or template
+# file) is found by this script's location on disk rather than by the caller's working
+# directory -- e.g. `Rscript R/ground_returns.R` from the repo root and `Rscript ground_returns.R`
+# from inside R/ both find R/ground_returns_params_template.txt. Falls back to "." (assume cwd)
+# when there's no "--file=" argument to read, e.g. when this script is source()'d from RStudio
+# instead of run via Rscript.
+get_script_dir <- function() {
+  file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
+  if (length(file_arg) == 1) dirname(normalizePath(file_arg, winslash = "/", mustWork = FALSE)) else "."
+}
+
 # Path to this run's parameter file. Overridden by a command-line argument when the script is
 # run via `Rscript ground_returns.R path/to/params.txt` -- the line below is only used as a
 # fallback when no such argument is given (e.g. sourcing this script from RStudio), so set it
 # there in that case.
 #config_path <- "path/to/params.txt"   # template -- point this at your own project's parameter file
-config_path <- "ground_returns_params_template.txt"
+config_path <- file.path(get_script_dir(), "ground_returns_params_template.txt")
 
 cli_args <- commandArgs(trailingOnly = TRUE)
 if (length(cli_args) >= 1) config_path <- cli_args[1]  # Rscript ... params.txt takes precedence over the hardcoded fallback above
