@@ -66,7 +66,18 @@ if (!file.exists(pipeline_config_path)) {
        "(Rscript ... pipeline_config.txt).")
 }
 
-ground_returns_script <- "ground_returns.R"  # path to ground_returns.R -- edit if this driver isn't run from the same folder
+# Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so
+# sibling scripts can be found by their location on disk rather than by the caller's working
+# directory -- e.g. `Rscript R/run_align_pipeline.R ...` from the repo root and
+# `Rscript run_align_pipeline.R ...` from inside R/ both correctly find R/ground_returns.R.
+# Falls back to "." (assume cwd) when there's no "--file=" argument to read, e.g. when this
+# script is source()'d from RStudio instead of run via Rscript.
+get_script_dir <- function() {
+  file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
+  if (length(file_arg) == 1) dirname(normalizePath(file_arg, winslash = "/", mustWork = FALSE)) else "."
+}
+
+ground_returns_script <- file.path(get_script_dir(), "ground_returns.R")  # sibling script, same folder as this one
 param_dir <- file.path(tempdir(), "run_align_pipeline_params")  # generated ground_returns.R parameter files are written here
 dir.create(param_dir, showWarnings = FALSE, recursive = TRUE)
 
