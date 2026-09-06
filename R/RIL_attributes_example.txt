@@ -1,0 +1,32 @@
+# Example attribute list for RIL.R's attribute_list_file parameter.
+#
+# This is a standalone "ATTRIBUTE LIST:" / "END LIST:" block -- the same grammar RIL.exe's own
+# input file uses (see TWutils's Utilities.f90 InputFileModule::ReadList, and
+# TWutils::write_attribute_list()/get_attribute_list()). Nothing outside that block is read, so
+# this file can hold nothing else, or -- as here -- be a copy of just the block from a working
+# RIL input file.
+#
+# RIL.R reads this file with TWutils::read_attribute_list_file() and passes the result straight
+# to RIL_input()'s attribute_list argument, so any attribute name/argument combination RIL.exe
+# understands can be requested here, in any order, without editing RIL.R itself.
+
+  ATTRIBUTE LIST:
+    NODE ID:
+    ORDER:
+    CONTRIBUTING AREA: OUTPUT FIELD = AREA_SQKM
+    AS2:
+    PLAN:
+    SLOPE:
+    LENGTH_M:
+    FLUVIAL: TYPE = I4, LENGTH = 1
+    MEAN ANNUAL PRECIP: FILE = e:\prism\prism_wasp_m, OUTPUT FIELD = MNANPRC_M
+    MEAN ANNUAL FLOW: OUTPUT FIELD = MEANANNCMS, EQUATION
+      TERM: FIELD = AREA_SQKM, COEF = 0.017165249, EXPONENT = 0.985, FIELD = MNANPRC_M, EXPONENT = 1.37
+    END EQUATION:
+    WIDTH: OUTPUT FIELD = WIDTH_M, EQUATION
+      TERM: FIELD = MEANANNCMS, COEF = 7.350799, EXPONENT = 0.45
+    END EQUATION:
+    DEPTH: OUTPUT FIELD = DEPTH_M, EQUATION
+      TERM: FIELD = MEANANNCMS, COEF = 0.2621106, EXPONENT = 0.37
+    END EQUATION:
+  END LIST:

@@ -1,0 +1,34 @@
+# Example attribute list for bldgrds_enforce.R's attribute_list_file parameter.
+#
+# This is a standalone "ATTRIBUTE LIST:" / "END LIST:" block -- the same grammar
+# bldgrds_enforce_input() itself writes (see TWutils's Utilities.f90 InputFileModule::ReadList,
+# and TWutils::write_attribute_list()/get_attribute_list()). Nothing outside that block is read,
+# so this file can hold nothing else, or -- as here -- be a copy of just the block from a
+# working bldgrds input file (Skykomish project reference run).
+#
+# bldgrds_enforce.R reads this file with TWutils::read_attribute_list_file() and passes the
+# result straight to bldgrds_enforce_input()'s attribute_list argument, so any attribute
+# name/argument combination bldgrds.exe understands can be requested here, in any order, without
+# editing bldgrds_enforce.R itself.
+#
+# NOTE: the original Skykomish reference run's second TERM line reads "XPONENT=1.37" rather
+# than "EXPONENT=1.37". Confirmed by testing: TWutils::read_attribute_list_file() does NOT
+# recognize "XPONENT" and silently drops that field/exponent pair entirely, rather than
+# erroring -- so as transcribed literally, this would parse MEAN ANNUAL FLOW's equation as
+# MEANANNCMS = 0.017165249 * AREA_SQKM^0.985 (no MNANPRC_M/precipitation term at all), not the
+# two-variable equation the reference run clearly intended. "EXPONENT" below is corrected from
+# that apparent typo for that reason -- if bldgrds.exe's own parser handles "XPONENT" more
+# leniently than TWutils's R-side one does (unconfirmed), the original reference file may still
+# have run correctly on the Fortran side despite this; verify against a real run's MEANANNCMS
+# output if that matters to you.
+
+  ATTRIBUTE LIST:
+    CONTRIBUTING AREA: OUTPUT FIELD = AREA_SQKM
+    MEAN ANNUAL PRECIP: FILE = c:\work\data\skykomish\prism_wa_sp, OUTPUT FIELD = MNANPRC_M
+    MEAN ANNUAL FLOW: OUTPUT FIELD = MEANANNCMS, EQUATION
+      TERM: FIELD=AREA_SQKM, COEF=0.017165249, EXPONENT=0.985, FIELD=MNANPRC_M, EXPONENT=1.37
+    END EQUATION:
+    DEPTH: OUTPUT FIELD = DEPTH_M, EQUATION
+      TERM: FIELD=MEANANNCMS, COEF=0.2621106, EXPONENT=0.37
+    END EQUATION:
+  END LIST:

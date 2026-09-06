@@ -1,0 +1,102 @@
+# Parameter file for bldgrds.R
+#
+# One "keyword: value" pair per line. The order lines appear in is not significant -- every
+# line is self-labeled by its keyword. Blank lines and lines starting with "#" are ignored,
+# and a trailing "# comment" after a value is stripped. A value may contain a colon itself
+# (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
+# from its value, so that's safe.
+#
+# Most keywords below have no default and must be set -- bldgrds_input() has no physically
+# meaningful default for most of its channel-initiation-criteria arguments. Every other keyword
+# falls back to the default noted in param_specs (in bldgrds.R) if you delete or comment out its
+# line here. The placeholder numeric values below are NOT defaults -- they're only there so the
+# file parses; replace them with values calibrated for your own project (e.g. against a working
+# reference input file, the way TWutils's own bldgrds_input() was verified -- see that package's
+# CLAUDE.md).
+
+# Input DEM (full path).
+dem: c:\work\data\site1\elev_2023aligned.flt
+
+# Length (m) over which aspect is smoothed and plan curvature is measured.
+aspect_length: 15
+plan_length: 15
+
+# Length (m) over which gradient is measured.
+gradient_length_scale: 7.5
+
+# Weights on plan curvature and aspect in the D8 flow-direction calculation, and the length
+# scales (m) for the aspect/plan curvature used in that same calculation.
+d8_plan_coefficient: 1
+d8_aspect_coefficient: 1
+d8_aspect_length: 15
+d8_plan_length: 15
+
+# Inner and outer buffer distances (m) around a candidate initiation point, and the
+# contributing area (sq m) above which channel initiation is forced regardless of other
+# thresholds.
+initiation_buffer_inner: 15
+initiation_buffer_outer: 30
+initiation_area_override: 1000000
+
+# High and low local-relief thresholds for channel initiation.
+local_relief_threshold_high: 10
+local_relief_threshold_low: 5
+
+# Contributing-area threshold (sq m) for channel initiation in low- and high-gradient terrain.
+area_slope_threshold_low_gradient: 100000
+area_slope_threshold_high_gradient: 10000
+
+# Plan curvature threshold for channel initiation in low- and high-gradient terrain.
+plan_curvature_threshold_low_gradient: 0.002
+plan_curvature_threshold_high_gradient: 0.005
+
+# Minimum flow length (m) for a channel-initiation threshold to apply.
+minimum_threshold_flow_length: 100
+
+# Minimum channel length (m).
+minimum_channel_length: 0
+
+# Optional: precomputed local relief raster (e.g. from DEV()/LocalRelief), reused instead of
+# bldgrds calculating its own. Leave as NOFILE if not used.
+local_relief_raster: NOFILE
+
+# If TRUE, reuse existing intermediate files rather than recalculating them.
+use_existing_files: FALSE
+
+# If TRUE, run in calibration mode.
+calibrate: FALSE
+
+# Optional: polyline shapefile (e.g. road crossings) to excavate through the DEM, clearing
+# culvert blockages, and a buffer (m) around it. Leave as NOFILE if not used.
+excavate_line: NOFILE
+excavate_line_buffer: NOFILE
+
+# Optional: water-body polygon/raster mask, and its associated options. Leave as NOFILE/FALSE
+# if not used.
+water_mask: NOFILE
+water_mask_min_patch_size: NOFILE
+water_mask_set_to_min_elevation: FALSE
+water_mask_incise_to_center: FALSE
+water_mask_min_gradient: NOFILE
+water_mask_buffer_radius: NOFILE
+water_mask_preclude_initiation: FALSE
+
+# Optional output node point shapefile -- supplying this turns on OUTPUT NODE POINT SHAPEFILE.
+# Leave as NOFILE if not wanted.
+node_shapefile: NOFILE
+
+# Optional: number of pieces to split each channel segment into for node_shapefile. Only
+# meaningful together with node_shapefile; leave as NOFILE otherwise.
+node_splits: NOFILE
+
+# Optional mean-annual-precipitation raster, passed to TWutils::bldgrds_default_attributes() to
+# build attribute_list. NOFILE means the precip-dependent attributes (mean annual precip/flow,
+# channel width/depth) are omitted.
+precip_raster: NOFILE
+
+# Scratch directory for bldgrds' intermediate files, and the folder containing bldgrds.exe.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\gridutilities\projects\bldgrds\x64\release\
+
+# If TRUE, allow overwriting an existing bldgrds input file in scratch_dir.
+overwrite: TRUE
