@@ -1,0 +1,32 @@
+# Example attribute list for valleyfloor.R's attribute_list_file parameter.
+#
+# This is a standalone "ATTRIBUTE LIST:" / "END LIST:" block -- the same grammar ValleyFloor.exe's
+# own input file uses (see TWutils's Utilities.f90 InputFileModule::ReadList, and
+# TWutils::write_attribute_list()/get_attribute_list()). Nothing outside that block is read, so
+# this file can hold nothing else, or -- as here -- be a copy of just the block from a working
+# ValleyFloor input file (the Cherry project reference run).
+#
+# valleyfloor.R reads this file with TWutils::read_attribute_list_file() and passes the result
+# straight to valleyfloor_input()'s attribute_list argument, so any attribute name/argument
+# combination ValleyFloor.exe understands can be requested here, in any order, without editing
+# valleyfloor.R itself. ValleyFloor.f90 aborts with "No attributes specified" if this block ends
+# up empty, so attribute_list_file (or the precip_raster fallback in valleyfloor.R) must supply
+# at least one attribute.
+
+  ATTRIBUTE LIST:
+    NODE ID: OUTPUT FIELD = NODE_ID
+    CHANNEL ID:
+    CONTRIBUTING AREA: OUTPUT FIELD = AREA_SQKM
+    MEAN ANNUAL PRECIP: FILE = e:\prism\prism_wasp_m, OUTPUT FIELD = MNANPRC_M
+    MEAN ANNUAL FLOW: OUTPUT FIELD = MEANANNCMS, EQUATION
+      TERM: FIELD = AREA_SQKM, COEF = 0.017165249, EXPONENT = 0.985, FIELD = MNANPRC_M, EXPONENT = 1.37
+    END EQUATION:
+    WIDTH: OUTPUT FIELD = WIDTH_M, EQUATION, REPLACE
+      TERM: FIELD = MEANANNCMS, COEF = 7.350799, EXPONENT = 0.45
+    END EQUATION:
+    DEPTH: OUTPUT FIELD = DEPTH_M, EQUATION, REPLACE
+      TERM: FIELD = MEANANNCMS, COEF = 0.2621106, EXPONENT = 0.37
+    END EQUATION:
+    VALLEY WIDTH: CHANNEL DEPTHS = 2.0, OUTPUT FIELD = VW2
+    VALLEY WIDTH: CHANNEL DEPTHS = 5.0, OUTPUT FIELD = VW5
+  END LIST:
