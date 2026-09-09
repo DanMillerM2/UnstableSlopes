@@ -47,11 +47,13 @@ library(TWutils)
 ## "END LIST:" block, the same grammar RIL.exe's own input file uses (see
 ## RIL_attributes_example.txt for a ready-to-copy example). This script reads it with
 ## TWutils::read_attribute_list_file(), so any attribute name/argument combination RIL.exe
-## understands can be requested, in any order, without editing this script.
-## When attribute_list_file is NOFILE, this script falls back to
-## TWutils::ril_default_attributes(precip_raster) instead (the Post Mortem reference attribute
-## list; precip_raster is then the only knob over it -- NOFILE omits the precip-dependent
-## attributes).
+## understands can be requested, in any order, without editing this script -- including a
+## precipitation-dependent MEAN ANNUAL PRECIP/FLOW/WIDTH/DEPTH chain, whose mean-annual-
+## precipitation raster is given as that MEAN ANNUAL PRECIP entry's own FILE argument (see
+## RIL_attributes_example.txt); there is no separate precip_raster parameter for that anywhere
+## in this parameter file. When attribute_list_file is NOFILE, this script falls back to
+## TWutils::ril_default_attributes() instead -- the bare identifier/area/geometry attributes
+## only, with no precipitation-dependent chain.
 
 # Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
 # fallback config_path below is found by this script's location on disk rather than by the
@@ -234,13 +236,10 @@ param_specs <- list(
   out_zero_order      = list(type = "character", default = "NOFILE"),
 
   # Text file holding an arbitrary "ATTRIBUTE LIST:" / "END LIST:" block (see the note on
-  # attribute_list near the top of this script, and RIL_attributes_example.txt). Takes
-  # precedence over precip_raster below when set to anything other than NOFILE.
+  # attribute_list near the top of this script, and RIL_attributes_example.txt). When NOFILE,
+  # this script falls back to TWutils::ril_default_attributes() (bare identifier/area/geometry
+  # attributes, no precipitation-dependent chain).
   attribute_list_file = list(type = "character", default = "NOFILE"),
-
-  # Optional mean-annual-precipitation raster, passed to TWutils::ril_default_attributes() to
-  # build attribute_list -- only used as a fallback when attribute_list_file above is NOFILE.
-  precip_raster = list(type = "character", default = "NOFILE"),
 
   # If FALSE, channel-node drainage wings are built with standard D8 flow paths instead of
   # D8-LTD.
@@ -303,7 +302,7 @@ attribute_list <- if (toupper(attribute_list_file) != "NOFILE") {
   message("Reading attribute list from: ", attribute_list_file)
   TWutils::read_attribute_list_file(attribute_list_file)
 } else {
-  TWutils::ril_default_attributes(precip_raster)
+  TWutils::ril_default_attributes()
 }
 
 ## ---- Run RIL ---------------------------------------------------------------------------------

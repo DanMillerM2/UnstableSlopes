@@ -65,12 +65,14 @@ library(TWutils)
 ##     "ATTRIBUTE LIST:" / "END LIST:" block -- the same grammar bldgrds_enforce_input() itself
 ##     writes -- read with TWutils::read_attribute_list_file(). See
 ##     bldgrds_enforce_attributes_example.txt for a ready-to-copy example (transcribed from the
-##     Skykomish reference run this script's keyword set is built from).
+##     Skykomish reference run this script's keyword set is built from), including a
+##     mean-annual-precipitation-dependent chain given via that block's own MEAN ANNUAL PRECIP:
+##     FILE = ... entry -- there is no separate precip_raster keyword anywhere in this parameter
+##     file.
 ##   - When attribute_list_file is NOFILE, this script falls back to
-##     TWutils::bldgrds_default_attributes(precip_raster) instead -- note this reproduces a
-##     *different*, generic reference run than the Skykomish one attribute_list_file's example
-##     transcribes, with different hydraulic-geometry coefficients; prefer attribute_list_file
-##     when you have a real project-specific attribute list to match.
+##     TWutils::bldgrds_default_attributes() instead -- the bare elevation/area attributes only,
+##     with no precipitation-dependent chain; prefer attribute_list_file when you have a real
+##     project-specific attribute list to match.
 
 # Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
 # fallback config_path below is found by this script's location on disk rather than by the
@@ -187,13 +189,10 @@ param_specs <- list(
   twi_gradient_length_scale = list(type = "optional_numeric", default = NA_real_),
 
   # Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" block (see the note on
-  # attribute_list above, and bldgrds_enforce_attributes_example.txt). Takes precedence over
-  # precip_raster below when set to anything other than NOFILE.
+  # attribute_list above, and bldgrds_enforce_attributes_example.txt). When NOFILE, this script
+  # falls back to TWutils::bldgrds_default_attributes() (bare elevation/area attributes, no
+  # precipitation-dependent chain).
   attribute_list_file = list(type = "character", default = "NOFILE"),
-
-  # Optional mean-annual-precipitation raster, passed to TWutils::bldgrds_default_attributes()
-  # to build attribute_list -- only used as a fallback when attribute_list_file above is NOFILE.
-  precip_raster = list(type = "character", default = "NOFILE"),
 
   # Scratch directory (bldgrds' input file is written here) and the folder containing the
   # bldgrds executable. No defaults -- must be set in the parameter file.
@@ -261,7 +260,7 @@ attribute_list <- if (toupper(attribute_list_file) != "NOFILE") {
   message("Reading attribute list from: ", attribute_list_file)
   TWutils::read_attribute_list_file(attribute_list_file)
 } else {
-  TWutils::bldgrds_default_attributes(precip_raster)
+  TWutils::bldgrds_default_attributes()
 }
 
 ## ---- Run bldgrds (enforce mode) ---------------------------------------------------------------

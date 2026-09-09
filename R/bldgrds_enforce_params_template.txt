@@ -49,16 +49,13 @@ twi_gradient_length_scale: NOFILE
 
 # Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" block (see
 # bldgrds_enforce_attributes_example.txt for a ready-to-copy example transcribed from this same
-# Skykomish reference run). Takes precedence over precip_raster below when set to anything
-# other than NOFILE.
+# Skykomish reference run, including a mean-annual-precipitation-dependent chain given via that
+# block's own MEAN ANNUAL PRECIP: FILE = ... entry -- there is no separate precip_raster keyword
+# anywhere in this parameter file). When NOFILE, this script falls back to
+# TWutils::bldgrds_default_attributes() -- a *different*, generic bare elevation/area default,
+# not the Skykomish reference; prefer attribute_list_file when you have a real project-specific
+# attribute list to match (as in this template's own case).
 attribute_list_file: NOFILE
-
-# Optional mean-annual-precipitation raster, passed to TWutils::bldgrds_default_attributes() to
-# build attribute_list -- only used as a fallback when attribute_list_file above is NOFILE. Note
-# this is a *different*, generic reference than the Skykomish one attribute_list_file's example
-# transcribes, with different hydraulic-geometry coefficients -- prefer attribute_list_file when
-# you have a real project-specific attribute list to match (as in this template's own case).
-precip_raster: NOFILE
 
 # Scratch directory for bldgrds' intermediate files, and the folder containing bldgrds.exe.
 scratch_dir: c:\work\scratch

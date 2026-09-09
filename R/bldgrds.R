@@ -60,11 +60,18 @@ library(TWutils)
 ##
 ## attribute_list (the per-node attributes written to the node-list database and, if requested,
 ## node_shapefile) is NOT set from this parameter file directly -- it's an R object
-## (attribute_spec()/equation_term() calls), not expressible as flat text, same as RIL.R's
-## attribute_list. Instead this script always calls
-## TWutils::bldgrds_default_attributes(precip_raster) (see the precip_raster parameter below,
-## same convention RIL.R uses for its own precip_raster); to use a genuinely custom attribute_list,
-## edit this script directly.
+## (attribute_spec()/equation_term() calls), not expressible as flat text. Instead, same
+## convention as RIL.R/valleyfloor.R/bldgrds_enforce.R:
+##   - attribute_list_file (below), when set, names a separate text file holding a standalone
+##     "ATTRIBUTE LIST:" / "END LIST:" (or "END ATTRIBUTE LIST:") block -- the same grammar
+##     bldgrds_input() itself writes -- read with TWutils::read_attribute_list_file(). See
+##     bldgrds_attributes_example.txt for a ready-to-copy example (transcribed from the Sprague
+##     River reference run), including a mean-annual-precipitation-dependent chain given via
+##     that block's own MEAN ANNUAL PRECIP: FILE = ... entry -- there is no separate
+##     precip_raster keyword anywhere in this parameter file.
+##   - When attribute_list_file is NOFILE, this script falls back to
+##     TWutils::bldgrds_default_attributes() instead -- the bare elevation/area attributes only,
+##     with no precipitation-dependent chain.
 
 # Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
 # fallback config_path below is found by this script's location on disk rather than by the
@@ -218,11 +225,11 @@ param_specs <- list(
   # meaningful together with node_shapefile; leave as NOFILE/omit otherwise.
   node_splits = list(type = "optional_integer", default = NA_integer_),
 
-  # Optional mean-annual-precipitation raster, passed to TWutils::bldgrds_default_attributes()
-  # to build attribute_list (see the note on attribute_list above). NOFILE means the
-  # precip-dependent attributes (mean annual precip/flow, channel width/depth) are omitted --
-  # same convention RIL.R uses for its own precip_raster.
-  precip_raster = list(type = "character", default = "NOFILE"),
+  # Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" (or "END ATTRIBUTE LIST:")
+  # block (see the note on attribute_list above, and bldgrds_attributes_example.txt). When
+  # NOFILE, this script falls back to TWutils::bldgrds_default_attributes() (bare elevation/area
+  # attributes, no precipitation-dependent chain).
+  attribute_list_file = list(type = "character", default = "NOFILE"),
 
   # Scratch directory (bldgrds' input file is written here) and the folder containing the
   # bldgrds executable. No defaults -- must be set in the parameter file.
@@ -286,6 +293,13 @@ list2env(params, envir = globalenv())  # makes dem, aspect_length, ... ordinary 
 
 message("Loaded parameters from: ", config_path)
 
+attribute_list <- if (toupper(attribute_list_file) != "NOFILE") {
+  message("Reading attribute list from: ", attribute_list_file)
+  TWutils::read_attribute_list_file(attribute_list_file)
+} else {
+  TWutils::bldgrds_default_attributes()
+}
+
 ## ---- Run bldgrds -------------------------------------------------------------------------------
 ## No "skip if already done" check here -- see the note near the top of this script: bldgrds_input()
 ## no longer takes path/dem_id arguments, so this script has no way to predict bldgrds' output
@@ -326,7 +340,7 @@ TWutils::bldgrds(dem = dem,
                  water_mask_preclude_initiation = water_mask_preclude_initiation,
                  node_shapefile = node_shapefile,
                  node_splits = if (is.na(node_splits)) NULL else node_splits,
-                 attribute_list = TWutils::bldgrds_default_attributes(precip_raster),
+                 attribute_list = attribute_list,
                  overwrite = overwrite,
                  executable_dir = executable_dir)
 

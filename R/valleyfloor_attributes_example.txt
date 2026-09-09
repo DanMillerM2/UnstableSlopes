@@ -10,17 +10,19 @@
 # straight to valleyfloor_input()'s attribute_list argument, so any attribute name/argument
 # combination ValleyFloor.exe understands can be requested here, in any order, without editing
 # valleyfloor.R itself. ValleyFloor.f90 aborts with "No attributes specified" if this block ends
-# up empty, so attribute_list_file (or the precip_raster fallback in valleyfloor.R) must supply
-# at least one attribute.
+# up empty, so attribute_list_file (or, when it's NOFILE, valleyfloor.R's
+# TWutils::valleyfloor_default_attributes() fallback) must supply at least one attribute.
 
   ATTRIBUTE LIST:
     NODE ID: OUTPUT FIELD = NODE_ID
     CHANNEL ID:
     CONTRIBUTING AREA: OUTPUT FIELD = AREA_SQKM
     MEAN ANNUAL PRECIP: FILE = e:\prism\prism_wasp_m, OUTPUT FIELD = MNANPRC_M
+    # Kresch, D.L., 1998, Water Resources Investigations Report 98-4160 (mean annual flow).
     MEAN ANNUAL FLOW: OUTPUT FIELD = MEANANNCMS, EQUATION
       TERM: FIELD = AREA_SQKM, COEF = 0.017165249, EXPONENT = 0.985, FIELD = MNANPRC_M, EXPONENT = 1.37
     END EQUATION:
+    # Magirl and Olsen, 2009 (channel width and depth).
     WIDTH: OUTPUT FIELD = WIDTH_M, EQUATION, REPLACE
       TERM: FIELD = MEANANNCMS, COEF = 7.350799, EXPONENT = 0.45
     END EQUATION:

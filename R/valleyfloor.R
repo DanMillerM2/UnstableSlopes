@@ -80,10 +80,12 @@ library(TWutils)
 ## same grammar ValleyFloor.exe's own input file uses (see valleyfloor_attributes_example.txt for
 ## a ready-to-copy example). This script reads it with TWutils::read_attribute_list_file(), so any
 ## attribute name/argument combination ValleyFloor.exe understands can be requested, in any
-## order, without editing this script. When attribute_list_file is NOFILE, this script falls back
-## to TWutils::valleyfloor_default_attributes(precip_raster) instead (the Cherry project
-## reference attribute list; precip_raster is then the only knob over it -- NOFILE omits the
-## precip-dependent attributes).
+## order, without editing this script -- including a mean-annual-precipitation-dependent chain,
+## whose precipitation raster is given as that block's own MEAN ANNUAL PRECIP: FILE = ... entry;
+## there is no separate precip_raster parameter for that anywhere in this parameter file. When
+## attribute_list_file is NOFILE, this script falls back to
+## TWutils::valleyfloor_default_attributes() instead -- the bare identifier/area attributes only,
+## with no precipitation-dependent chain.
 
 # Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
 # fallback config_path below is found by this script's location on disk rather than by the
@@ -101,7 +103,7 @@ get_script_dir <- function() {
 # fallback when no such argument is given (e.g. sourcing this script from RStudio), so set it
 # there in that case.
 #config_path <- "path/to/params.txt"   # template -- point this at your own project's parameter file
-config_path <- file.path(get_script_dir(), "R/valleyfloor_params_template.txt")
+config_path <- file.path(get_script_dir(), "valleyfloor_params_template.txt")
 
 cli_args <- commandArgs(trailingOnly = TRUE)
 if (length(cli_args) >= 1) config_path <- cli_args[1]  # Rscript ... params.txt takes precedence over the hardcoded fallback above
@@ -316,13 +318,10 @@ param_specs <- list(
   valley_width_window = list(type = "numeric", default = 20),
 
   # Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" block (see the note on
-  # attribute_list above, and valleyfloor_attributes_example.txt). Takes precedence over
-  # precip_raster below when set to anything other than NOFILE.
+  # attribute_list above, and valleyfloor_attributes_example.txt). When NOFILE, this script
+  # falls back to TWutils::valleyfloor_default_attributes() (bare identifier/area attributes, no
+  # precipitation-dependent chain).
   attribute_list_file = list(type = "character", default = "NOFILE"),
-
-  # Optional mean-annual-precipitation raster, passed to TWutils::valleyfloor_default_attributes()
-  # to build attribute_list -- only used as a fallback when attribute_list_file above is NOFILE.
-  precip_raster = list(type = "character", default = "NOFILE"),
 
   # Optional: restrict processing to the channel segment between these two node IDs. NOFILE
   # omits either keyword.
@@ -406,7 +405,7 @@ attribute_list <- if (toupper(attribute_list_file) != "NOFILE") {
   message("Reading attribute list from: ", attribute_list_file)
   TWutils::read_attribute_list_file(attribute_list_file)
 } else {
-  TWutils::valleyfloor_default_attributes(precip_raster)
+  TWutils::valleyfloor_default_attributes()
 }
 
 ## ---- Run ValleyFloor ---------------------------------------------------------------------------

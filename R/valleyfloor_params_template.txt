@@ -29,9 +29,12 @@
 #   - attribute_list_file (below), when set, names a separate text file holding a standalone
 #     "ATTRIBUTE LIST:" / "END LIST:" block -- see valleyfloor_attributes_example.txt for a
 #     ready-to-copy example (transcribed from the Cherry project reference run this script's
-#     other defaults are also built from).
+#     other defaults are also built from). A mean-annual-precipitation raster, if wanted, is
+#     given there as the MEAN ANNUAL PRECIP attribute's own FILE argument -- there is no
+#     separate precip_raster keyword here.
 #   - When attribute_list_file is NOFILE, this script falls back to
-#     TWutils::valleyfloor_default_attributes(precip_raster) instead.
+#     TWutils::valleyfloor_default_attributes() instead -- the bare identifier/area attributes
+#     only, with no precipitation-dependent chain.
 
 # Input DEM (full path).
 dem: c:\work\data\cherry\elev_cherry.flt
@@ -100,14 +103,10 @@ height_above_steps: 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10
 valley_width_window: 20
 
 # Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" block (see
-# valleyfloor_attributes_example.txt). Takes precedence over precip_raster below when set to
-# anything other than NOFILE.
+# valleyfloor_attributes_example.txt, which includes a mean-annual-precipitation-dependent chain
+# given via that block's own MEAN ANNUAL PRECIP: FILE = ... entry). When NOFILE, this script
+# falls back to TWutils::valleyfloor_default_attributes() -- bare identifier/area attributes only.
 attribute_list_file: NOFILE
-
-# Optional mean-annual-precipitation raster, passed to TWutils::valleyfloor_default_attributes()
-# to build attribute_list -- only used as a fallback when attribute_list_file above is NOFILE.
-# NOFILE omits the precip-dependent attributes (mean annual flow, width, depth).
-precip_raster: e:\prism\prism_wasp_m
 
 # Optional: restrict processing to the channel segment between these two node IDs.
 upstream_node: NOFILE
