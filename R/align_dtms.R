@@ -54,7 +54,7 @@ get_script_dir <- function() {
 # fallback when no such argument is given (e.g. sourcing this script from RStudio), so set it
 # there in that case.
 #config_path <- "path/to/params.txt"   # template -- point this at your own project's parameter file
-config_path <- file.path(get_script_dir(), "align_dtms_params_template.txt")
+config_path <- file.path(get_script_dir(), "R/align_dtms_params_template.txt")
 
 cli_args <- commandArgs(trailingOnly = TRUE)
 if (length(cli_args) >= 1) config_path <- cli_args[1]  # Rscript ... params.txt takes precedence over the hardcoded fallback above

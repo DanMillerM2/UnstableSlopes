@@ -12,7 +12,16 @@
 #
 # Values below are transcribed from a working Skykomish-project reference run.
 
-# Input DEM (full path).
+# Optional: path to an already-written bldgrds "enforce" input file. When set, bldgrds_enforce.R
+# skips building an input file from the parameters below (mode 2) and instead hands this file
+# straight to bldgrds.exe (mode 1) -- dem, channel_mask, channel_mask_dig, scratch_dir,
+# attribute_list_file, and every other mode-2-only keyword below are then ignored.
+# executable_dir (below) still applies in mode 1, but only as a fallback used if this file has
+# no working "EXECUTABLE DIR:" line of its own. Leave as NOFILE (the default) for mode 2 -- the
+# normal case, and what every other keyword in this template file assumes.
+input_file: NOFILE
+
+# Input DEM (full path). Mode 2 only -- ignored if input_file (above) is set.
 dem: c:\work\data\skykomish\elev_3m.flt
 
 # Existing channel-network raster/shapefile to enforce (CHANNEL MASK: FILE). No new channel
