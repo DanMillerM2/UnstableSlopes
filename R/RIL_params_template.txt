@@ -18,6 +18,15 @@
 # RIL_input() itself uses (the Post Mortem reference run) -- if you delete or comment out its
 # line here.
 #
+# input_file selects mode 1: point it at an already-written RIL input file to hand straight to
+# RIL.exe, skipping RIL_input() entirely. When set, dem, scratch_dir, out_RIL,
+# attribute_list_file, and every other mode-2-only keyword below are ignored -- the input file
+# already carries everything the program needs (including its own OUTPUT RIL RASTER keyword, so
+# this script's "skip if already done" check does not apply in this mode). executable_dir still
+# applies, as a fallback used only if the input file has no working "EXECUTABLE DIR:" line of
+# its own. Leave as NOFILE (the default) to build an input file from the parameters below
+# instead (mode 2). See RIL_params_mode1_example.txt for a ready-to-copy mode-1 example.
+#
 # attribute_list (the list of per-node attributes RIL computes) is NOT set from this parameter
 # file directly -- it's an R object (attribute_spec()/equation_term() calls), not expressible as
 # flat text. Instead:
@@ -29,7 +38,11 @@
 #     TWutils::ril_default_attributes() instead -- the bare identifier/area/geometry attributes
 #     only, with no precipitation-dependent chain.
 
-# Input DEM (full path).
+# Optional: path to an already-written RIL input file (selects mode 1 -- see the note above).
+# Leave as NOFILE (the default) to build one from the parameters below (mode 2).
+input_file: NOFILE
+
+# Input DEM (full path). Mode 2 only -- ignored in mode 1.
 dem: c:\work\data\postmorten\elev_2006N.flt
 
 # Scratch directory (RIL's input file is written here) and the folder containing RIL.exe.

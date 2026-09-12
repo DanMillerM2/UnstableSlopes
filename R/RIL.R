@@ -8,10 +8,23 @@
 ##
 ## Requires: TWutils (local package -- must already be installed/available in the R environment)
 ##
+## This script supports both of TWutils::RIL()'s modes:
+##   - Mode 1: a user-supplied, already-written RIL input file (input_file parameter below) is
+##     handed straight to RIL.exe, bypassing RIL_input() entirely. Every other parameter below
+##     (dem, scratch_dir, out_RIL, radius, ..., attribute_list_file) is ignored in this mode --
+##     the input file already carries everything the program needs -- except executable_dir,
+##     which is still used as a fallback if the input file has no working EXECUTABLE DIR: line
+##     of its own (see TWutils::resolve_executable_dir()). The output raster's path is read back
+##     from the file's own OUTPUT RIL RASTER keyword, so this script's out_RIL_flt
+##     "skip if already done" check (below) does not apply in mode 1 -- that mode always runs.
+##   - Mode 2 (the default): this script builds the input file itself, via TWutils::RIL_input(),
+##     from the dem/scratch_dir/out_RIL/... parameters below.
+##
 ## All input parameters below (dem, scratch_dir, out_RIL, radius, ..., overwrite) are read from
 ## a plain-text parameter file rather than hardcoded in this script -- see the "Parameter file"
-## section just below for its format, and RIL_params_template.txt for a ready-to-copy example.
-## Pass that file's path as a command-line argument when running via Rscript:
+## section just below for its format, and RIL_params_template.txt for a ready-to-copy mode-2
+## example (or RIL_params_mode1_example.txt for a mode-1 one, pointing at an existing input
+## file). Pass that file's path as a command-line argument when running via Rscript:
 ##   Rscript RIL.R path/to/your_params.txt
 ## or, when sourcing/running from R/RStudio, set config_path below before running the script.
 
@@ -111,6 +124,13 @@ read_param_file <- function(path) {
   setNames(as.list(vals), keys)
 }
 
+# Returns TRUE for a raw text value that means "not supplied" -- same sentinel words
+# TWutils::is_missing_path() recognizes (case-insensitive "nofile"/"none"/"na", blank), used
+# here for the input_file parameter (mode 1 vs. mode 2).
+is_nofile_text <- function(raw_val) {
+  tolower(trimws(raw_val)) %in% c("nofile", "none", "na", "")
+}
+
 # Parses one grouped ("NAME=value, NAME=value, ...") parameter value into a named numeric
 # vector, e.g. "PRIMARY=0.3, SECONDARY=0.25" -> c(PRIMARY = 0.3, SECONDARY = 0.25). Used for
 # RIL_input()'s named-vector arguments (closest_node, hollow_gradient, ...).
@@ -142,16 +162,27 @@ parse_named_vector <- function(raw_val, nm, path) {
 # file must supply it). This table is the single place that documents what each keyword means,
 # mirroring TWutils::RIL_input()'s own arguments/defaults (the Post Mortem reference run).
 param_specs <- list(
-  # Input DEM. No default -- must be set in the parameter file.
+  # Optional: path to an already-written RIL input file (selects TWutils::RIL()'s mode 1). When
+  # set (anything other than NOFILE), this script skips RIL_input() entirely and hands the file
+  # straight to RIL.exe -- dem, scratch_dir, out_RIL, and every other mode-2-only keyword below
+  # are ignored. executable_dir (below) still applies, as a fallback used only if this file has
+  # no working "EXECUTABLE DIR:" line of its own. Leave as NOFILE (the default) to build an
+  # input file from the parameters below instead (mode 2).
+  input_file = list(type = "character", default = "NOFILE"),
+
+  # Input DEM. No default -- must be set in the parameter file (mode 2 only; ignored in mode 1).
   dem = list(type = "character", required = TRUE),
 
-  # Scratch directory (RIL's input file is written here) and the folder containing the RIL
-  # executable. No defaults -- must be set in the parameter file.
+  # Scratch directory (RIL's input file is written here, mode 2 only -- ignored in mode 1) and
+  # the folder containing the RIL executable (both modes -- see input_file above). No defaults
+  # -- must be set in the parameter file, unless input_file is set, in which case scratch_dir is
+  # unused and executable_dir is only a fallback (see input_file above).
   scratch_dir    = list(type = "character", required = TRUE),
   executable_dir = list(type = "character", required = TRUE),
 
   # Output RIL raster (.flt), given without extension. No default -- must be set in the
-  # parameter file.
+  # parameter file (mode 2 only; ignored in mode 1 -- the output path there comes from the
+  # input file's own OUTPUT RIL RASTER keyword).
   out_RIL = list(type = "character", required = TRUE),
 
   # Radius (m) for calculating elevation derivatives.
@@ -293,85 +324,118 @@ build_params <- function(raw_params, specs, path) {
 }
 
 raw_params <- read_param_file(config_path)
-params     <- build_params(raw_params, param_specs, config_path)
+
+# Mode 1 (existing input file) vs. mode 2 (build one from the parameters below) -- decide this
+# before build_params() runs so mode 2's required keywords (dem, scratch_dir, out_RIL,
+# executable_dir) don't force the parameter file to carry values that TWutils::RIL() would just
+# ignore anyway when input_file is supplied. executable_dir stays optional in mode 1 too -- it's
+# only used there as a fallback (see input_file's param_specs entry above).
+raw_input_file <- if (!is.null(raw_params[["input_file"]])) raw_params[["input_file"]] else "NOFILE"
+use_existing_input_file <- !is_nofile_text(raw_input_file)
+if (use_existing_input_file) {
+  for (nm in c("dem", "scratch_dir", "out_RIL", "executable_dir")) {
+    param_specs[[nm]]$required <- FALSE
+    param_specs[[nm]]$default  <- "NOFILE"
+  }
+}
+
+params <- build_params(raw_params, param_specs, config_path)
 list2env(params, envir = globalenv())  # makes dem, scratch_dir, out_RIL, radius, ... ordinary top-level variables, exactly as if they'd been assigned by hand below
 
 message("Loaded parameters from: ", config_path)
 
-attribute_list <- if (toupper(attribute_list_file) != "NOFILE") {
-  message("Reading attribute list from: ", attribute_list_file)
-  TWutils::read_attribute_list_file(attribute_list_file)
-} else {
-  TWutils::ril_default_attributes()
-}
-
 ## ---- Run RIL ---------------------------------------------------------------------------------
-## Skips the work if out_RIL's output raster already exists, so a failed/interrupted run can be
-## restarted without redoing a RIL run that already completed (same resumability convention used
-## elsewhere in this repo, e.g. align_dtms.R's outOutlier skip).
 
-out_RIL_flt <- if (grepl("\\.flt$", out_RIL, ignore.case = TRUE)) out_RIL else paste0(out_RIL, ".flt")
+if (use_existing_input_file) {
 
-if (!file.exists(out_RIL_flt)) {
-  ril_raster <- TWutils::RIL(dem = dem,
-                             scratch_dir = scratch_dir,
-                             out_RIL = out_RIL,
-                             radius = radius,
-                             closest_node = closest_node,
-                             as2_threshold = as2_threshold,
-                             plan_curvature_threshold = plan_curvature_threshold,
-                             gradient_threshold = gradient_threshold,
-                             fluvial_area_threshold = fluvial_area_threshold,
-                             valley_depth_max = valley_depth_max,
-                             valley_buffer = valley_buffer,
-                             valley_max_hole = valley_max_hole,
-                             valley_min_patch = valley_min_patch,
-                             hollow_gradient = hollow_gradient,
-                             hollow_tangential = hollow_tangential,
-                             hollow_profile = hollow_profile,
-                             grad_proportion = grad_proportion,
-                             tan_proportion = tan_proportion,
-                             fill_hollow_embayments = fill_hollow_embayments,
-                             hollow_area_threshold = hollow_area_threshold,
-                             hollow_max_hole = hollow_max_hole,
-                             hollow_min_patch = hollow_min_patch,
-                             gorge_gradient = gorge_gradient,
-                             gorge_max_hole = gorge_max_hole,
-                             gorge_min_patch = gorge_min_patch,
-                             slope_thresholds = slope_thresholds,
-                             curve_thresholds = curve_thresholds,
-                             edge_smoothing_iterations = edge_smoothing_iterations,
-                             road_shapefile = road_shapefile,
-                             road_buffer = road_buffer,
-                             in_closest_node = in_closest_node,
-                             in_dist_to_channel = in_dist_to_channel,
-                             in_drainage_wing = in_drainage_wing,
-                             in_valley_floor = in_valley_floor,
-                             in_upgrad = in_upgrad,
-                             in_downgrad = in_downgrad,
-                             in_grad = in_grad,
-                             in_tangential = in_tangential,
-                             in_plan = in_plan,
-                             in_prof = in_prof,
-                             out_closest_node = out_closest_node,
-                             out_dist_to_channel = out_dist_to_channel,
-                             out_drainage_wing = out_drainage_wing,
-                             out_valley_floor = out_valley_floor,
-                             out_upgrad = out_upgrad,
-                             out_downgrad = out_downgrad,
-                             out_grad = out_grad,
-                             out_tangential = out_tangential,
-                             out_plan = out_plan,
-                             out_prof = out_prof,
-                             out_nodes = out_nodes,
-                             out_zero_order = out_zero_order,
-                             attribute_list = attribute_list,
-                             use_ltd = use_ltd,
-                             debug = debug,
-                             overwrite = overwrite,
-                             executable_dir = executable_dir)
+  # Mode 1: hand the existing input file straight to RIL.exe. dem, scratch_dir, out_RIL,
+  # attribute_list_file, and every other mode-2-only parameter above are ignored by
+  # TWutils::RIL() in this mode -- the file already carries everything the program needs.
+  # executable_dir is passed through as a fallback only (NULL if left as NOFILE), used only if
+  # the input file has no working "EXECUTABLE DIR:" line of its own. The output raster's path
+  # comes back from the file's own OUTPUT RIL RASTER keyword, so there's no out_RIL to check for
+  # a "skip if already done" test here -- this mode always runs.
+  message("Using existing RIL input file: ", input_file)
+  ril_raster <- TWutils::RIL(input_file = input_file,
+                             executable_dir = if (toupper(executable_dir) == "NOFILE") NULL else executable_dir)
 
-  message("RIL finished. Output raster written to: ", out_RIL)
+  message("RIL finished using existing input file: ", input_file)
+
 } else {
-  message("Output raster already exists, skipping RIL: ", out_RIL_flt)
+
+  attribute_list <- if (toupper(attribute_list_file) != "NOFILE") {
+    message("Reading attribute list from: ", attribute_list_file)
+    TWutils::read_attribute_list_file(attribute_list_file)
+  } else {
+    TWutils::ril_default_attributes()
+  }
+
+  # Skips the work if out_RIL's output raster already exists, so a failed/interrupted run can be
+  # restarted without redoing a RIL run that already completed (same resumability convention used
+  # elsewhere in this repo, e.g. align_dtms.R's outOutlier skip).
+  out_RIL_flt <- if (grepl("\\.flt$", out_RIL, ignore.case = TRUE)) out_RIL else paste0(out_RIL, ".flt")
+
+  if (!file.exists(out_RIL_flt)) {
+    ril_raster <- TWutils::RIL(dem = dem,
+                               scratch_dir = scratch_dir,
+                               out_RIL = out_RIL,
+                               radius = radius,
+                               closest_node = closest_node,
+                               as2_threshold = as2_threshold,
+                               plan_curvature_threshold = plan_curvature_threshold,
+                               gradient_threshold = gradient_threshold,
+                               fluvial_area_threshold = fluvial_area_threshold,
+                               valley_depth_max = valley_depth_max,
+                               valley_buffer = valley_buffer,
+                               valley_max_hole = valley_max_hole,
+                               valley_min_patch = valley_min_patch,
+                               hollow_gradient = hollow_gradient,
+                               hollow_tangential = hollow_tangential,
+                               hollow_profile = hollow_profile,
+                               grad_proportion = grad_proportion,
+                               tan_proportion = tan_proportion,
+                               fill_hollow_embayments = fill_hollow_embayments,
+                               hollow_area_threshold = hollow_area_threshold,
+                               hollow_max_hole = hollow_max_hole,
+                               hollow_min_patch = hollow_min_patch,
+                               gorge_gradient = gorge_gradient,
+                               gorge_max_hole = gorge_max_hole,
+                               gorge_min_patch = gorge_min_patch,
+                               slope_thresholds = slope_thresholds,
+                               curve_thresholds = curve_thresholds,
+                               edge_smoothing_iterations = edge_smoothing_iterations,
+                               road_shapefile = road_shapefile,
+                               road_buffer = road_buffer,
+                               in_closest_node = in_closest_node,
+                               in_dist_to_channel = in_dist_to_channel,
+                               in_drainage_wing = in_drainage_wing,
+                               in_valley_floor = in_valley_floor,
+                               in_upgrad = in_upgrad,
+                               in_downgrad = in_downgrad,
+                               in_grad = in_grad,
+                               in_tangential = in_tangential,
+                               in_plan = in_plan,
+                               in_prof = in_prof,
+                               out_closest_node = out_closest_node,
+                               out_dist_to_channel = out_dist_to_channel,
+                               out_drainage_wing = out_drainage_wing,
+                               out_valley_floor = out_valley_floor,
+                               out_upgrad = out_upgrad,
+                               out_downgrad = out_downgrad,
+                               out_grad = out_grad,
+                               out_tangential = out_tangential,
+                               out_plan = out_plan,
+                               out_prof = out_prof,
+                               out_nodes = out_nodes,
+                               out_zero_order = out_zero_order,
+                               attribute_list = attribute_list,
+                               use_ltd = use_ltd,
+                               debug = debug,
+                               overwrite = overwrite,
+                               executable_dir = executable_dir)
+
+    message("RIL finished. Output raster written to: ", out_RIL)
+  } else {
+    message("Output raster already exists, skipping RIL: ", out_RIL_flt)
+  }
 }

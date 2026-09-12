@@ -23,6 +23,13 @@
 # downstream_node) have no meaningful default of their own -- leave them as NOFILE to omit that
 # keyword from ValleyFloor's input file entirely.
 #
+# input_file selects mode 1: point it at an already-written ValleyFloor input file to hand
+# straight to ValleyFloor.exe, skipping valleyfloor_input() entirely. When set, dem, scratch_dir,
+# valley_buffer, attribute_list_file, and every other mode-2-only keyword below are ignored --
+# the input file already carries everything the program needs. executable_dir still applies, as
+# a fallback used only if the input file has no working "EXECUTABLE DIR:" line of its own. Leave
+# as NOFILE (the default) to build an input file from the parameters below instead (mode 2).
+#
 # attribute_list (the list of per-node attributes ValleyFloor computes) is NOT set from this
 # parameter file directly -- it's an R object (attribute_spec()/equation_term() calls), not
 # expressible as flat text. Instead:
@@ -36,7 +43,11 @@
 #     TWutils::valleyfloor_default_attributes() instead -- the bare identifier/area attributes
 #     only, with no precipitation-dependent chain.
 
-# Input DEM (full path).
+# Optional: path to an already-written ValleyFloor input file (selects mode 1 -- see the note
+# above). Leave as NOFILE (the default) to build one from the parameters below (mode 2).
+input_file: NOFILE
+
+# Input DEM (full path). Mode 2 only -- ignored in mode 1.
 dem: c:\work\data\cherry\elev_cherry.flt
 
 # --- Channel selection ---

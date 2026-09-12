@@ -14,6 +14,16 @@
 ##
 ## Requires: TWutils (local package -- must already be installed/available in the R environment)
 ##
+## This script supports both of TWutils::valleyfloor()'s modes:
+##   - Mode 1: a user-supplied, already-written ValleyFloor input file (input_file parameter
+##     below) is handed straight to ValleyFloor.exe, bypassing valleyfloor_input() entirely.
+##     Every other parameter below (dem, scratch_dir, valley_buffer, attribute_list_file, ...) is
+##     ignored in this mode -- the input file already carries everything the program needs --
+##     except executable_dir, which is still used as a fallback if the input file has no working
+##     EXECUTABLE DIR: line of its own (see TWutils::resolve_executable_dir()).
+##   - Mode 2 (the default): this script builds the input file itself, via
+##     TWutils::valleyfloor_input(), from the dem/scratch_dir/... parameters below.
+##
 ## valleyfloor_input() reproduces the keyword grammar of a working reference run (Cherry
 ## project); see TWutils's own CLAUDE.md and valleyfloor_input()'s roxygen docs for the several
 ## legacy keywords/mode switches that a working input_valleyfloor.txt file still carries but
@@ -32,8 +42,9 @@
 ##
 ## All input parameters below (dem, scratch_dir, ..., overwrite) are read from a plain-text
 ## parameter file rather than hardcoded in this script -- see the "Parameter file" section just
-## below for its format, and valleyfloor_params_template.txt for a ready-to-copy example. Pass
-## that file's path as a command-line argument when running via Rscript:
+## below for its format, and valleyfloor_params_template.txt for a ready-to-copy mode-2 example
+## (or valleyfloor_params_mode1_example.txt for a mode-1 one, pointing at an existing input
+## file). Pass that file's path as a command-line argument when running via Rscript:
 ##   Rscript valleyfloor.R path/to/your_params.txt
 ## or, when sourcing/running from R/RStudio, set config_path below before running the script.
 
@@ -206,7 +217,16 @@ parse_integer_vector <- function(raw_val, nm, path) {
 # mirroring TWutils::valleyfloor()'s/valleyfloor_input()'s own arguments/defaults (the Cherry
 # project reference run).
 param_specs <- list(
-  # Input DEM. No default -- must be set in the parameter file.
+  # Optional: path to an already-written ValleyFloor input file (selects
+  # TWutils::valleyfloor()'s mode 1). When set (anything other than NOFILE), this script skips
+  # valleyfloor_input() entirely and hands the file straight to ValleyFloor.exe -- dem,
+  # scratch_dir, attribute_list_file, and every other mode-2-only keyword below are ignored.
+  # executable_dir (below) still applies, as a fallback used only if this file has no working
+  # "EXECUTABLE DIR:" line of its own. Leave as NOFILE (the default) to build an input file from
+  # the parameters below instead (mode 2).
+  input_file = list(type = "character", default = "NOFILE"),
+
+  # Input DEM. No default -- must be set in the parameter file (mode 2 only; ignored in mode 1).
   dem = list(type = "character", required = TRUE),
 
   # --- Channel selection (ALL CHANNELS / CHANNEL LIST) ---
@@ -334,8 +354,10 @@ param_specs <- list(
   # If TRUE, write the DEBUG flag.
   debug = list(type = "logical", default = FALSE),
 
-  # Scratch directory (ValleyFloor's input file is written here) and the folder containing the
-  # ValleyFloor executable. No defaults -- must be set in the parameter file.
+  # Scratch directory (ValleyFloor's input file is written here, mode 2 only -- ignored in mode
+  # 1) and the folder containing the ValleyFloor executable (both modes -- see input_file above).
+  # No defaults -- must be set in the parameter file, unless input_file is set, in which case
+  # scratch_dir is unused and executable_dir is only a fallback (see input_file above).
   scratch_dir    = list(type = "character", required = TRUE),
   executable_dir = list(type = "character", required = TRUE),
 
@@ -396,67 +418,96 @@ build_params <- function(raw_params, specs, path) {
 }
 
 raw_params <- read_param_file(config_path)
-params     <- build_params(raw_params, param_specs, config_path)
+
+# Mode 1 (existing input file) vs. mode 2 (build one from the parameters below) -- decide this
+# before build_params() runs so mode 2's required keywords (dem, scratch_dir, executable_dir)
+# don't force the parameter file to carry values that TWutils::valleyfloor() would just ignore
+# anyway when input_file is supplied. executable_dir stays optional in mode 1 too -- it's only
+# used there as a fallback (see input_file's param_specs entry above).
+raw_input_file <- if (!is.null(raw_params[["input_file"]])) raw_params[["input_file"]] else "NOFILE"
+use_existing_input_file <- !is_nofile_text(raw_input_file)
+if (use_existing_input_file) {
+  for (nm in c("dem", "scratch_dir", "executable_dir")) {
+    param_specs[[nm]]$required <- FALSE
+    param_specs[[nm]]$default  <- "NOFILE"
+  }
+}
+
+params <- build_params(raw_params, param_specs, config_path)
 list2env(params, envir = globalenv())  # makes dem, scratch_dir, method, ... ordinary top-level variables, exactly as if they'd been assigned by hand below
 
 message("Loaded parameters from: ", config_path)
 
-attribute_list <- if (toupper(attribute_list_file) != "NOFILE") {
-  message("Reading attribute list from: ", attribute_list_file)
-  TWutils::read_attribute_list_file(attribute_list_file)
-} else {
-  TWutils::valleyfloor_default_attributes()
-}
-
 ## ---- Run ValleyFloor ---------------------------------------------------------------------------
 
-dat_file <- TWutils::valleyfloor(dem = dem,
-                                 scratch_dir = scratch_dir,
-                                 all_channels = all_channels,
-                                 channel_list = if (length(channel_list) == 0) NULL else channel_list,
-                                 min_chan_width = min_chan_width,
-                                 min_chan_area = if (is.na(min_chan_area)) NULL else min_chan_area,
-                                 write_data = write_data,
-                                 read_data = read_data,
-                                 overwrite_data = overwrite_data,
-                                 data_id = data_id,
-                                 method = method,
-                                 sampling_interval = sampling_interval,
-                                 valley_buffer = valley_buffer,
-                                 expansion_factor = expansion_factor,
-                                 second_expansion = if (is.na(second_expansion)) NULL else second_expansion,
-                                 mask_by_watershed = mask_by_watershed,
-                                 max_depth_dif = max_depth_dif,
-                                 min_elev_dif = min_elev_dif,
-                                 weighting_exponent = weighting_exponent,
-                                 smoothing_iterations = smoothing_iterations,
-                                 inundation_smoothing_max_radius = inundation_smoothing_max_radius,
-                                 max_depths_above = max_depths_above,
-                                 max_depths_below = max_depths_below,
-                                 max_dif_dist_chan_dist_node = max_dif_dist_chan_dist_node,
-                                 monotonic = if (is.na(monotonic)) NULL else monotonic,
-                                 minimum_channel_length = if (is.na(minimum_channel_length)) NULL else minimum_channel_length,
-                                 fill_dem_holes = fill_dem_holes,
-                                 fill_dem_holes_max_size = if (is.na(fill_dem_holes_max_size)) NULL else fill_dem_holes_max_size,
-                                 fill_dem_holes_min_elev = if (is.na(fill_dem_holes_min_elev)) NULL else fill_dem_holes_min_elev,
-                                 input_d8 = input_d8,
-                                 out_elev = out_elev,
-                                 out_depth = out_depth,
-                                 out_elev_bil = out_elev_bil,
-                                 out_depth_bil = out_depth_bil,
-                                 out_flood_height = out_flood_height,
-                                 out_flood_depth = out_flood_depth,
-                                 out_d8 = out_d8,
-                                 measure_valley_widths = measure_valley_widths,
-                                 height_above_steps = height_above_steps,
-                                 valley_width_window = valley_width_window,
-                                 attribute_list = attribute_list,
-                                 upstream_node = if (is.na(upstream_node)) NULL else upstream_node,
-                                 downstream_node = if (is.na(downstream_node)) NULL else downstream_node,
-                                 time_it = time_it,
-                                 debug = debug,
-                                 overwrite = overwrite,
-                                 executable_dir = executable_dir)
+if (use_existing_input_file) {
+
+  # Mode 1: hand the existing input file straight to ValleyFloor.exe. dem, scratch_dir,
+  # attribute_list_file, and every other mode-2-only parameter above are ignored by
+  # TWutils::valleyfloor() in this mode -- the file already carries everything the program
+  # needs. executable_dir is passed through as a fallback only (NULL if left as NOFILE), used
+  # only if the input file has no working "EXECUTABLE DIR:" line of its own.
+  message("Using existing ValleyFloor input file: ", input_file)
+  dat_file <- TWutils::valleyfloor(input_file = input_file,
+                                   executable_dir = if (toupper(executable_dir) == "NOFILE") NULL else executable_dir)
+
+} else {
+
+  attribute_list <- if (toupper(attribute_list_file) != "NOFILE") {
+    message("Reading attribute list from: ", attribute_list_file)
+    TWutils::read_attribute_list_file(attribute_list_file)
+  } else {
+    TWutils::valleyfloor_default_attributes()
+  }
+
+  dat_file <- TWutils::valleyfloor(dem = dem,
+                                   scratch_dir = scratch_dir,
+                                   all_channels = all_channels,
+                                   channel_list = if (length(channel_list) == 0) NULL else channel_list,
+                                   min_chan_width = min_chan_width,
+                                   min_chan_area = if (is.na(min_chan_area)) NULL else min_chan_area,
+                                   write_data = write_data,
+                                   read_data = read_data,
+                                   overwrite_data = overwrite_data,
+                                   data_id = data_id,
+                                   method = method,
+                                   sampling_interval = sampling_interval,
+                                   valley_buffer = valley_buffer,
+                                   expansion_factor = expansion_factor,
+                                   second_expansion = if (is.na(second_expansion)) NULL else second_expansion,
+                                   mask_by_watershed = mask_by_watershed,
+                                   max_depth_dif = max_depth_dif,
+                                   min_elev_dif = min_elev_dif,
+                                   weighting_exponent = weighting_exponent,
+                                   smoothing_iterations = smoothing_iterations,
+                                   inundation_smoothing_max_radius = inundation_smoothing_max_radius,
+                                   max_depths_above = max_depths_above,
+                                   max_depths_below = max_depths_below,
+                                   max_dif_dist_chan_dist_node = max_dif_dist_chan_dist_node,
+                                   monotonic = if (is.na(monotonic)) NULL else monotonic,
+                                   minimum_channel_length = if (is.na(minimum_channel_length)) NULL else minimum_channel_length,
+                                   fill_dem_holes = fill_dem_holes,
+                                   fill_dem_holes_max_size = if (is.na(fill_dem_holes_max_size)) NULL else fill_dem_holes_max_size,
+                                   fill_dem_holes_min_elev = if (is.na(fill_dem_holes_min_elev)) NULL else fill_dem_holes_min_elev,
+                                   input_d8 = input_d8,
+                                   out_elev = out_elev,
+                                   out_depth = out_depth,
+                                   out_elev_bil = out_elev_bil,
+                                   out_depth_bil = out_depth_bil,
+                                   out_flood_height = out_flood_height,
+                                   out_flood_depth = out_flood_depth,
+                                   out_d8 = out_d8,
+                                   measure_valley_widths = measure_valley_widths,
+                                   height_above_steps = height_above_steps,
+                                   valley_width_window = valley_width_window,
+                                   attribute_list = attribute_list,
+                                   upstream_node = if (is.na(upstream_node)) NULL else upstream_node,
+                                   downstream_node = if (is.na(downstream_node)) NULL else downstream_node,
+                                   time_it = time_it,
+                                   debug = debug,
+                                   overwrite = overwrite,
+                                   executable_dir = executable_dir)
+}
 
 # TWutils::valleyfloor() -> run_program() stops with an error on a nonzero exit code, so
 # reaching this line means the run succeeded. It returns the full path of the binary
@@ -466,12 +517,16 @@ message("ValleyFloor finished. Per-channel data file written: ", dat_file)
 
 # Report whichever of the optional output rasters were actually requested, alongside the path
 # each was written to -- unlike the .dat file above, ValleyFloor runs fine with none of these.
-requested_rasters <- c(out_elev = out_elev, out_depth = out_depth,
-                       out_elev_bil = out_elev_bil, out_depth_bil = out_depth_bil,
-                       out_flood_height = out_flood_height, out_flood_depth = out_flood_depth,
-                       out_d8 = out_d8)
-requested_rasters <- requested_rasters[toupper(requested_rasters) != "NOFILE"]
-if (length(requested_rasters) > 0) {
-  message("Output raster(s) written:\n  ",
-          paste(names(requested_rasters), requested_rasters, sep = " -> ", collapse = "\n  "))
+# Only meaningful in mode 2: in mode 1 any output rasters are already baked into the supplied
+# input file, and this script has no way to read them back out of it.
+if (!use_existing_input_file) {
+  requested_rasters <- c(out_elev = out_elev, out_depth = out_depth,
+                         out_elev_bil = out_elev_bil, out_depth_bil = out_depth_bil,
+                         out_flood_height = out_flood_height, out_flood_depth = out_flood_depth,
+                         out_d8 = out_d8)
+  requested_rasters <- requested_rasters[toupper(requested_rasters) != "NOFILE"]
+  if (length(requested_rasters) > 0) {
+    message("Output raster(s) written:\n  ",
+            paste(names(requested_rasters), requested_rasters, sep = " -> ", collapse = "\n  "))
+  }
 }
