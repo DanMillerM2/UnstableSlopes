@@ -1,0 +1,1297 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.7.29">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+<meta name="author" content="Elise Freeman">
+
+<title>SusNRunPointCloud_Workflow</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for syntax highlighting */
+html { -webkit-text-size-adjust: 100%; }
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+.sourceCode { overflow: visible; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+  }
+pre.numberSource { margin-left: 3em;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+</style>
+
+
+<script src="SusNRun_PointCloudWorkflow_blank_082626_files/libs/clipboard/clipboard.min.js"></script>
+<script src="SusNRun_PointCloudWorkflow_blank_082626_files/libs/quarto-html/quarto.js" type="module"></script>
+<script src="SusNRun_PointCloudWorkflow_blank_082626_files/libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="SusNRun_PointCloudWorkflow_blank_082626_files/libs/quarto-html/popper.min.js"></script>
+<script src="SusNRun_PointCloudWorkflow_blank_082626_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="SusNRun_PointCloudWorkflow_blank_082626_files/libs/quarto-html/anchor.min.js"></script>
+<link href="SusNRun_PointCloudWorkflow_blank_082626_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="SusNRun_PointCloudWorkflow_blank_082626_files/libs/quarto-html/quarto-syntax-highlighting-0815c480559380816a4d1ea211a47e91.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="SusNRun_PointCloudWorkflow_blank_082626_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="SusNRun_PointCloudWorkflow_blank_082626_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="SusNRun_PointCloudWorkflow_blank_082626_files/libs/bootstrap/bootstrap-bb462d781dde1847d9e3ccf7736099dd.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+
+
+</head>
+
+<body class="fullcontent quarto-light">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">SusNRunPointCloud_Workflow</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    <div>
+    <div class="quarto-title-meta-heading">Author</div>
+    <div class="quarto-title-meta-contents">
+             <p>Elise Freeman </p>
+          </div>
+  </div>
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="point-cloud-pre-processing-workflow" class="level2">
+<h2 class="anchored" data-anchor-id="point-cloud-pre-processing-workflow">Point Cloud Pre-Processing Workflow</h2>
+<p>To keep any single output from growing unmanageably large on big lidar collections, the full set of input tiles is split into batches (a configurable number of tiles each). Steps 2-4 below run once per batch – each batch gets its own merged LAZ and (optionally) its own GeoPackage – and the per-batch count rasters from step 4 are mosaicked into one whole-site raster before the final reprojection in step 5. Every batch is always filtered down to ground returns (Classification == 2) in step 2, whether or not the optional GeoPackage in step 3 is created – the GeoPackage toggle only controls whether those already-ground-only points also get written out as a vector layer, not whether the filtering itself happens.</p>
+<ol type="1">
+<li><p>Split the full set of LAZ tiles into batches of a configurable size</p></li>
+<li><p>Filter ground returns (Classification == 2) and merge LAZ tiles, one merged file per batch – always happens, regardless of the GeoPackage option below</p></li>
+<li><p>(Optional) Write each batch’s ground-only points to its own GeoPackage as a point feature class</p></li>
+<li><p>Compute a point-count raster per batch (target pixel size = 3 m), then mosaic all batches together into one whole-site count raster and derive density from it</p></li>
+<li><p>Reproject the combined density (and raw count) rasters to EPSG:2856</p></li>
+</ol>
+<p>Requires: lasR, terra, sf, future, future.apply</p>
+<p>For terra, sf, future, and future.apply: install.packages(c(“terra”, “sf”, “future”, “future.apply”))</p>
+<p>lasR is not on CRAN (by design, not due to archival)</p>
+<p>Install with: <code>install.packages("lasR", repos = "https://r-lidar.r-universe.dev")</code></p>
+</section>
+<section id="inputs" class="level2">
+<h2 class="anchored" data-anchor-id="inputs">Inputs</h2>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Marks the start of the entire workflow (first thing that runs), so total run time can be</span></span>
+<span id="cb1-2"><a href="#cb1-2" aria-hidden="true" tabindex="-1"></a><span class="co"># reported at the end alongside the start/end timestamps -- see the "Workflow timing" section</span></span>
+<span id="cb1-3"><a href="#cb1-3" aria-hidden="true" tabindex="-1"></a><span class="co"># at the bottom of this file.</span></span>
+<span id="cb1-4"><a href="#cb1-4" aria-hidden="true" tabindex="-1"></a>workflow_start_time <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>()</span>
+<span id="cb1-5"><a href="#cb1-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb1-6"><a href="#cb1-6" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(lasR)          <span class="co"># point cloud engine: filters/merges LAZ tiles and computes hulls</span></span>
+<span id="cb1-7"><a href="#cb1-7" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(terra)         <span class="co"># raster creation, math (density calc), and reprojection</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>terra 1.9.46</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: 'terra'</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from 'package:lasR':
+
+    focal, rasterize</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb5"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(sf)            <span class="co"># vector I/O (GeoPackage) and CRS handling for the point layer</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Linking to GEOS 3.14.1, GDAL 3.12.1, PROJ 9.7.1; sf_use_s2() is TRUE</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(future)        <span class="co"># backend for running batches in parallel worker processes (see plan() below)</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: 'future'</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following object is masked from 'package:lasR':
+
+    sequential</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb10"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(future.apply)  <span class="co"># future_lapply() -- parallel dispatch across batches, used in "Process batches"</span></span>
+<span id="cb10-2"><a href="#cb10-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-3"><a href="#cb10-3" aria-hidden="true" tabindex="-1"></a><span class="co"># Maximum number of batches processed at once, in separate worker processes (see "Process</span></span>
+<span id="cb10-4"><a href="#cb10-4" aria-hidden="true" tabindex="-1"></a><span class="co"># batches" below, where this is capped to n_batches -- no point spinning up idle workers if</span></span>
+<span id="cb10-5"><a href="#cb10-5" aria-hidden="true" tabindex="-1"></a><span class="co"># there are fewer batches than n_workers). multisession spawns background Rscript processes</span></span>
+<span id="cb10-6"><a href="#cb10-6" aria-hidden="true" tabindex="-1"></a><span class="co"># rather than forking -- required on Windows, and also works cross-platform -- so each worker</span></span>
+<span id="cb10-7"><a href="#cb10-7" aria-hidden="true" tabindex="-1"></a><span class="co"># starts with none of the packages from this session loaded; process_one_batch() reloads what</span></span>
+<span id="cb10-8"><a href="#cb10-8" aria-hidden="true" tabindex="-1"></a><span class="co"># it needs itself.</span></span>
+<span id="cb10-9"><a href="#cb10-9" aria-hidden="true" tabindex="-1"></a><span class="co"># </span><span class="al">NOTE</span><span class="co">: lasR's exec() calls already multithread internally (no explicit ncores is set below, so</span></span>
+<span id="cb10-10"><a href="#cb10-10" aria-hidden="true" tabindex="-1"></a><span class="co"># each call may use all available cores on its own). Running n_workers batches at once on top of</span></span>
+<span id="cb10-11"><a href="#cb10-11" aria-hidden="true" tabindex="-1"></a><span class="co"># that can oversubscribe the CPU -- if that's a problem, pass an explicit, lower ncores into the</span></span>
+<span id="cb10-12"><a href="#cb10-12" aria-hidden="true" tabindex="-1"></a><span class="co"># exec() calls inside filter_merge_batch/detect_native_crs/rasterize_batch_count (e.g. total</span></span>
+<span id="cb10-13"><a href="#cb10-13" aria-hidden="true" tabindex="-1"></a><span class="co"># cores / n_workers each), or lower n_workers.</span></span>
+<span id="cb10-14"><a href="#cb10-14" aria-hidden="true" tabindex="-1"></a>n_workers <span class="ot">&lt;-</span> <span class="dv">6</span></span>
+<span id="cb10-15"><a href="#cb10-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-16"><a href="#cb10-16" aria-hidden="true" tabindex="-1"></a><span class="co"># Folder containing the laZ files</span></span>
+<span id="cb10-17"><a href="#cb10-17" aria-hidden="true" tabindex="-1"></a><span class="co">#input_dir  &lt;- "path/to/laz_tiles"   # template -- swap in your own project's LAZ folder</span></span>
+<span id="cb10-18"><a href="#cb10-18" aria-hidden="true" tabindex="-1"></a>input_dir <span class="ot">&lt;-</span> <span class="st">"c:</span><span class="sc">\\</span><span class="st">work</span><span class="sc">\\</span><span class="st">data</span><span class="sc">\\</span><span class="st">site1</span><span class="sc">\\</span><span class="st">cascades_north_wali_2023</span><span class="sc">\\</span><span class="st">laz"</span>  <span class="co"># folder holding the raw LAZ tiles for this site/date</span></span>
+<span id="cb10-19"><a href="#cb10-19" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-20"><a href="#cb10-20" aria-hidden="true" tabindex="-1"></a><span class="co"># Output folder</span></span>
+<span id="cb10-21"><a href="#cb10-21" aria-hidden="true" tabindex="-1"></a><span class="co">#output_dir &lt;- "path/to/output"      # template -- swap in your own output location</span></span>
+<span id="cb10-22"><a href="#cb10-22" aria-hidden="true" tabindex="-1"></a>output_dir <span class="ot">&lt;-</span> <span class="st">"c:</span><span class="sc">\\</span><span class="st">work</span><span class="sc">\\</span><span class="st">data</span><span class="sc">\\</span><span class="st">site1</span><span class="sc">\\</span><span class="st">cascades_north_wali_2023</span><span class="sc">\\</span><span class="st">grnd_den</span><span class="sc">\\</span><span class="st">"</span></span>
+<span id="cb10-23"><a href="#cb10-23" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="sc">!</span><span class="fu">dir.exists</span>(output_dir)) <span class="fu">dir.create</span>(output_dir, <span class="at">recursive =</span> <span class="cn">TRUE</span>)  <span class="co"># create output_dir (and any missing parent folders) if it doesn't exist yet</span></span>
+<span id="cb10-24"><a href="#cb10-24" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-25"><a href="#cb10-25" aria-hidden="true" tabindex="-1"></a><span class="co"># Number of LAS/LAZ tiles processed together in one batch. Splitting the full tile set into</span></span>
+<span id="cb10-26"><a href="#cb10-26" aria-hidden="true" tabindex="-1"></a><span class="co"># batches this size keeps each batch's merged LAZ, GeoPackage, and native raster small and</span></span>
+<span id="cb10-27"><a href="#cb10-27" aria-hidden="true" tabindex="-1"></a><span class="co"># bounded, no matter how many tiles input_dir holds overall. Lower this if a single batch's</span></span>
+<span id="cb10-28"><a href="#cb10-28" aria-hidden="true" tabindex="-1"></a><span class="co"># GeoPackage is still too large, or if a batch's point count is still bumping into lasR's</span></span>
+<span id="cb10-29"><a href="#cb10-29" aria-hidden="true" tabindex="-1"></a><span class="co"># 32-bit point-index ceiling (see stream_chunk_size below); raise it if batches come out small</span></span>
+<span id="cb10-30"><a href="#cb10-30" aria-hidden="true" tabindex="-1"></a><span class="co"># enough that merging more tiles together per batch would still be manageable.</span></span>
+<span id="cb10-31"><a href="#cb10-31" aria-hidden="true" tabindex="-1"></a><span class="co">#batch_size_tiles &lt;- 200</span></span>
+<span id="cb10-32"><a href="#cb10-32" aria-hidden="true" tabindex="-1"></a>batch_size_tiles <span class="ot">&lt;-</span> <span class="dv">50</span></span>
+<span id="cb10-33"><a href="#cb10-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-34"><a href="#cb10-34" aria-hidden="true" tabindex="-1"></a><span class="co"># Builds a batch-specific output path, e.g. batch_path("ground_merged.laz", 3) -&gt;</span></span>
+<span id="cb10-35"><a href="#cb10-35" aria-hidden="true" tabindex="-1"></a><span class="co"># ".../b003_ground_merged.laz". Namespacing every intermediate by batch number keeps batches</span></span>
+<span id="cb10-36"><a href="#cb10-36" aria-hidden="true" tabindex="-1"></a><span class="co"># from overwriting each other's outputs, and lets an interrupted run resume without redoing</span></span>
+<span id="cb10-37"><a href="#cb10-37" aria-hidden="true" tabindex="-1"></a><span class="co"># batches that already finished (see filter_merge_batch below).</span></span>
+<span id="cb10-38"><a href="#cb10-38" aria-hidden="true" tabindex="-1"></a>batch_path <span class="ot">&lt;-</span> <span class="cf">function</span>(name, batch_id) {</span>
+<span id="cb10-39"><a href="#cb10-39" aria-hidden="true" tabindex="-1"></a>  <span class="fu">file.path</span>(output_dir, <span class="fu">sprintf</span>(<span class="st">"b%03d_%s"</span>, batch_id, name))</span>
+<span id="cb10-40"><a href="#cb10-40" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb10-41"><a href="#cb10-41" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-42"><a href="#cb10-42" aria-hidden="true" tabindex="-1"></a>gpkg_layer <span class="ot">&lt;-</span> <span class="st">"ground_points"</span>  <span class="co"># layer name used inside every batch's GeoPackage</span></span>
+<span id="cb10-43"><a href="#cb10-43" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-44"><a href="#cb10-44" aria-hidden="true" tabindex="-1"></a><span class="co"># If TRUE, each batch's ground-only points are also streamed out to their own GeoPackage (see</span></span>
+<span id="cb10-45"><a href="#cb10-45" aria-hidden="true" tabindex="-1"></a><span class="co"># the "Export" section below). This is the slowest step in the per-batch loop and isn't needed</span></span>
+<span id="cb10-46"><a href="#cb10-46" aria-hidden="true" tabindex="-1"></a><span class="co"># if all you want is the count/density rasters, so it's off by default -- set TRUE to get a</span></span>
+<span id="cb10-47"><a href="#cb10-47" aria-hidden="true" tabindex="-1"></a><span class="co"># vector point layer per batch alongside the rasters.</span></span>
+<span id="cb10-48"><a href="#cb10-48" aria-hidden="true" tabindex="-1"></a>export_ground_points_gpkg <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb10-49"><a href="#cb10-49" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-50"><a href="#cb10-50" aria-hidden="true" tabindex="-1"></a><span class="co"># Final, whole-site raster outputs -- assembled by mosaicking each batch's native count raster</span></span>
+<span id="cb10-51"><a href="#cb10-51" aria-hidden="true" tabindex="-1"></a><span class="co"># together once all batches finish, then reprojecting to EPSG:2856 (see the "Combine batches"</span></span>
+<span id="cb10-52"><a href="#cb10-52" aria-hidden="true" tabindex="-1"></a><span class="co"># and reprojection sections below). The native-CRS mosaics are only kept in memory as</span></span>
+<span id="cb10-53"><a href="#cb10-53" aria-hidden="true" tabindex="-1"></a><span class="co"># intermediates on the way to these EPSG:2856 rasters, not written to disk -- these two paths</span></span>
+<span id="cb10-54"><a href="#cb10-54" aria-hidden="true" tabindex="-1"></a><span class="co"># are the only whole-site raster files the workflow produces.</span></span>
+<span id="cb10-55"><a href="#cb10-55" aria-hidden="true" tabindex="-1"></a><span class="co"># There is no single whole-site GeoPackage by design -- that's the file batching exists to keep</span></span>
+<span id="cb10-56"><a href="#cb10-56" aria-hidden="true" tabindex="-1"></a><span class="co"># from growing unmanageably large -- so, when export_ground_points_gpkg is TRUE, ground points</span></span>
+<span id="cb10-57"><a href="#cb10-57" aria-hidden="true" tabindex="-1"></a><span class="co"># stay split across the per-batch GeoPackages built in the "Export" section.</span></span>
+<span id="cb10-58"><a href="#cb10-58" aria-hidden="true" tabindex="-1"></a>density_tif_2856_path <span class="ot">&lt;-</span> <span class="fu">file.path</span>(output_dir, <span class="st">"ground_density_epsg2856.tif"</span>)</span>
+<span id="cb10-59"><a href="#cb10-59" aria-hidden="true" tabindex="-1"></a>count_tif_2856_path   <span class="ot">&lt;-</span> <span class="fu">file.path</span>(output_dir, <span class="st">"ground_count_epsg2856.tif"</span>)</span>
+<span id="cb10-60"><a href="#cb10-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-61"><a href="#cb10-61" aria-hidden="true" tabindex="-1"></a>target_pixel_size_m <span class="ot">&lt;-</span> <span class="dv">3</span> <span class="co">#in meters</span></span>
+<span id="cb10-62"><a href="#cb10-62" aria-hidden="true" tabindex="-1"></a>target_crs <span class="ot">&lt;-</span> <span class="st">"EPSG:2856"</span>  <span class="co"># NAD83(HARN) / Washington South (Meters)</span></span>
+<span id="cb10-63"><a href="#cb10-63" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-64"><a href="#cb10-64" aria-hidden="true" tabindex="-1"></a><span class="co"># If TRUE, cells with no ground points get density/count = 0 instead of NA</span></span>
+<span id="cb10-65"><a href="#cb10-65" aria-hidden="true" tabindex="-1"></a>fill_empty_cells_with_zero <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb10-66"><a href="#cb10-66" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-67"><a href="#cb10-67" aria-hidden="true" tabindex="-1"></a><span class="co"># If TRUE, every per-batch intermediate file (merged LAZ, per-batch GeoPackage, per-batch</span></span>
+<span id="cb10-68"><a href="#cb10-68" aria-hidden="true" tabindex="-1"></a><span class="co"># native-CRS count raster) is deleted once the workflow finishes, keeping only the final</span></span>
+<span id="cb10-69"><a href="#cb10-69" aria-hidden="true" tabindex="-1"></a><span class="co"># EPSG:2856 count and density rasters (count_tif_2856_path, density_tif_2856_path). Set FALSE</span></span>
+<span id="cb10-70"><a href="#cb10-70" aria-hidden="true" tabindex="-1"></a><span class="co"># to keep the per-batch files around -- e.g. to inspect them or resume a run without redoing</span></span>
+<span id="cb10-71"><a href="#cb10-71" aria-hidden="true" tabindex="-1"></a><span class="co"># batches (see filter_merge_batch above). See the "Clean up intermediate files" section near</span></span>
+<span id="cb10-72"><a href="#cb10-72" aria-hidden="true" tabindex="-1"></a><span class="co"># the end of this file.</span></span>
+<span id="cb10-73"><a href="#cb10-73" aria-hidden="true" tabindex="-1"></a>cleanup_intermediate_files <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
+<span id="cb10-74"><a href="#cb10-74" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb10-75"><a href="#cb10-75" aria-hidden="true" tabindex="-1"></a><span class="co"># Spatial chunk size (native CRS units) used whenever we stream a batch's merged LAZ file.</span></span>
+<span id="cb10-76"><a href="#cb10-76" aria-hidden="true" tabindex="-1"></a><span class="co"># lasR's internal point index is a 32-bit integer (max 2,147,483,647 points), so reading a</span></span>
+<span id="cb10-77"><a href="#cb10-77" aria-hidden="true" tabindex="-1"></a><span class="co"># very large file in one unchunked pass can overflow it. Chunking keeps each pass well under</span></span>
+<span id="cb10-78"><a href="#cb10-78" aria-hidden="true" tabindex="-1"></a><span class="co"># that ceiling and bounds memory use. This value doesn't need to be precise for correctness --</span></span>
+<span id="cb10-79"><a href="#cb10-79" aria-hidden="true" tabindex="-1"></a><span class="co"># shrink it if a chunk is still dense enough to overflow (or shrink batch_size_tiles instead,</span></span>
+<span id="cb10-80"><a href="#cb10-80" aria-hidden="true" tabindex="-1"></a><span class="co"># if it's a whole batch, not just a chunk within it, that's overflowing).</span></span>
+<span id="cb10-81"><a href="#cb10-81" aria-hidden="true" tabindex="-1"></a>stream_chunk_size <span class="ot">&lt;-</span> <span class="dv">100000</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="discover-and-batch-laz-tiles" class="level2">
+<h2 class="anchored" data-anchor-id="discover-and-batch-laz-tiles">Discover and batch LAZ tiles</h2>
+<p>Lists every input tile once, then splits that list into <code>batch_size_tiles</code>-sized groups. Everything from here on operates on one batch at a time.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb11"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1" aria-hidden="true" tabindex="-1"></a>las_files <span class="ot">&lt;-</span> <span class="fu">list.files</span>(input_dir, <span class="at">pattern =</span> <span class="st">"</span><span class="sc">\\</span><span class="st">.(laz|las)$"</span>,</span>
+<span id="cb11-2"><a href="#cb11-2" aria-hidden="true" tabindex="-1"></a>                        <span class="at">full.names =</span> <span class="cn">TRUE</span>, <span class="at">ignore.case =</span> <span class="cn">TRUE</span>)  <span class="co"># gather every LAS/LAZ tile in input_dir (case-insensitive extension match), with full paths</span></span>
+<span id="cb11-3"><a href="#cb11-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-4"><a href="#cb11-4" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(las_files) <span class="sc">==</span> <span class="dv">0</span>) {</span>
+<span id="cb11-5"><a href="#cb11-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stop</span>(<span class="st">"No LAS/LAZ files found in input_dir. Check the path."</span>)  <span class="co"># fail fast with a clear message if the folder is empty or misconfigured</span></span>
+<span id="cb11-6"><a href="#cb11-6" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb11-7"><a href="#cb11-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-8"><a href="#cb11-8" aria-hidden="true" tabindex="-1"></a>n_tiles   <span class="ot">&lt;-</span> <span class="fu">length</span>(las_files)</span>
+<span id="cb11-9"><a href="#cb11-9" aria-hidden="true" tabindex="-1"></a>n_batches <span class="ot">&lt;-</span> <span class="fu">ceiling</span>(n_tiles <span class="sc">/</span> batch_size_tiles)</span>
+<span id="cb11-10"><a href="#cb11-10" aria-hidden="true" tabindex="-1"></a>tile_batches <span class="ot">&lt;-</span> <span class="fu">split</span>(las_files, <span class="fu">ceiling</span>(<span class="fu">seq_len</span>(n_tiles) <span class="sc">/</span> batch_size_tiles))  <span class="co"># list of character vectors, one per batch, in file-list order</span></span>
+<span id="cb11-11"><a href="#cb11-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb11-12"><a href="#cb11-12" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Found "</span>, n_tiles, <span class="st">" tiles; split into "</span>, n_batches,</span>
+<span id="cb11-13"><a href="#cb11-13" aria-hidden="true" tabindex="-1"></a>        <span class="st">" batch(es) of up to "</span>, batch_size_tiles, <span class="st">" tiles each."</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Found 751 tiles; split into 16 batch(es) of up to 50 tiles each.</code></pre>
+</div>
+</div>
+</section>
+<section id="filter-and-merge-laz" class="level2">
+<h2 class="anchored" data-anchor-id="filter-and-merge-laz">Filter and merge LAZ</h2>
+<p>Filters ground returns by tile, then merges one batch’s tiles into a single per-batch file. This filtering always runs – it’s independent of <code>export_ground_points_gpkg</code> below, so every batch’s merged LAZ is ground-only whether or not a GeoPackage is ever created for it. Defined here as a function; called once per batch in the loop below.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Filters ground returns (Classification == 2) from one batch's tiles and merges them into a</span></span>
+<span id="cb13-2"><a href="#cb13-2" aria-hidden="true" tabindex="-1"></a><span class="co"># single per-batch LAZ file. Skips the work if that batch's merged file already exists, so a</span></span>
+<span id="cb13-3"><a href="#cb13-3" aria-hidden="true" tabindex="-1"></a><span class="co"># failed/interrupted run can be restarted without redoing batches that already completed.</span></span>
+<span id="cb13-4"><a href="#cb13-4" aria-hidden="true" tabindex="-1"></a>filter_merge_batch <span class="ot">&lt;-</span> <span class="cf">function</span>(las_files_batch, merged_path) {</span>
+<span id="cb13-5"><a href="#cb13-5" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">file.exists</span>(merged_path)) {</span>
+<span id="cb13-6"><a href="#cb13-6" aria-hidden="true" tabindex="-1"></a>    <span class="fu">message</span>(<span class="st">"Merged file already exists, skipping filter/merge: "</span>, merged_path)</span>
+<span id="cb13-7"><a href="#cb13-7" aria-hidden="true" tabindex="-1"></a>    <span class="fu">return</span>(<span class="fu">invisible</span>(merged_path))</span>
+<span id="cb13-8"><a href="#cb13-8" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb13-9"><a href="#cb13-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-10"><a href="#cb13-10" aria-hidden="true" tabindex="-1"></a>  read_stage  <span class="ot">&lt;-</span> <span class="fu">reader</span>(<span class="at">filter =</span> <span class="fu">keep_ground</span>())  <span class="co"># keep_ground() filters at read time, not a separate stage</span></span>
+<span id="cb13-11"><a href="#cb13-11" aria-hidden="true" tabindex="-1"></a>  write_stage <span class="ot">&lt;-</span> <span class="fu">write_las</span>(merged_path)               <span class="co"># no "*" -&gt; single merged file for this batch</span></span>
+<span id="cb13-12"><a href="#cb13-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-13"><a href="#cb13-13" aria-hidden="true" tabindex="-1"></a>  filter_merge_pipeline <span class="ot">&lt;-</span> read_stage <span class="sc">+</span> write_stage   <span class="co"># chain the two stages into one lasR pipeline: read+filter, then write</span></span>
+<span id="cb13-14"><a href="#cb13-14" aria-hidden="true" tabindex="-1"></a>  <span class="fu">exec</span>(filter_merge_pipeline, <span class="at">on =</span> las_files_batch)    <span class="co"># run the pipeline over this batch's tiles only</span></span>
+<span id="cb13-15"><a href="#cb13-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb13-16"><a href="#cb13-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"Ground-only merged point cloud written to: "</span>, merged_path)</span>
+<span id="cb13-17"><a href="#cb13-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">invisible</span>(merged_path)</span>
+<span id="cb13-18"><a href="#cb13-18" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="coordinate-system" class="level2">
+<h2 class="anchored" data-anchor-id="coordinate-system">Coordinate system</h2>
+<p>Detects the native CRS and units of a batch’s merged LAZ file, needed for that batch’s GeoPackage and count raster. Defined here as a function; called once per batch below.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb14"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb14-1"><a href="#cb14-1" aria-hidden="true" tabindex="-1"></a><span class="co">#|</span></span>
+<span id="cb14-2"><a href="#cb14-2" aria-hidden="true" tabindex="-1"></a><span class="co"># Detects the native CRS/units of a batch's merged LAZ file and derives the raster resolution</span></span>
+<span id="cb14-3"><a href="#cb14-3" aria-hidden="true" tabindex="-1"></a><span class="co"># (in native-CRS units) corresponding to target_pixel_size_m. Returned as a list so each</span></span>
+<span id="cb14-4"><a href="#cb14-4" aria-hidden="true" tabindex="-1"></a><span class="co"># batch's result can be checked for consistency with the others afterward -- all batches come</span></span>
+<span id="cb14-5"><a href="#cb14-5" aria-hidden="true" tabindex="-1"></a><span class="co"># from the same site/collection, so they should all report the same CRS, units, and resolution.</span></span>
+<span id="cb14-6"><a href="#cb14-6" aria-hidden="true" tabindex="-1"></a>detect_native_crs <span class="ot">&lt;-</span> <span class="cf">function</span>(merged_path) {</span>
+<span id="cb14-7"><a href="#cb14-7" aria-hidden="true" tabindex="-1"></a>  probe_pipeline <span class="ot">&lt;-</span> <span class="fu">reader</span>() <span class="sc">+</span> <span class="fu">hulls</span>()  <span class="co"># hulls() computes a hull polygon from the actual point coordinates -- it does read every point, but that's still far cheaper than a full rasterize() pass</span></span>
+<span id="cb14-8"><a href="#cb14-8" aria-hidden="true" tabindex="-1"></a>  probe_hull <span class="ot">&lt;-</span> <span class="fu">exec</span>(probe_pipeline, <span class="at">on =</span> merged_path,</span>
+<span id="cb14-9"><a href="#cb14-9" aria-hidden="true" tabindex="-1"></a>                     <span class="at">with =</span> <span class="fu">list</span>(<span class="at">chunk =</span> stream_chunk_size))  <span class="co"># stream in spatial chunks rather than reading the whole merged file at once -- see stream_chunk_size above</span></span>
+<span id="cb14-10"><a href="#cb14-10" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-11"><a href="#cb14-11" aria-hidden="true" tabindex="-1"></a>  native_crs   <span class="ot">&lt;-</span> <span class="fu">st_crs</span>(probe_hull)         <span class="co"># CRS embedded in the LAZ file, carried through onto the hull</span></span>
+<span id="cb14-12"><a href="#cb14-12" aria-hidden="true" tabindex="-1"></a>  native_units <span class="ot">&lt;-</span> native_crs<span class="sc">$</span>units_gdal      <span class="co"># linear units of that CRS (e.g. "metre", "foot", "us survey foot")</span></span>
+<span id="cb14-13"><a href="#cb14-13" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">is.null</span>(native_units)) {</span>
+<span id="cb14-14"><a href="#cb14-14" aria-hidden="true" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">"Could not determine linear units of the LAS file's CRS for "</span>, merged_path, <span class="st">". "</span>,</span>
+<span id="cb14-15"><a href="#cb14-15" aria-hidden="true" tabindex="-1"></a>         <span class="st">"Check that the point cloud has a valid projected CRS assigned."</span>)  <span class="co"># a missing or geographic (lat/long) CRS has no linear units, so bail out here</span></span>
+<span id="cb14-16"><a href="#cb14-16" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb14-17"><a href="#cb14-17" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-18"><a href="#cb14-18" aria-hidden="true" tabindex="-1"></a>  is_us_survey_feet <span class="ot">&lt;-</span> <span class="fu">grepl</span>(<span class="st">"us survey foot"</span>, native_units, <span class="at">ignore.case =</span> <span class="cn">TRUE</span>)  <span class="co"># check the more specific "us survey foot" unit first...</span></span>
+<span id="cb14-19"><a href="#cb14-19" aria-hidden="true" tabindex="-1"></a>  is_feet <span class="ot">&lt;-</span> <span class="sc">!</span>is_us_survey_feet <span class="sc">&amp;&amp;</span> <span class="fu">grepl</span>(<span class="st">"foot|feet|ft"</span>, native_units, <span class="at">ignore.case =</span> <span class="cn">TRUE</span>)  <span class="co"># ...then treat any other "foot"-like unit as an international foot</span></span>
+<span id="cb14-20"><a href="#cb14-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-21"><a href="#cb14-21" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (is_us_survey_feet) {</span>
+<span id="cb14-22"><a href="#cb14-22" aria-hidden="true" tabindex="-1"></a>    native_res <span class="ot">&lt;-</span> target_pixel_size_m <span class="sc">*</span> (<span class="dv">3937</span> <span class="sc">/</span> <span class="dv">1200</span>)   <span class="co"># US survey foot: 1 metre = 3937/1200 US survey feet</span></span>
+<span id="cb14-23"><a href="#cb14-23" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> <span class="cf">if</span> (is_feet) {</span>
+<span id="cb14-24"><a href="#cb14-24" aria-hidden="true" tabindex="-1"></a>    native_res <span class="ot">&lt;-</span> target_pixel_size_m <span class="sc">/</span> <span class="fl">0.3048</span>            <span class="co"># international foot: 1 ft = 0.3048 m exactly, so metres -&gt; feet is division by 0.3048</span></span>
+<span id="cb14-25"><a href="#cb14-25" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb14-26"><a href="#cb14-26" aria-hidden="true" tabindex="-1"></a>    native_res <span class="ot">&lt;-</span> target_pixel_size_m                     <span class="co"># already metres, no conversion needed</span></span>
+<span id="cb14-27"><a href="#cb14-27" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb14-28"><a href="#cb14-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb14-29"><a href="#cb14-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">crs =</span> native_crs, <span class="at">units =</span> native_units, <span class="at">res =</span> native_res)</span>
+<span id="cb14-30"><a href="#cb14-30" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="export-ground-points-to-geopackage" class="level2">
+<h2 class="anchored" data-anchor-id="export-ground-points-to-geopackage">Export ground points to GeoPackage</h2>
+<p>Optional (controlled by <code>export_ground_points_gpkg</code> in Setup). Streams one batch’s merged ground-only points (Classification == 2) into that batch’s own GeoPackage. Defined here as a function; called once per batch below, only when <code>export_ground_points_gpkg</code> is TRUE.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="co">#|</span></span>
+<span id="cb15-2"><a href="#cb15-2" aria-hidden="true" tabindex="-1"></a><span class="co"># </span><span class="al">NOTE</span><span class="co">: a batch's merged point cloud can still hold more points than lasR's internal point</span></span>
+<span id="cb15-3"><a href="#cb15-3" aria-hidden="true" tabindex="-1"></a><span class="co"># index can address in a single unchunked read (a 32-bit integer, capped at 2^31 - 1 =~ 2.1</span></span>
+<span id="cb15-4"><a href="#cb15-4" aria-hidden="true" tabindex="-1"></a><span class="co"># billion points). On top of that, a file this large can't be pulled into R as one data.frame/sf object</span></span>
+<span id="cb15-5"><a href="#cb15-5" aria-hidden="true" tabindex="-1"></a><span class="co"># anyway (it would need tens to hundreds of GB of RAM, and a GeoPackage layer with billions of</span></span>
+<span id="cb15-6"><a href="#cb15-6" aria-hidden="true" tabindex="-1"></a><span class="co"># point features isn't something GIS software can realistically open). So instead of reading</span></span>
+<span id="cb15-7"><a href="#cb15-7" aria-hidden="true" tabindex="-1"></a><span class="co"># everything at once, stream each batch's file in spatial chunks (via `stream_chunk_size`)</span></span>
+<span id="cb15-8"><a href="#cb15-8" aria-hidden="true" tabindex="-1"></a><span class="co"># and write each chunk straight to that batch's GeoPackage as it's read -- only ever holding</span></span>
+<span id="cb15-9"><a href="#cb15-9" aria-hidden="true" tabindex="-1"></a><span class="co"># one chunk in memory. Splitting the whole tile set into batches (batch_size_tiles) is the</span></span>
+<span id="cb15-10"><a href="#cb15-10" aria-hidden="true" tabindex="-1"></a><span class="co"># other half of this: it bounds how large any single GeoPackage can grow in the first place.</span></span>
+<span id="cb15-11"><a href="#cb15-11" aria-hidden="true" tabindex="-1"></a>export_to_gpkg <span class="ot">&lt;-</span> <span class="cf">function</span>(merged_path, gpkg_path, gpkg_layer, native_crs) {</span>
+<span id="cb15-12"><a href="#cb15-12" aria-hidden="true" tabindex="-1"></a>  first_chunk  <span class="ot">&lt;-</span> <span class="cn">TRUE</span>   <span class="co"># becomes FALSE after the first chunk is written, so later chunks append instead of overwriting</span></span>
+<span id="cb15-13"><a href="#cb15-13" aria-hidden="true" tabindex="-1"></a>  total_points <span class="ot">&lt;-</span> <span class="dv">0</span>      <span class="co"># running total across all chunks (a plain double, so it can't overflow like a 32-bit integer could)</span></span>
+<span id="cb15-14"><a href="#cb15-14" aria-hidden="true" tabindex="-1"></a>  class_tally  <span class="ot">&lt;-</span> <span class="fu">integer</span>(<span class="dv">0</span>)  <span class="co"># running classification-code tally across all chunks, combined at the end</span></span>
+<span id="cb15-15"><a href="#cb15-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-16"><a href="#cb15-16" aria-hidden="true" tabindex="-1"></a>  write_chunk_to_gpkg <span class="ot">&lt;-</span> <span class="cf">function</span>(data) {</span>
+<span id="cb15-17"><a href="#cb15-17" aria-hidden="true" tabindex="-1"></a>    <span class="co"># `data` is one spatial chunk's worth of points (X, Y, Z, Classification) -- never the whole</span></span>
+<span id="cb15-18"><a href="#cb15-18" aria-hidden="true" tabindex="-1"></a>    <span class="co"># point cloud. lasR calls this once per chunk as it streams through merged_path.</span></span>
+<span id="cb15-19"><a href="#cb15-19" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="fu">nrow</span>(data) <span class="sc">==</span> <span class="dv">0</span>) <span class="fu">return</span>(<span class="fu">nrow</span>(data))  <span class="co"># lasR can call back with an empty chunk near tile edges; nothing to do</span></span>
+<span id="cb15-20"><a href="#cb15-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-21"><a href="#cb15-21" aria-hidden="true" tabindex="-1"></a>    tab <span class="ot">&lt;-</span> <span class="fu">table</span>(data<span class="sc">$</span>Classification)   <span class="co"># tally classification codes seen in this chunk</span></span>
+<span id="cb15-22"><a href="#cb15-22" aria-hidden="true" tabindex="-1"></a>    class_tally <span class="ot">&lt;&lt;-</span> <span class="fu">c</span>(class_tally, tab) <span class="co"># fold into the running tally (collapsed/checked below)</span></span>
+<span id="cb15-23"><a href="#cb15-23" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-24"><a href="#cb15-24" aria-hidden="true" tabindex="-1"></a>    <span class="co"># Sanity check: keep_ground() should mean everything here is class 2, but confirm rather</span></span>
+<span id="cb15-25"><a href="#cb15-25" aria-hidden="true" tabindex="-1"></a>    <span class="co"># than assume -- check per chunk so a bad chunk fails fast instead of after a long run.</span></span>
+<span id="cb15-26"><a href="#cb15-26" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">all</span>(<span class="fu">names</span>(tab) <span class="sc">==</span> <span class="st">"2"</span>)) {</span>
+<span id="cb15-27"><a href="#cb15-27" aria-hidden="true" tabindex="-1"></a>      <span class="fu">stop</span>(<span class="st">"Merged ground file contains classes other than 2 -- check "</span>,</span>
+<span id="cb15-28"><a href="#cb15-28" aria-hidden="true" tabindex="-1"></a>           <span class="st">"that keep_ground() behaved as expected. File: "</span>, merged_path)</span>
+<span id="cb15-29"><a href="#cb15-29" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb15-30"><a href="#cb15-30" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-31"><a href="#cb15-31" aria-hidden="true" tabindex="-1"></a>    chunk_sf_native <span class="ot">&lt;-</span> <span class="fu">st_as_sf</span>(data, <span class="at">coords =</span> <span class="fu">c</span>(<span class="st">"X"</span>, <span class="st">"Y"</span>), <span class="at">crs =</span> native_crs)  <span class="co"># this chunk's points as native-CRS geometries; Z stays as an attribute column</span></span>
+<span id="cb15-32"><a href="#cb15-32" aria-hidden="true" tabindex="-1"></a>    chunk_sf_2856   <span class="ot">&lt;-</span> <span class="fu">st_transform</span>(chunk_sf_native, target_crs)              <span class="co"># reproject just this chunk to the target CRS</span></span>
+<span id="cb15-33"><a href="#cb15-33" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-34"><a href="#cb15-34" aria-hidden="true" tabindex="-1"></a>    <span class="fu">st_write</span>(chunk_sf_2856, gpkg_path, <span class="at">layer =</span> gpkg_layer, <span class="at">driver =</span> <span class="st">"GPKG"</span>,</span>
+<span id="cb15-35"><a href="#cb15-35" aria-hidden="true" tabindex="-1"></a>             <span class="at">delete_layer =</span> first_chunk, <span class="at">append =</span> <span class="sc">!</span>first_chunk, <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb15-36"><a href="#cb15-36" aria-hidden="true" tabindex="-1"></a>    <span class="co"># the first chunk (re)creates this batch's layer; every later chunk appends onto it</span></span>
+<span id="cb15-37"><a href="#cb15-37" aria-hidden="true" tabindex="-1"></a>    first_chunk  <span class="ot">&lt;&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb15-38"><a href="#cb15-38" aria-hidden="true" tabindex="-1"></a>    total_points <span class="ot">&lt;&lt;-</span> total_points <span class="sc">+</span> <span class="fu">nrow</span>(data)</span>
+<span id="cb15-39"><a href="#cb15-39" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-40"><a href="#cb15-40" aria-hidden="true" tabindex="-1"></a>    <span class="fu">nrow</span>(data)  <span class="co"># return just a count, not the data, so exec()'s combined result stays tiny</span></span>
+<span id="cb15-41"><a href="#cb15-41" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb15-42"><a href="#cb15-42" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-43"><a href="#cb15-43" aria-hidden="true" tabindex="-1"></a>  cb       <span class="ot">&lt;-</span> <span class="fu">callback</span>(write_chunk_to_gpkg, <span class="at">expose =</span> <span class="st">"xyzc"</span>, <span class="at">no_las_update =</span> <span class="cn">TRUE</span>)  <span class="co"># expose X, Y, Z, Classification per chunk; no_las_update = TRUE means we're only reading, not modifying the point cloud</span></span>
+<span id="cb15-44"><a href="#cb15-44" aria-hidden="true" tabindex="-1"></a>  read_pipeline <span class="ot">&lt;-</span> <span class="fu">reader</span>() <span class="sc">+</span> cb  <span class="co"># chain reader + callback into one pipeline</span></span>
+<span id="cb15-45"><a href="#cb15-45" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-46"><a href="#cb15-46" aria-hidden="true" tabindex="-1"></a>  <span class="fu">exec</span>(read_pipeline, <span class="at">on =</span> merged_path,</span>
+<span id="cb15-47"><a href="#cb15-47" aria-hidden="true" tabindex="-1"></a>       <span class="at">with =</span> <span class="fu">list</span>(<span class="at">chunk =</span> stream_chunk_size))  <span class="co"># stream through this batch's file in spatial chunks, writing to its GeoPackage as we go</span></span>
+<span id="cb15-48"><a href="#cb15-48" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-49"><a href="#cb15-49" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (total_points <span class="sc">==</span> <span class="dv">0</span>) {</span>
+<span id="cb15-50"><a href="#cb15-50" aria-hidden="true" tabindex="-1"></a>    <span class="fu">stop</span>(<span class="st">"No ground points found after filtering in "</span>, merged_path,</span>
+<span id="cb15-51"><a href="#cb15-51" aria-hidden="true" tabindex="-1"></a>         <span class="st">". Is the point cloud already ground-classified?"</span>)</span>
+<span id="cb15-52"><a href="#cb15-52" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb15-53"><a href="#cb15-53" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-54"><a href="#cb15-54" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"Read "</span>, total_points, <span class="st">" ground points from "</span>, merged_path, <span class="st">"."</span>)</span>
+<span id="cb15-55"><a href="#cb15-55" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"Classification breakdown:"</span>)</span>
+<span id="cb15-56"><a href="#cb15-56" aria-hidden="true" tabindex="-1"></a>  <span class="fu">print</span>(<span class="fu">tapply</span>(class_tally, <span class="fu">names</span>(class_tally), sum))  <span class="co"># collapse the per-chunk tallies into one breakdown for this batch</span></span>
+<span id="cb15-57"><a href="#cb15-57" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-58"><a href="#cb15-58" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"Ground return points written to: "</span>, gpkg_path,</span>
+<span id="cb15-59"><a href="#cb15-59" aria-hidden="true" tabindex="-1"></a>          <span class="st">" (layer: "</span>, gpkg_layer, <span class="st">")"</span>)</span>
+<span id="cb15-60"><a href="#cb15-60" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb15-61"><a href="#cb15-61" aria-hidden="true" tabindex="-1"></a>  total_points</span>
+<span id="cb15-62"><a href="#cb15-62" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="create-point-density-raster" class="level2">
+<h2 class="anchored" data-anchor-id="create-point-density-raster">Create Point Density Raster</h2>
+<p>Ground points only. Rasterizes one batch’s ground-only points using lasR’s own streaming <code>rasterize()</code> stage (not <code>terra::rasterize()</code>), which tallies points per cell while reading and never needs the point cloud loaded into R – necessary at this file’s scale (see note in the Export chunk above). Only the raw point COUNT is computed per batch; density for the whole site is derived once, after all batches’ count rasters are combined (see “Combine batches” below) – computing density per batch first and then mosaicking density values would double-count or misweight cells that straddle a batch boundary, whereas summing raw counts first and dividing once is exact. Defined here as a function; called once per batch below.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb16"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb16-1"><a href="#cb16-1" aria-hidden="true" tabindex="-1"></a><span class="co">#|</span></span>
+<span id="cb16-2"><a href="#cb16-2" aria-hidden="true" tabindex="-1"></a><span class="co"># lasR::rasterize(res, "count") is a lasR pipeline stage: it counts points per cell directly</span></span>
+<span id="cb16-3"><a href="#cb16-3" aria-hidden="true" tabindex="-1"></a><span class="co"># inside the C++ streaming engine and writes the result straight to `ofile`, so no point data</span></span>
+<span id="cb16-4"><a href="#cb16-4" aria-hidden="true" tabindex="-1"></a><span class="co"># ever has to pass through R. Cells the point cloud doesn't cover come out as NA. Namespaced</span></span>
+<span id="cb16-5"><a href="#cb16-5" aria-hidden="true" tabindex="-1"></a><span class="co"># explicitly as lasR::rasterize() because terra (loaded after lasR in Setup) also exports a</span></span>
+<span id="cb16-6"><a href="#cb16-6" aria-hidden="true" tabindex="-1"></a><span class="co"># `rasterize` generic that masks lasR's -- calling the bare name here would instead dispatch to</span></span>
+<span id="cb16-7"><a href="#cb16-7" aria-hidden="true" tabindex="-1"></a><span class="co"># terra::rasterize() and fail with "unable to find an inherited method ... x = 'numeric', y =</span></span>
+<span id="cb16-8"><a href="#cb16-8" aria-hidden="true" tabindex="-1"></a><span class="co"># 'character'", since terra's rasterize() expects a SpatVector/SpatRaster, not a lasR pipeline</span></span>
+<span id="cb16-9"><a href="#cb16-9" aria-hidden="true" tabindex="-1"></a><span class="co"># stage's arguments.</span></span>
+<span id="cb16-10"><a href="#cb16-10" aria-hidden="true" tabindex="-1"></a>rasterize_batch_count <span class="ot">&lt;-</span> <span class="cf">function</span>(merged_path, native_res, count_tif_path) {</span>
+<span id="cb16-11"><a href="#cb16-11" aria-hidden="true" tabindex="-1"></a>  count_stage    <span class="ot">&lt;-</span> lasR<span class="sc">::</span><span class="fu">rasterize</span>(native_res, <span class="st">"count"</span>, <span class="at">ofile =</span> count_tif_path)</span>
+<span id="cb16-12"><a href="#cb16-12" aria-hidden="true" tabindex="-1"></a>  count_pipeline <span class="ot">&lt;-</span> <span class="fu">reader</span>() <span class="sc">+</span> count_stage</span>
+<span id="cb16-13"><a href="#cb16-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">exec</span>(count_pipeline, <span class="at">on =</span> merged_path,</span>
+<span id="cb16-14"><a href="#cb16-14" aria-hidden="true" tabindex="-1"></a>       <span class="at">with =</span> <span class="fu">list</span>(<span class="at">chunk =</span> stream_chunk_size))  <span class="co"># stream in the same spatial chunks used for the GeoPackage export, for the same reason</span></span>
+<span id="cb16-15"><a href="#cb16-15" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb16-16"><a href="#cb16-16" aria-hidden="true" tabindex="-1"></a>  count_rast <span class="ot">&lt;-</span> <span class="fu">rast</span>(count_tif_path)  <span class="co"># read the count raster lasR just wrote back in</span></span>
+<span id="cb16-17"><a href="#cb16-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">names</span>(count_rast) <span class="ot">&lt;-</span> <span class="st">"ground_point_count"</span></span>
+<span id="cb16-18"><a href="#cb16-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"Batch native-CRS ground count raster written to: "</span>, count_tif_path)</span>
+<span id="cb16-19"><a href="#cb16-19" aria-hidden="true" tabindex="-1"></a>  count_rast</span>
+<span id="cb16-20"><a href="#cb16-20" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="run-the-workflow-across-all-batches" class="level2">
+<h2 class="anchored" data-anchor-id="run-the-workflow-across-all-batches">Run the workflow across all batches</h2>
+<p>Calls the four functions defined above once per batch, in order, using batch-specific paths. Batches run in parallel, up to <code>n_workers</code> at a time (set in Setup), via <code>future.apply::future_lapply()</code>.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Runs the full per-batch pipeline (filter/merge -&gt; detect CRS -&gt; optional GeoPackage export -&gt;</span></span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="co"># rasterize) for one batch. Called once per batch below via future_lapply(), so each call may</span></span>
+<span id="cb17-3"><a href="#cb17-3" aria-hidden="true" tabindex="-1"></a><span class="co"># run in its own worker process (see plan(multisession, ...) in Setup) rather than in this</span></span>
+<span id="cb17-4"><a href="#cb17-4" aria-hidden="true" tabindex="-1"></a><span class="co"># session. Returns a plain list of paths/CRS info rather than the count raster itself --</span></span>
+<span id="cb17-5"><a href="#cb17-5" aria-hidden="true" tabindex="-1"></a><span class="co"># terra::SpatRaster objects hold an external C++ pointer that doesn't survive being passed back</span></span>
+<span id="cb17-6"><a href="#cb17-6" aria-hidden="true" tabindex="-1"></a><span class="co"># from a multisession worker, so the raster is re-read from disk in the main session instead</span></span>
+<span id="cb17-7"><a href="#cb17-7" aria-hidden="true" tabindex="-1"></a><span class="co"># (see below), now that every worker has finished writing its .tif.</span></span>
+<span id="cb17-8"><a href="#cb17-8" aria-hidden="true" tabindex="-1"></a>process_one_batch <span class="ot">&lt;-</span> <span class="cf">function</span>(b) {</span>
+<span id="cb17-9"><a href="#cb17-9" aria-hidden="true" tabindex="-1"></a>  <span class="fu">library</span>(lasR)   <span class="co"># each multisession worker is a separate R process, with none of this</span></span>
+<span id="cb17-10"><a href="#cb17-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">library</span>(terra)  <span class="co"># session's packages loaded -- so the packages these functions need have to</span></span>
+<span id="cb17-11"><a href="#cb17-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">library</span>(sf)     <span class="co"># be (re)loaded here, inside the worker.</span></span>
+<span id="cb17-12"><a href="#cb17-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-13"><a href="#cb17-13" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"=== Batch "</span>, b, <span class="st">" of "</span>, n_batches, <span class="st">" ("</span>, <span class="fu">length</span>(tile_batches[[b]]), <span class="st">" tiles) ==="</span>)</span>
+<span id="cb17-14"><a href="#cb17-14" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-15"><a href="#cb17-15" aria-hidden="true" tabindex="-1"></a>  merged_path <span class="ot">&lt;-</span> <span class="fu">batch_path</span>(<span class="st">"ground_merged.laz"</span>, b)</span>
+<span id="cb17-16"><a href="#cb17-16" aria-hidden="true" tabindex="-1"></a>  gpkg_path   <span class="ot">&lt;-</span> <span class="fu">batch_path</span>(<span class="st">"ground_points.gpkg"</span>, b)</span>
+<span id="cb17-17"><a href="#cb17-17" aria-hidden="true" tabindex="-1"></a>  count_path  <span class="ot">&lt;-</span> <span class="fu">batch_path</span>(<span class="st">"ground_count_native_crs.tif"</span>, b)</span>
+<span id="cb17-18"><a href="#cb17-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-19"><a href="#cb17-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">filter_merge_batch</span>(tile_batches[[b]], merged_path)</span>
+<span id="cb17-20"><a href="#cb17-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-21"><a href="#cb17-21" aria-hidden="true" tabindex="-1"></a>  crs_info <span class="ot">&lt;-</span> <span class="fu">detect_native_crs</span>(merged_path)</span>
+<span id="cb17-22"><a href="#cb17-22" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-23"><a href="#cb17-23" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (export_ground_points_gpkg) {</span>
+<span id="cb17-24"><a href="#cb17-24" aria-hidden="true" tabindex="-1"></a>    <span class="fu">export_to_gpkg</span>(merged_path, gpkg_path, gpkg_layer, crs_info<span class="sc">$</span>crs)</span>
+<span id="cb17-25"><a href="#cb17-25" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb17-26"><a href="#cb17-26" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-27"><a href="#cb17-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">rasterize_batch_count</span>(merged_path, crs_info<span class="sc">$</span>res, count_path)  <span class="co"># writes count_path; the SpatRaster this returns is discarded here -- see note above</span></span>
+<span id="cb17-28"><a href="#cb17-28" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-29"><a href="#cb17-29" aria-hidden="true" tabindex="-1"></a>  <span class="fu">list</span>(<span class="at">merged_path =</span> merged_path, <span class="at">gpkg_path =</span> gpkg_path, <span class="at">count_path =</span> count_path,</span>
+<span id="cb17-30"><a href="#cb17-30" aria-hidden="true" tabindex="-1"></a>       <span class="at">crs_info =</span> crs_info)</span>
+<span id="cb17-31"><a href="#cb17-31" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb17-32"><a href="#cb17-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-33"><a href="#cb17-33" aria-hidden="true" tabindex="-1"></a><span class="co"># Cap workers at n_batches -- e.g. n_workers = 4 with only 2 batches would otherwise spin up 2</span></span>
+<span id="cb17-34"><a href="#cb17-34" aria-hidden="true" tabindex="-1"></a><span class="co"># worker processes that never get any work.</span></span>
+<span id="cb17-35"><a href="#cb17-35" aria-hidden="true" tabindex="-1"></a><span class="fu">plan</span>(multisession, <span class="at">workers =</span> <span class="fu">min</span>(n_workers, n_batches))</span>
+<span id="cb17-36"><a href="#cb17-36" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb17-37"><a href="#cb17-37" aria-hidden="true" tabindex="-1"></a><span class="co"># future_lapply() dispatches one process_one_batch() call per batch across the worker processes</span></span>
+<span id="cb17-38"><a href="#cb17-38" aria-hidden="true" tabindex="-1"></a><span class="co"># set up just above. future.seed = FALSE because nothing here draws random numbers -- it just</span></span>
+<span id="cb17-39"><a href="#cb17-39" aria-hidden="true" tabindex="-1"></a><span class="co"># silences future's "no parallel-safe RNG seed" advisory.</span></span>
+<span id="cb17-40"><a href="#cb17-40" aria-hidden="true" tabindex="-1"></a>batch_results <span class="ot">&lt;-</span> <span class="fu">future_lapply</span>(<span class="fu">seq_along</span>(tile_batches), process_one_batch, <span class="at">future.seed =</span> <span class="cn">FALSE</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 1 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b001_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b001_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 2 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b002_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b002_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 3 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b003_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b003_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: UNRELIABLE VALUE: One of the 'future.apply' iterations
+('future_lapply-1') unexpectedly generated random numbers without declaring so.
+There is a risk that those random numbers are not statistically sound and the
+overall results might be invalid. To fix this, specify 'future.seed=TRUE'. This
+ensures that proper, parallel-safe random numbers are produced via a parallel
+RNG method. To disable this check, use 'future.seed = NULL', or set option
+'future.rng.onMisuse' to "ignore". [future 'future_lapply-1'
+(ea50aed0c51a30e41ad025a85fd1539f-1); on
+ea50aed0c51a30e41ad025a85fd1539f@WORK1&lt;10672&gt;]</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 4 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b004_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b004_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 5 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b005_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b005_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: UNRELIABLE VALUE: One of the 'future.apply' iterations
+('future_lapply-2') unexpectedly generated random numbers without declaring so.
+There is a risk that those random numbers are not statistically sound and the
+overall results might be invalid. To fix this, specify 'future.seed=TRUE'. This
+ensures that proper, parallel-safe random numbers are produced via a parallel
+RNG method. To disable this check, use 'future.seed = NULL', or set option
+'future.rng.onMisuse' to "ignore". [future 'future_lapply-2'
+(ea50aed0c51a30e41ad025a85fd1539f-2); on
+ea50aed0c51a30e41ad025a85fd1539f@WORK1&lt;10672&gt;]</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>1 files do not have a spatial index. Spatial indexing speeds up tile buffering and spatial queries drastically.
+Files will be indexed on-the-fly. This will take some extra time now but will speed up everything later.</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 6 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b006_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b006_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 7 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b007_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b007_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 8 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b008_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b008_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: UNRELIABLE VALUE: One of the 'future.apply' iterations
+('future_lapply-3') unexpectedly generated random numbers without declaring so.
+There is a risk that those random numbers are not statistically sound and the
+overall results might be invalid. To fix this, specify 'future.seed=TRUE'. This
+ensures that proper, parallel-safe random numbers are produced via a parallel
+RNG method. To disable this check, use 'future.seed = NULL', or set option
+'future.rng.onMisuse' to "ignore". [future 'future_lapply-3'
+(ea50aed0c51a30e41ad025a85fd1539f-3); on
+ea50aed0c51a30e41ad025a85fd1539f@WORK1&lt;10672&gt;]</code></pre>
+</div>
+<div class="cell-output cell-output-stdout">
+<pre><code>1 files do not have a spatial index. Spatial indexing speeds up tile buffering and spatial queries drastically.
+Files will be indexed on-the-fly. This will take some extra time now but will speed up everything later.</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 9 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b009_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b009_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 10 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b010_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b010_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 11 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b011_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b011_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: UNRELIABLE VALUE: One of the 'future.apply' iterations
+('future_lapply-4') unexpectedly generated random numbers without declaring so.
+There is a risk that those random numbers are not statistically sound and the
+overall results might be invalid. To fix this, specify 'future.seed=TRUE'. This
+ensures that proper, parallel-safe random numbers are produced via a parallel
+RNG method. To disable this check, use 'future.seed = NULL', or set option
+'future.rng.onMisuse' to "ignore". [future 'future_lapply-4'
+(ea50aed0c51a30e41ad025a85fd1539f-4); on
+ea50aed0c51a30e41ad025a85fd1539f@WORK1&lt;10672&gt;]</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 12 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b012_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b012_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 13 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b013_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b013_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: UNRELIABLE VALUE: One of the 'future.apply' iterations
+('future_lapply-5') unexpectedly generated random numbers without declaring so.
+There is a risk that those random numbers are not statistically sound and the
+overall results might be invalid. To fix this, specify 'future.seed=TRUE'. This
+ensures that proper, parallel-safe random numbers are produced via a parallel
+RNG method. To disable this check, use 'future.seed = NULL', or set option
+'future.rng.onMisuse' to "ignore". [future 'future_lapply-5'
+(ea50aed0c51a30e41ad025a85fd1539f-5); on
+ea50aed0c51a30e41ad025a85fd1539f@WORK1&lt;10672&gt;]</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 14 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b014_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b014_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 15 of 16 (50 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b015_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b015_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>=== Batch 16 of 16 (1 tiles) ===</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Ground-only merged point cloud written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b016_ground_merged.laz</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Batch native-CRS ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/b016_ground_count_native_crs.tif</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: UNRELIABLE VALUE: One of the 'future.apply' iterations
+('future_lapply-6') unexpectedly generated random numbers without declaring so.
+There is a risk that those random numbers are not statistically sound and the
+overall results might be invalid. To fix this, specify 'future.seed=TRUE'. This
+ensures that proper, parallel-safe random numbers are produced via a parallel
+RNG method. To disable this check, use 'future.seed = NULL', or set option
+'future.rng.onMisuse' to "ignore". [future 'future_lapply-6'
+(ea50aed0c51a30e41ad025a85fd1539f-6); on
+ea50aed0c51a30e41ad025a85fd1539f@WORK1&lt;10672&gt;]</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb74"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb74-1"><a href="#cb74-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Batches are done with parallel workers -- everything from here runs sequentially in this</span></span>
+<span id="cb74-2"><a href="#cb74-2" aria-hidden="true" tabindex="-1"></a><span class="co"># session, so release the worker processes.</span></span>
+<span id="cb74-3"><a href="#cb74-3" aria-hidden="true" tabindex="-1"></a><span class="fu">plan</span>(sequential)</span>
+<span id="cb74-4"><a href="#cb74-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb74-5"><a href="#cb74-5" aria-hidden="true" tabindex="-1"></a><span class="co"># Per-batch intermediate file paths, tracked here so they can be deleted afterward if</span></span>
+<span id="cb74-6"><a href="#cb74-6" aria-hidden="true" tabindex="-1"></a><span class="co"># cleanup_intermediate_files is TRUE (see the "Clean up intermediate files" section near the</span></span>
+<span id="cb74-7"><a href="#cb74-7" aria-hidden="true" tabindex="-1"></a><span class="co"># end of this file).</span></span>
+<span id="cb74-8"><a href="#cb74-8" aria-hidden="true" tabindex="-1"></a>batch_merged_paths <span class="ot">&lt;-</span> <span class="fu">vapply</span>(batch_results, <span class="cf">function</span>(r) r<span class="sc">$</span>merged_path, <span class="fu">character</span>(<span class="dv">1</span>))</span>
+<span id="cb74-9"><a href="#cb74-9" aria-hidden="true" tabindex="-1"></a>batch_gpkg_paths   <span class="ot">&lt;-</span> <span class="fu">vapply</span>(batch_results, <span class="cf">function</span>(r) r<span class="sc">$</span>gpkg_path, <span class="fu">character</span>(<span class="dv">1</span>))</span>
+<span id="cb74-10"><a href="#cb74-10" aria-hidden="true" tabindex="-1"></a>batch_count_paths  <span class="ot">&lt;-</span> <span class="fu">vapply</span>(batch_results, <span class="cf">function</span>(r) r<span class="sc">$</span>count_path, <span class="fu">character</span>(<span class="dv">1</span>))</span>
+<span id="cb74-11"><a href="#cb74-11" aria-hidden="true" tabindex="-1"></a>batch_native_crs   <span class="ot">&lt;-</span> <span class="fu">lapply</span>(batch_results, <span class="cf">function</span>(r) r<span class="sc">$</span>crs_info)  <span class="co"># checked for consistency below</span></span>
+<span id="cb74-12"><a href="#cb74-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb74-13"><a href="#cb74-13" aria-hidden="true" tabindex="-1"></a><span class="co"># Re-read each batch's native-CRS count raster from disk now that every worker has finished --</span></span>
+<span id="cb74-14"><a href="#cb74-14" aria-hidden="true" tabindex="-1"></a><span class="co"># see the note on process_one_batch() above for why the SpatRaster itself isn't passed back</span></span>
+<span id="cb74-15"><a href="#cb74-15" aria-hidden="true" tabindex="-1"></a><span class="co"># directly from a worker.</span></span>
+<span id="cb74-16"><a href="#cb74-16" aria-hidden="true" tabindex="-1"></a>batch_count_rasts <span class="ot">&lt;-</span> <span class="fu">lapply</span>(batch_count_paths, <span class="cf">function</span>(p) {</span>
+<span id="cb74-17"><a href="#cb74-17" aria-hidden="true" tabindex="-1"></a>  r <span class="ot">&lt;-</span> <span class="fu">rast</span>(p)</span>
+<span id="cb74-18"><a href="#cb74-18" aria-hidden="true" tabindex="-1"></a>  <span class="fu">names</span>(r) <span class="ot">&lt;-</span> <span class="st">"ground_point_count"</span></span>
+<span id="cb74-19"><a href="#cb74-19" aria-hidden="true" tabindex="-1"></a>  r</span>
+<span id="cb74-20"><a href="#cb74-20" aria-hidden="true" tabindex="-1"></a>})</span>
+<span id="cb74-21"><a href="#cb74-21" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb74-22"><a href="#cb74-22" aria-hidden="true" tabindex="-1"></a><span class="co"># All batches come from the same site/collection, so they should share one native CRS, units,</span></span>
+<span id="cb74-23"><a href="#cb74-23" aria-hidden="true" tabindex="-1"></a><span class="co"># and resolution -- confirm that rather than assume it, since a mismatch (e.g. mixed-CRS tiles</span></span>
+<span id="cb74-24"><a href="#cb74-24" aria-hidden="true" tabindex="-1"></a><span class="co"># slipping into input_dir) would otherwise silently corrupt the mosaic step below.</span></span>
+<span id="cb74-25"><a href="#cb74-25" aria-hidden="true" tabindex="-1"></a>native_units_all <span class="ot">&lt;-</span> <span class="fu">vapply</span>(batch_native_crs, <span class="cf">function</span>(x) x<span class="sc">$</span>units, <span class="fu">character</span>(<span class="dv">1</span>))</span>
+<span id="cb74-26"><a href="#cb74-26" aria-hidden="true" tabindex="-1"></a>native_res_all   <span class="ot">&lt;-</span> <span class="fu">vapply</span>(batch_native_crs, <span class="cf">function</span>(x) x<span class="sc">$</span>res, <span class="fu">numeric</span>(<span class="dv">1</span>))</span>
+<span id="cb74-27"><a href="#cb74-27" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (<span class="fu">length</span>(<span class="fu">unique</span>(native_units_all)) <span class="sc">&gt;</span> <span class="dv">1</span> <span class="sc">||</span> <span class="fu">max</span>(native_res_all) <span class="sc">-</span> <span class="fu">min</span>(native_res_all) <span class="sc">&gt;</span> <span class="fl">1e-6</span>) {</span>
+<span id="cb74-28"><a href="#cb74-28" aria-hidden="true" tabindex="-1"></a>  <span class="fu">stop</span>(<span class="st">"Batches do not share a consistent native CRS/resolution -- check for mixed-CRS tiles "</span>,</span>
+<span id="cb74-29"><a href="#cb74-29" aria-hidden="true" tabindex="-1"></a>       <span class="st">"in input_dir."</span>)</span>
+<span id="cb74-30"><a href="#cb74-30" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb74-31"><a href="#cb74-31" aria-hidden="true" tabindex="-1"></a>native_crs <span class="ot">&lt;-</span> batch_native_crs[[<span class="dv">1</span>]]<span class="sc">$</span>crs</span>
+<span id="cb74-32"><a href="#cb74-32" aria-hidden="true" tabindex="-1"></a>native_res <span class="ot">&lt;-</span> batch_native_crs[[<span class="dv">1</span>]]<span class="sc">$</span>res</span>
+<span id="cb74-33"><a href="#cb74-33" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Native-CRS resolution corresponding to "</span>, target_pixel_size_m,</span>
+<span id="cb74-34"><a href="#cb74-34" aria-hidden="true" tabindex="-1"></a>        <span class="st">" m pixels: "</span>, <span class="fu">round</span>(native_res, <span class="dv">6</span>), <span class="st">" ("</span>, native_units_all[<span class="dv">1</span>], <span class="st">")"</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Native-CRS resolution corresponding to 3 m pixels: 9.8425 (US survey foot)</code></pre>
+</div>
+</div>
+</section>
+<section id="combine-batches" class="level2">
+<h2 class="anchored" data-anchor-id="combine-batches">Combine batches</h2>
+<p>Mosaics every batch’s native-CRS count raster into one whole-site count raster, then derives density from that combined total. Both are kept in memory only – they’re intermediates on the way to the EPSG:2856 rasters written in the next step, not final outputs, so they aren’t written to disk in native CRS.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb76"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb76-1"><a href="#cb76-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Mosaic every batch's native count raster into one whole-site count raster. fun = "sum"</span></span>
+<span id="cb76-2"><a href="#cb76-2" aria-hidden="true" tabindex="-1"></a><span class="co"># (rather than the default "first") means that if any batches' tiles happen to overlap in</span></span>
+<span id="cb76-3"><a href="#cb76-3" aria-hidden="true" tabindex="-1"></a><span class="co"># space, their counts are added together instead of one silently overwriting the other; for</span></span>
+<span id="cb76-4"><a href="#cb76-4" aria-hidden="true" tabindex="-1"></a><span class="co"># the ordinary case of non-overlapping tiles this behaves just like a plain mosaic. This</span></span>
+<span id="cb76-5"><a href="#cb76-5" aria-hidden="true" tabindex="-1"></a><span class="co"># assumes every batch's raster shares the same origin/grid alignment, which holds here because</span></span>
+<span id="cb76-6"><a href="#cb76-6" aria-hidden="true" tabindex="-1"></a><span class="co"># lasR's rasterize() snaps cell edges to multiples of native_res regardless of a batch's</span></span>
+<span id="cb76-7"><a href="#cb76-7" aria-hidden="true" tabindex="-1"></a><span class="co"># extent, and native_res was confirmed identical across batches above.</span></span>
+<span id="cb76-8"><a href="#cb76-8" aria-hidden="true" tabindex="-1"></a>count_rast <span class="ot">&lt;-</span> <span class="cf">if</span> (<span class="fu">length</span>(batch_count_rasts) <span class="sc">==</span> <span class="dv">1</span>) {</span>
+<span id="cb76-9"><a href="#cb76-9" aria-hidden="true" tabindex="-1"></a>  batch_count_rasts[[<span class="dv">1</span>]]</span>
+<span id="cb76-10"><a href="#cb76-10" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb76-11"><a href="#cb76-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">do.call</span>(mosaic, <span class="fu">c</span>(batch_count_rasts, <span class="at">fun =</span> <span class="st">"first"</span>))</span>
+<span id="cb76-12"><a href="#cb76-12" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>
+|---------|---------|---------|---------|
+=========================================
+                                          </code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb78"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb78-1"><a href="#cb78-1" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(count_rast) <span class="ot">&lt;-</span> <span class="st">"ground_point_count"</span></span>
+<span id="cb78-2"><a href="#cb78-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-3"><a href="#cb78-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (fill_empty_cells_with_zero) {</span>
+<span id="cb78-4"><a href="#cb78-4" aria-hidden="true" tabindex="-1"></a>  count_rast <span class="ot">&lt;-</span> <span class="fu">subst</span>(count_rast, <span class="cn">NA</span>, <span class="dv">0</span>)  <span class="co"># replace "no points" cells (NA) with 0, per fill_empty_cells_with_zero</span></span>
+<span id="cb78-5"><a href="#cb78-5" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb78-6"><a href="#cb78-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Native-CRS count_rast is kept in memory only -- it's an intermediate on the way to the</span></span>
+<span id="cb78-7"><a href="#cb78-7" aria-hidden="true" tabindex="-1"></a><span class="co"># EPSG:2856 reprojection below (see "Project Density and Count Rasters to EPSG:2856"), not one</span></span>
+<span id="cb78-8"><a href="#cb78-8" aria-hidden="true" tabindex="-1"></a><span class="co"># of the final outputs, so it's not written to disk.</span></span>
+<span id="cb78-9"><a href="#cb78-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb78-10"><a href="#cb78-10" aria-hidden="true" tabindex="-1"></a>n_na <span class="ot">&lt;-</span> <span class="fu">global</span>(count_rast, <span class="at">fun =</span> <span class="st">"isNA"</span>)[<span class="dv">1</span>, <span class="dv">1</span>]  <span class="co"># number of cells with no ground points (NA), for reporting</span></span>
+<span id="cb78-11"><a href="#cb78-11" aria-hidden="true" tabindex="-1"></a>n_total <span class="ot">&lt;-</span> <span class="fu">ncell</span>(count_rast)                    <span class="co"># total number of cells in the raster</span></span>
+<span id="cb78-12"><a href="#cb78-12" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="fu">sprintf</span>(<span class="st">"%d of %d cells (%.1f%%) have no ground points."</span>,</span>
+<span id="cb78-13"><a href="#cb78-13" aria-hidden="true" tabindex="-1"></a>                 n_na, n_total, <span class="dv">100</span> <span class="sc">*</span> n_na <span class="sc">/</span> n_total))  <span class="co"># report the fraction of empty cells so coverage gaps are visible</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>6525917 of 43909946 cells (14.9%) have no ground points.</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb80"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb80-1"><a href="#cb80-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Normalized density (ground points per square meter), computed once from the combined counts</span></span>
+<span id="cb80-2"><a href="#cb80-2" aria-hidden="true" tabindex="-1"></a>cell_area    <span class="ot">&lt;-</span> target_pixel_size_m<span class="sc">^</span><span class="dv">2</span>   <span class="co"># true physical cell area, in m^2 instead of native_res^2, which would be in native (e.g. square feet) units and give density in the wrong units</span></span>
+<span id="cb80-3"><a href="#cb80-3" aria-hidden="true" tabindex="-1"></a>density_rast <span class="ot">&lt;-</span> count_rast <span class="sc">/</span> cell_area  <span class="co"># convert combined counts to density (points per m^2) using the true physical cell area</span></span>
+<span id="cb80-4"><a href="#cb80-4" aria-hidden="true" tabindex="-1"></a><span class="fu">names</span>(density_rast) <span class="ot">&lt;-</span> <span class="st">"ground_point_density"</span></span>
+<span id="cb80-5"><a href="#cb80-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb80-6"><a href="#cb80-6" aria-hidden="true" tabindex="-1"></a><span class="co"># Likewise, native-CRS density_rast is kept in memory only -- see the note on count_rast above.</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+</div>
+</section>
+<section id="project-density-and-count-rasters-to-epsg2856" class="level2">
+<h2 class="anchored" data-anchor-id="project-density-and-count-rasters-to-epsg2856">Project Density and Count Rasters to EPSG:2856</h2>
+<p>Density is resampled bilinear (continuous field); count is resampled nearest-neighbor so cell values stay whole point counts instead of being blended by interpolation.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb81"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb81-1"><a href="#cb81-1" aria-hidden="true" tabindex="-1"></a>density_rast_2856 <span class="ot">&lt;-</span> <span class="fu">project</span>(density_rast, target_crs, <span class="at">method =</span> <span class="st">"bilinear"</span>,</span>
+<span id="cb81-2"><a href="#cb81-2" aria-hidden="true" tabindex="-1"></a>                             <span class="at">res =</span> target_pixel_size_m)  <span class="co"># reproject the combined density raster; bilinear interpolation is appropriate for a continuous field</span></span>
+<span id="cb81-3"><a href="#cb81-3" aria-hidden="true" tabindex="-1"></a><span class="fu">writeRaster</span>(density_rast_2856, density_tif_2856_path, <span class="at">overwrite =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb81-4"><a href="#cb81-4" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Reprojected ground density raster written to: "</span>, density_tif_2856_path)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Reprojected ground density raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/ground_density_epsg2856.tif</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb83"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb83-1"><a href="#cb83-1" aria-hidden="true" tabindex="-1"></a>count_rast_2856 <span class="ot">&lt;-</span> <span class="fu">project</span>(count_rast, target_crs, <span class="at">method =</span> <span class="st">"near"</span>,</span>
+<span id="cb83-2"><a href="#cb83-2" aria-hidden="true" tabindex="-1"></a>                           <span class="at">res =</span> target_pixel_size_m)  <span class="co"># reproject the combined count raster; nearest-neighbor avoids fractional/blended counts</span></span>
+<span id="cb83-3"><a href="#cb83-3" aria-hidden="true" tabindex="-1"></a><span class="fu">writeRaster</span>(count_rast_2856, count_tif_2856_path, <span class="at">overwrite =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb83-4"><a href="#cb83-4" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Reprojected ground count raster written to: "</span>, count_tif_2856_path)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Reprojected ground count raster written to: c:\work\data\site1\cascades_north_wali_2023\grnd_den\/ground_count_epsg2856.tif</code></pre>
+</div>
+</div>
+<p>Quick check to see if it worked</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb85"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb85-1"><a href="#cb85-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(density_rast_2856)  <span class="co"># inspect CRS, extent, and resolution of the reprojected density raster</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>class       : SpatRaster
+size        : 4573, 9602, 1  (nrow, ncol, nlyr)
+resolution  : 3, 3  (x, y)
+extent      : 379932, 408738, 320268, 333987  (xmin, xmax, ymin, ymax)
+coord. ref. : NAD83(HARN) / Washington South (EPSG:2856)
+source(s)   : memory
+name        : ground_point_density
+min value   :             0.111111
+max value   :            16.777779</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb87"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb87-1"><a href="#cb87-1" aria-hidden="true" tabindex="-1"></a><span class="fu">print</span>(count_rast_2856)    <span class="co"># same check for the reprojected count raster</span></span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>class       : SpatRaster
+size        : 4573, 9602, 1  (nrow, ncol, nlyr)
+resolution  : 3, 3  (x, y)
+extent      : 379932, 408738, 320268, 333987  (xmin, xmax, ymin, ymax)
+coord. ref. : NAD83(HARN) / Washington South (EPSG:2856)
+source(s)   : memory
+name        : ground_point_count
+min value   :                  1
+max value   :                151</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb89"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb89-1"><a href="#cb89-1" aria-hidden="true" tabindex="-1"></a><span class="co"># GeoPackage export is optional (export_ground_points_gpkg in Setup); only look for/sample them</span></span>
+<span id="cb89-2"><a href="#cb89-2" aria-hidden="true" tabindex="-1"></a><span class="co"># if that step actually ran.</span></span>
+<span id="cb89-3"><a href="#cb89-3" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (export_ground_points_gpkg) {</span>
+<span id="cb89-4"><a href="#cb89-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># There is no single whole-site GeoPackage (that's the whole reason tiles were batched --</span></span>
+<span id="cb89-5"><a href="#cb89-5" aria-hidden="true" tabindex="-1"></a>  <span class="co"># see batch_size_tiles above), so list the per-batch GeoPackages and sample from the first one.</span></span>
+<span id="cb89-6"><a href="#cb89-6" aria-hidden="true" tabindex="-1"></a>  <span class="co"># The full point layer within a batch is still too large to hold in R at once (that's why it</span></span>
+<span id="cb89-7"><a href="#cb89-7" aria-hidden="true" tabindex="-1"></a>  <span class="co"># was streamed straight to the GeoPackage instead), so pull back only a handful of rows with a</span></span>
+<span id="cb89-8"><a href="#cb89-8" aria-hidden="true" tabindex="-1"></a>  <span class="co"># SQL LIMIT rather than reading the layer in and then subsetting it.</span></span>
+<span id="cb89-9"><a href="#cb89-9" aria-hidden="true" tabindex="-1"></a>  batch_gpkgs <span class="ot">&lt;-</span> <span class="fu">vapply</span>(<span class="fu">seq_len</span>(n_batches), <span class="cf">function</span>(b) <span class="fu">batch_path</span>(<span class="st">"ground_points.gpkg"</span>, b),</span>
+<span id="cb89-10"><a href="#cb89-10" aria-hidden="true" tabindex="-1"></a>                        <span class="fu">character</span>(<span class="dv">1</span>))</span>
+<span id="cb89-11"><a href="#cb89-11" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"Batch GeoPackages written:"</span>)</span>
+<span id="cb89-12"><a href="#cb89-12" aria-hidden="true" tabindex="-1"></a>  <span class="fu">print</span>(batch_gpkgs)</span>
+<span id="cb89-13"><a href="#cb89-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb89-14"><a href="#cb89-14" aria-hidden="true" tabindex="-1"></a>  ground_sample <span class="ot">&lt;-</span> <span class="fu">st_read</span>(batch_gpkgs[<span class="dv">1</span>], <span class="at">layer =</span> gpkg_layer,</span>
+<span id="cb89-15"><a href="#cb89-15" aria-hidden="true" tabindex="-1"></a>                           <span class="at">query =</span> <span class="fu">paste0</span>(<span class="st">"SELECT * FROM </span><span class="sc">\"</span><span class="st">"</span>, gpkg_layer, <span class="st">"</span><span class="sc">\"</span><span class="st"> LIMIT 5"</span>),</span>
+<span id="cb89-16"><a href="#cb89-16" aria-hidden="true" tabindex="-1"></a>                           <span class="at">quiet =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb89-17"><a href="#cb89-17" aria-hidden="true" tabindex="-1"></a>  <span class="fu">print</span>(ground_sample)  <span class="co"># peek at a handful of reprojected ground points from the first batch</span></span>
+<span id="cb89-18"><a href="#cb89-18" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb89-19"><a href="#cb89-19" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"export_ground_points_gpkg is FALSE -- no per-batch GeoPackages were written."</span>)</span>
+<span id="cb89-20"><a href="#cb89-20" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>export_ground_points_gpkg is FALSE -- no per-batch GeoPackages were written.</code></pre>
+</div>
+</div>
+</section>
+<section id="clean-up-intermediate-files" class="level2">
+<h2 class="anchored" data-anchor-id="clean-up-intermediate-files">Clean up intermediate files</h2>
+<p>Optional (controlled by <code>cleanup_intermediate_files</code> in Setup). Deletes every per-batch intermediate file – merged LAZ, per-batch GeoPackage (if <code>export_ground_points_gpkg</code> was TRUE), per-batch native-CRS count raster, and any <code>.lax</code> spatial-index sidecar files lasR left behind in <code>output_dir</code> – now that they’ve been folded into the final outputs. Only the two final EPSG:2856 raster files (<code>count_tif_2856_path</code>, <code>density_tif_2856_path</code>) are kept; the native-CRS mosaics were never written to disk in the first place (see “Combine batches” above).</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb91"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb91-1"><a href="#cb91-1" aria-hidden="true" tabindex="-1"></a><span class="cf">if</span> (cleanup_intermediate_files) {</span>
+<span id="cb91-2"><a href="#cb91-2" aria-hidden="true" tabindex="-1"></a>  <span class="co"># lasR builds a .lax spatial-index sidecar (same basename, .lax extension) next to any</span></span>
+<span id="cb91-3"><a href="#cb91-3" aria-hidden="true" tabindex="-1"></a>  <span class="co"># LAZ/LAS file it reads or writes -- including each batch's merged LAZ -- to speed up spatial</span></span>
+<span id="cb91-4"><a href="#cb91-4" aria-hidden="true" tabindex="-1"></a>  <span class="co"># queries. Rather than assuming exactly one .lax per merged file, just glob output_dir for</span></span>
+<span id="cb91-5"><a href="#cb91-5" aria-hidden="true" tabindex="-1"></a>  <span class="co"># any ".lax" so nothing gets left behind regardless of naming.</span></span>
+<span id="cb91-6"><a href="#cb91-6" aria-hidden="true" tabindex="-1"></a>  lax_paths <span class="ot">&lt;-</span> <span class="fu">list.files</span>(output_dir, <span class="at">pattern =</span> <span class="st">"</span><span class="sc">\\</span><span class="st">.lax$"</span>, <span class="at">full.names =</span> <span class="cn">TRUE</span>, <span class="at">ignore.case =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb91-7"><a href="#cb91-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb91-8"><a href="#cb91-8" aria-hidden="true" tabindex="-1"></a>  intermediate_paths <span class="ot">&lt;-</span> <span class="fu">c</span>(batch_merged_paths, batch_count_paths, lax_paths,</span>
+<span id="cb91-9"><a href="#cb91-9" aria-hidden="true" tabindex="-1"></a>                          <span class="cf">if</span> (export_ground_points_gpkg) batch_gpkg_paths <span class="cf">else</span> <span class="fu">character</span>(<span class="dv">0</span>))</span>
+<span id="cb91-10"><a href="#cb91-10" aria-hidden="true" tabindex="-1"></a>  intermediate_paths <span class="ot">&lt;-</span> intermediate_paths[<span class="fu">file.exists</span>(intermediate_paths)]  <span class="co"># only try to delete files that actually exist</span></span>
+<span id="cb91-11"><a href="#cb91-11" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb91-12"><a href="#cb91-12" aria-hidden="true" tabindex="-1"></a>  <span class="cf">if</span> (<span class="fu">length</span>(intermediate_paths) <span class="sc">==</span> <span class="dv">0</span>) {</span>
+<span id="cb91-13"><a href="#cb91-13" aria-hidden="true" tabindex="-1"></a>    <span class="fu">message</span>(<span class="st">"No intermediate files found to clean up."</span>)</span>
+<span id="cb91-14"><a href="#cb91-14" aria-hidden="true" tabindex="-1"></a>  } <span class="cf">else</span> {</span>
+<span id="cb91-15"><a href="#cb91-15" aria-hidden="true" tabindex="-1"></a>    removed <span class="ot">&lt;-</span> <span class="fu">file.remove</span>(intermediate_paths)</span>
+<span id="cb91-16"><a href="#cb91-16" aria-hidden="true" tabindex="-1"></a>    <span class="fu">message</span>(<span class="fu">sum</span>(removed), <span class="st">" of "</span>, <span class="fu">length</span>(intermediate_paths), <span class="st">" intermediate file(s) deleted."</span>)</span>
+<span id="cb91-17"><a href="#cb91-17" aria-hidden="true" tabindex="-1"></a>    <span class="cf">if</span> (<span class="sc">!</span><span class="fu">all</span>(removed)) {</span>
+<span id="cb91-18"><a href="#cb91-18" aria-hidden="true" tabindex="-1"></a>      <span class="fu">warning</span>(<span class="st">"Could not delete: "</span>, <span class="fu">paste</span>(intermediate_paths[<span class="sc">!</span>removed], <span class="at">collapse =</span> <span class="st">", "</span>))</span>
+<span id="cb91-19"><a href="#cb91-19" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb91-20"><a href="#cb91-20" aria-hidden="true" tabindex="-1"></a>  }</span>
+<span id="cb91-21"><a href="#cb91-21" aria-hidden="true" tabindex="-1"></a>} <span class="cf">else</span> {</span>
+<span id="cb91-22"><a href="#cb91-22" aria-hidden="true" tabindex="-1"></a>  <span class="fu">message</span>(<span class="st">"cleanup_intermediate_files is FALSE -- per-batch intermediate files were left in "</span>,</span>
+<span id="cb91-23"><a href="#cb91-23" aria-hidden="true" tabindex="-1"></a>          output_dir)</span>
+<span id="cb91-24"><a href="#cb91-24" aria-hidden="true" tabindex="-1"></a>}</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>34 of 34 intermediate file(s) deleted.</code></pre>
+</div>
+</div>
+</section>
+<section id="workflow-timing" class="level2">
+<h2 class="anchored" data-anchor-id="workflow-timing">Workflow timing</h2>
+<p>Reports the start time, end time, and total elapsed time for the entire workflow, using the <code>workflow_start_time</code> timestamp captured at the very top of the Setup chunk.</p>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb93"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb93-1"><a href="#cb93-1" aria-hidden="true" tabindex="-1"></a>workflow_end_time <span class="ot">&lt;-</span> <span class="fu">Sys.time</span>()</span>
+<span id="cb93-2"><a href="#cb93-2" aria-hidden="true" tabindex="-1"></a>workflow_run_time <span class="ot">&lt;-</span> workflow_end_time <span class="sc">-</span> workflow_start_time</span>
+<span id="cb93-3"><a href="#cb93-3" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb93-4"><a href="#cb93-4" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Workflow start time: "</span>, <span class="fu">format</span>(workflow_start_time, <span class="st">"%Y-%m-%d %H:%M:%S"</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Workflow start time: 2026-08-31 09:04:00</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb95"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb95-1"><a href="#cb95-1" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Workflow end time:   "</span>, <span class="fu">format</span>(workflow_end_time, <span class="st">"%Y-%m-%d %H:%M:%S"</span>))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Workflow end time:   2026-08-31 09:39:27</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb97"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb97-1"><a href="#cb97-1" aria-hidden="true" tabindex="-1"></a><span class="fu">message</span>(<span class="st">"Total run time:      "</span>, <span class="fu">format</span>(<span class="fu">unclass</span>(workflow_run_time), <span class="at">digits =</span> <span class="dv">4</span>),</span>
+<span id="cb97-2"><a href="#cb97-2" aria-hidden="true" tabindex="-1"></a>        <span class="st">" "</span>, <span class="fu">units</span>(workflow_run_time))</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Total run time:      35.46 mins</code></pre>
+</div>
+</div>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+        const codeEl = trigger.previousElementSibling.cloneNode(true);
+        for (const childEl of codeEl.children) {
+          if (isCodeAnnotation(childEl)) {
+            childEl.remove();
+          }
+        }
+        return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

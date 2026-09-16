@@ -45,13 +45,13 @@ This algorithm is implemented in Program HuntLS.
 ```{r}
 #| label: HuntLS
 #| 
-library(TerrainWorksUtils)
+library(TWutils)
 library(stringr)
 
 path <- "c:\\work\\data\\postmortem\\"
 DEM <- paste0(path, "elev_2006n.flt")
-Outlier <- paste0(path, "outlierN0.flt")
-DoD <- paste0(path, "difN0.flt")
+Outlier <- paste0(path, "outlier_06_17.flt")
+DoD <- paste0(path, "dif_06_17.flt")
 Accum <- paste0(path, "accum_2006n.flt")
 AccumThreshold <- 1000.
 LSpnts <- paste0(path, "LS_pnts_N_edited.shp")
@@ -67,7 +67,7 @@ OutTable <- paste0(path, "table_1")
 executable_dir <- "c:\\work\\sandbox\\landslideutilities\\projects\\HuntLS\\x64\\release\\"
 
 if (!file.exists(paste0(OutTable, "_match.csv"))) {
-  returnCode <- TerrainWorksUtils::huntLS(DEM,
+  returnCode <- TWutils::huntLS(DEM,
                                           Outlier,
                                           DoD,
                                           Accum,
@@ -80,7 +80,7 @@ if (!file.exists(paste0(OutTable, "_match.csv"))) {
                                           OutlierThreshold,
                                           ScratchDir,
                                           OutPatch,
-                                          OutGrad,                                                                                     OutTable,
+                                          OutGrad,                                                                            OutTable,
                                           executable_dir)
 
   if (returnCode != 0) {
@@ -329,8 +329,7 @@ OutGrad <- paste0(OutGrad, ".flt")
 ScratchDir <- "c:\\work\\scratch"
 executable_dir <- "c:/work/sandbox/landslideutilities/projects/LShunter/x64/release"
 
-returnCode <- TerrainWorksUtils::LShunter(
-    DoD,
+returnCode <- TWutils::LShunter(
     Outlier,
     threshold1,
     threshold2,
