@@ -1,0 +1,225 @@
+# Pipeline config file for run_bldgrds_valleyfloor_ril_pipeline.R
+#
+# "keyword: value" lines (same rules as bldgrds_enforce.R's/valleyfloor.R's/RIL.R's own parameter
+# files -- order within a section doesn't matter, blank lines and lines starting with "#" are
+# ignored, a trailing "# comment" after a value is stripped, and only the first colon on a line
+# separates the keyword from its value, so a value like "c:\..." is safe), grouped under four
+# section headers: [dem], [bldgrds_enforce], [valleyfloor], [ril].
+#
+# [dem] takes exactly one line -- dem: <path> -- used for every stage below. Do NOT set dem,
+# input_file, or (in [valleyfloor]) data_id in any of the three per-stage sections: this pipeline
+# forces the single [dem] value onto all three stages so the DEM-derived data ID that links
+# bldgrds_enforce's node database -> valleyfloor's channel definition -> valleyfloor's own
+# per-channel data file -> RIL's height-/depth-above-channel input stays identical across all
+# three; a line setting any of those three keywords in a per-stage section is dropped with a
+# warning rather than honored.
+#
+# See param_specs in bldgrds_enforce.R/valleyfloor.R/RIL.R for the full keyword list and defaults
+# for each section -- everything below is transcribed from those scripts' own reference-project
+# templates (Skykomish for bldgrds_enforce, Cherry for valleyfloor, Post Mortem for RIL), with dem
+# lifted out to [dem] and each script's own executable_dir left pointing at its own project's
+# build output (bldgrds under GridUtilities; valleyfloor/RIL under ChannelUtilities). Replace
+# every path below with your own project's before running this for real -- these three reference
+# projects are not the same DEM and mixing them as-is will not produce a meaningful result.
+
+[dem]
+dem: c:\work\data\site1\elev_site1
+
+[bldgrds_enforce]
+# Existing channel-network raster/shapefile to enforce (CHANNEL MASK: FILE). No new channel
+# initiation happens outside this layer -- bldgrds_enforce.R always writes NO NEW CHANNELS.
+channel_mask: c:\work\data\site1\EDH
+channel_mask_dig: 15.0
+channel_mask_radius: 0.0
+channel_mask_directional: TRUE
+channel_mask_init_all: TRUE
+
+# Optional output node point shapefile. Leave as NOFILE if not wanted.
+node_shapefile: NOFILE
+node_splits: NOFILE
+
+# Optional additional outputs. Leave as NOFILE if not wanted.
+drainage_wing_raster: NOFILE
+hand_raster: NOFILE
+hand_flow_threshold: NOFILE
+hand_normalize: FALSE
+twi_raster: NOFILE
+twi_gradient_length_scale: NOFILE
+
+# Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" block -- see
+# bldgrds_enforce_attributes_example.txt. When NOFILE, falls back to
+# TWutils::bldgrds_default_attributes() (bare elevation/area attributes only).
+attribute_list_file: c:\work\data\site1\attributes_site1.txt
+
+# Scratch directory for bldgrds' intermediate files, and the folder containing bldgrds.exe (built
+# from GridUtilities).
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\gridutilities\projects\bldgrds\x64\release\
+
+overwrite: TRUE
+
+[valleyfloor]
+# --- Channel selection ---
+all_channels: TRUE
+channel_list: NOFILE
+min_chan_width: 0.5
+min_chan_area: NOFILE
+
+# write_data: TRUE (the default) matters specifically for this pipeline: it's what makes
+# ValleyFloor actually compute and write the depth-/height-above-channel data RIL later reads back
+# out of valleyfloor_<ID>.dat. Leaving this FALSE would produce a pipeline RIL can't complete.
+write_data: TRUE
+read_data: FALSE
+overwrite_data: TRUE
+
+# method: 4 (the default, the TIN-based algorithm) matters for the same reason -- it's what
+# populates the depth-above-channel field RIL reads (readChanRecord's depthAbove); method 1 (the
+# simpler per-cell weighted-average method) has not been confirmed to feed RIL the same way.
+method: 4
+sampling_interval: 1
+
+# --- Valley-floor geometry ---
+valley_buffer: CHANNEL WIDTHS=35, MIN RADIUS=20, MAX RADIUS=1200
+expansion_factor: 1.5
+second_expansion: NOFILE
+mask_by_watershed: TRUE
+max_depth_dif: 12
+min_elev_dif: 2.0
+weighting_exponent: 1.0
+smoothing_iterations: 0
+
+# --- Flood inundation (method = 4 only) ---
+inundation_smoothing_max_radius: 20
+max_depths_above: 12
+max_depths_below: -12
+
+max_dif_dist_chan_dist_node: 0.25
+monotonic: NOFILE
+minimum_channel_length: NOFILE
+
+fill_dem_holes: FALSE
+fill_dem_holes_max_size: NOFILE
+fill_dem_holes_min_elev: NOFILE
+
+input_d8: NOFILE
+
+# Optional output rasters. Leave as NOFILE if not wanted -- these are independent of the
+# valleyfloor_<ID>.dat file RIL reads, which is written unconditionally regardless of these.
+out_elev: NOFILE
+out_depth: NOFILE
+out_elev_bil: NOFILE
+out_depth_bil: NOFILE
+out_flood_height: NOFILE
+out_flood_depth: NOFILE
+out_d8: NOFILE
+
+# --- Valley width ---
+measure_valley_widths: FALSE
+height_above_steps: 0, 0.25, 0.5, 0.75, 1, 1.5, 2, 2.5, 3, 4, 5, 7.5, 10
+valley_width_window: 20
+
+# Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" block -- see
+# valleyfloor_attributes_example.txt. When NOFILE, falls back to
+# TWutils::valleyfloor_default_attributes() (bare identifier/area attributes only).
+attribute_list_file: c:\work\data\site1\attributes_site1.txt
+
+upstream_node: NOFILE
+downstream_node: NOFILE
+
+time_it: FALSE
+debug: FALSE
+
+# Scratch directory for ValleyFloor's intermediate files, and the folder containing
+# ValleyFloor.exe (built from ChannelUtilities).
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\channelutilities\projects\valleyfloor\x64\release\
+
+overwrite: TRUE
+
+[ril]
+# Scratch directory for RIL's intermediate files, and the folder containing RIL.exe (built from
+# ChannelUtilities).
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\channelutilities\projects\ril\x64\release\
+
+# Output RIL raster (.flt), given without extension -- this pipeline's final product.
+out_RIL: c:\work\data\site1\ril_landforms
+
+radius: 7.5
+closest_node: NUM WIDTHS=0, MAX RADIUS=250, MIN RADIUS=250
+
+# --- Channel initiation ---
+as2_threshold: 1000
+plan_curvature_threshold: 0.005
+gradient_threshold: 0.5
+fluvial_area_threshold: 0.07
+
+# --- Valley floor (RIL's own internal classification -- distinct from, but informed by, the
+# depth-above-channel data it reads from valleyfloor_<ID>.dat) ---
+valley_depth_max: 5.0
+valley_buffer: 2.5
+valley_max_hole: 1000
+valley_min_patch: 20
+
+# --- Hollows ---
+hollow_gradient: PRIMARY=0.3, SECONDARY=0.25, DIF1=1.0, DIF2=0.45, MIN POLY GRAD=0.2
+hollow_tangential: PRIMARY=-0.005, SECONDARY=-0.02, MIN POLY TAN=0.0
+hollow_profile: PRIMARY=-0.01, SECONDARY=-0.06, MIN POLY PROF=-0.015
+grad_proportion: GRAD=0.5, PROP=0.1
+tan_proportion: TAN=0.0, PROP=0.5
+fill_hollow_embayments: TRUE
+hollow_area_threshold: 5
+hollow_max_hole: 1000
+hollow_min_patch: INITIAL=0, FINAL=300
+
+# --- Inner gorge ---
+gorge_gradient: PRIMARY=0.7, SECONDARY=0.45, DIF1=0.95, DIF2=0.7
+gorge_max_hole: 1000
+gorge_min_patch: 0
+
+# --- Hillslope ---
+slope_thresholds: SLOPE=0.4, STEEP=0.7
+curve_thresholds: CONVERGENT=0.01, DIVERGENT=-0.01
+
+# --- Polygon smoothing and roads ---
+edge_smoothing_iterations: 11
+road_shapefile: NOFILE
+road_buffer: 15
+
+# Optional precomputed input rasters. Leave as NOFILE if not used.
+in_closest_node: NOFILE
+in_dist_to_channel: NOFILE
+in_drainage_wing: NOFILE
+in_valley_floor: NOFILE
+in_upgrad: NOFILE
+in_downgrad: NOFILE
+in_grad: NOFILE
+in_tangential: NOFILE
+in_plan: NOFILE
+in_prof: NOFILE
+
+# Optional intermediate/output rasters and node shapefile to write out for reuse. Leave as NOFILE
+# if not wanted.
+out_closest_node: NOFILE
+out_dist_to_channel: NOFILE
+out_drainage_wing: NOFILE
+out_valley_floor: NOFILE
+out_upgrad: NOFILE
+out_downgrad: NOFILE
+out_grad: NOFILE
+out_tangential: NOFILE
+out_plan: NOFILE
+out_prof: NOFILE
+out_nodes: NOFILE
+out_zero_order: NOFILE
+
+# Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" block -- see
+# RIL_attributes_example.txt. When NOFILE, falls back to TWutils::ril_default_attributes() (bare
+# identifier/area/geometry attributes only). NOTE: RIL_input() always force-adds AS2/PLAN/SLOPE to
+# whichever attribute_list is used here, so you do not need to add them yourself for RIL to run --
+# they exist specifically because RIL.f90 aborts if its own node list lacks them.
+attribute_list_file: c:\work\data\site1\attributes_site1.txt
+
+use_ltd: TRUE
+debug: FALSE
+overwrite: TRUE
