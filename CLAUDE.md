@@ -99,6 +99,13 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `future::plan` and global-environment state rather than `source()`-ing repeatedly in one session).
 - **RIL.R** — runs `TWutils::RIL()` (Fortran program RIL, see `..\ChannelUtilities\RIL\RIL.f90`) to
   trace the channel network from a DEM and classify valley floor / hollow / inner-gorge landforms.
+- **LShunter.R** — runs `TWutils::LShunter()` (Fortran program LShunter, see
+  `..\LandslideUtilities\LShunter.f90`) to find candidate landslide patches from Align's outlier
+  raster plus gradient and flow-accumulation rasters, in two rounds of paired thresholds. Supports
+  both `LShunter()` modes like RIL.R (mode 1: existing input file via `input_file`). Note
+  `LShunter()`'s current wrapper signature takes named, capitalized arguments (`Outlier`, `Accum`,
+  `OutPatch`, `ScratchDir`, `Executable_dir`, plus `...` to `LShunterInput()`); MappingLandslides.qmd's
+  LShunter chunk still uses an older positional call and would fail against it.
 - **bldgrds.R** — runs `TWutils::bldgrds()` (Fortran program bldgrds, see
   `..\GridUtilities\bldGrds2.f90`) to compute D-infinity flow direction and flow accumulation for a
   DEM and, unless `no_channels` is set, trace the channel network downstream into a node-list

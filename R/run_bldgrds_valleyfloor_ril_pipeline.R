@@ -42,11 +42,14 @@
 ## automatically) line inside [bldgrds_enforce]/[valleyfloor]/[ril] is dropped, with a warning,
 ## rather than honored.
 ##
-## Resumability: this driver adds none of its own -- each stage's own script already decides for
-## itself whether to skip its work (RIL.R skips if out_RIL's .flt already exists; bldgrds_enforce.R
-## and valleyfloor.R always (re)run, by their own design -- see their own header comments for why),
-## and since each stage runs as that exact script via Rscript, that behavior carries over here
-## unchanged.
+## Resumability: RIL.R decides for itself whether to skip its work (it skips if out_RIL's .flt
+## already exists -- see its own header comment for why), and since it runs as that exact script
+## via Rscript, that behavior carries over here unchanged. bldgrds_enforce.R and valleyfloor.R have
+## no such check of their own (by their own design -- again see their own header comments), so
+## THIS driver adds one for each instead, checking for their DEM-derived output file
+## (NodeNet_<ID>.dat / valleyfloor_<ID>.dat, respectively -- see the pre-flight check just above
+## the "Run the pipeline" section below) before invoking that stage at all, and noting the skip if
+## found.
 ##
 ## NOTE ON BUILD FRESHNESS: the ValleyFloor -> RIL file handoff described above (RIL.f90 reading
 ## valleyfloor_<ID>.dat) is very recent, active work in ChannelUtilities (its most recent commits
@@ -89,12 +92,23 @@ library(TWutils)
 
 # Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
 # sibling per-stage scripts and the fallback config path below are found by this script's location
-# on disk rather than by the caller's working directory -- same convention as every other script
-# in this repo's R/ folder. Falls back to "." (assume cwd) when there's no "--file=" argument to
-# read, e.g. when this script is source()'d from RStudio instead of run via Rscript.
+# on disk rather than by the caller's working directory. With no "--file=" argument (not run via
+# Rscript), it tries, in order: the path source() was given (RStudio's Source button, or
+# source("R/...") from the console), then the active RStudio editor document (running lines/chunks
+# with Ctrl+Enter), and only then falls back to "." (assume cwd).
 get_script_dir <- function() {
   file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
-  if (length(file_arg) == 1) dirname(normalizePath(file_arg, winslash = "/", mustWork = FALSE)) else "."
+  if (length(file_arg) == 1) return(dirname(normalizePath(file_arg, winslash = "/", mustWork = FALSE)))
+  for (frame in rev(sys.frames())) {
+    if (exists("ofile", envir = frame, inherits = FALSE) && is.character(frame$ofile)) {
+      return(dirname(normalizePath(frame$ofile, winslash = "/", mustWork = FALSE)))
+    }
+  }
+  if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+    editor_path <- rstudioapi::getSourceEditorContext()$path
+    if (nzchar(editor_path)) return(dirname(normalizePath(editor_path, winslash = "/", mustWork = FALSE)))
+  }
+  "."
 }
 
 pipeline_config_path <- file.path(get_script_dir(),
@@ -245,14 +259,49 @@ run_stage <- function(label, script_path, section_params) {
   message(label, " finished in ", format(unclass(elapsed), digits = 4), " ", units(elapsed))
 }
 
+## ---- Pre-flight: skip a stage whose DEM-derived output already exists -------------------------
+## bldgrds (enforce mode) writes NodeNet_<ID>.dat/NodeAttributes_<ID>.dat unconditionally next to
+## the DEM, and valleyfloor writes valleyfloor_<ID>.dat unconditionally next to the DEM (see the
+## header comment above) -- unlike RIL.R's own out_RIL check, neither bldgrds_enforce.R nor
+## valleyfloor.R has a "skip if already done" resumability check of its own, so this driver adds
+## one for each, keyed off the exact file each Fortran program itself reads/writes. <ID> is the
+## DEM-derived data ID (DEM_module's resolveDEMname(): everything after the first underscore in
+## the DEM's extension-free base name, or the whole base name if there's none) -- the same ID
+## TWutils::valleyfloor_dat_file() already resolves, and the one every stage here is guaranteed to
+## share since this pipeline never lets a per-stage data_id override it (see
+## write_stage_param_file() above).
+
+nodenet_dat_file <- function(dem_path) {
+  # NodeNet_<ID>.dat is written by bldgrds (bldGrds2.f90: TRIM(DEM%path)//'NodeNet_'//
+  # TRIM(DEM%DEMID)//'.dat') using the same DEM-derived ID as ValleyFloor's own
+  # valleyfloor_<ID>.dat. Reuse TWutils::valleyfloor_dat_file()'s directory/ID resolution
+  # (extension-stripping, path normalization, resolveDEMname() logic) rather than duplicating it
+  # here, and just swap the file-name prefix.
+  valleyfloor_path <- TWutils::valleyfloor_dat_file(dem_path)
+  sub("valleyfloor_([^\\\\/]+)\\.dat$", "NodeNet_\\1.dat", valleyfloor_path)
+}
+
+nodenet_path     <- nodenet_dat_file(dem_path)
+valleyfloor_path <- TWutils::valleyfloor_dat_file(dem_path)
+
 ## ---- Run the pipeline ---------------------------------------------------------------------------
 
 message("Pipeline DEM (shared by all three stages, and the source of the DEM-derived data ID ",
         "each stage's node/channel database is keyed by): ", dem_path)
 
-run_stage("bldgrds_enforce", bldgrds_enforce_script, bldgrds_section)
-run_stage("valleyfloor",     valleyfloor_script,     valleyfloor_section)
-run_stage("RIL",             ril_script,             ril_section)
+if (file.exists(nodenet_path)) {
+  message("NodeNet file already exists (", nodenet_path, ") -- skipping bldgrds_enforce.")
+} else {
+  run_stage("bldgrds_enforce", bldgrds_enforce_script, bldgrds_section)
+}
+
+if (file.exists(valleyfloor_path)) {
+  message("valleyfloor file already exists (", valleyfloor_path, ") -- skipping valleyfloor.")
+} else {
+  run_stage("valleyfloor", valleyfloor_script, valleyfloor_section)
+}
+
+run_stage("RIL", ril_script, ril_section)
 
 ## ---- Report the final output -------------------------------------------------------------------
 ## RIL.R requires out_RIL in its own [ril] section (same as running RIL.R by hand) -- reaching

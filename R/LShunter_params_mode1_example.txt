@@ -1,0 +1,21 @@
+# Example parameter file for LShunter.R -- MODE 1 (existing LShunter input file).
+#
+# Mode 1 hands an already-written LShunter input file straight to LShunter.exe, skipping
+# LShunterInput() entirely -- see LShunter_params_template.txt for mode 2 (build the input file
+# from outlier/accum/out_patch/... parameters instead), which is the more common case.
+#
+# Setting input_file to anything other than NOFILE selects mode 1. Every mode-2-only keyword is
+# then ignored -- the input file already carries everything LShunter needs -- so this example
+# only sets the two keywords mode 1 actually uses:
+#   - input_file: the existing LShunter input file. It must contain the keywords OUTLIER,
+#     GRADIENT, FLOW ACCUMULATION, MINIMUM SIZE, OUTPUT PATCH RASTER and SCRATCH DIRECTORY
+#     (TWutils::LShunter() checks for these) and uses LShunter.exe's own keyword grammar, not
+#     this parameter file's "keyword: value" grammar.
+#   - executable_dir: the folder containing LShunter.exe. Only used as a FALLBACK -- if the
+#     input file has its own working "EXECUTABLE DIR:" line, that wins instead.
+#
+# Treat the path below as illustrative -- e.g. a file left in a scratch directory by a prior
+# mode-2 run of LShunter.R (input_LShunter.txt) -- and point input_file at your own.
+
+input_file: c:\work\scratch\input_LShunter.txt
+executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x64\release\

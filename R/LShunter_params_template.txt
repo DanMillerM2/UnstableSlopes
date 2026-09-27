@@ -1,0 +1,63 @@
+# Parameter file for LShunter.R
+#
+# One "keyword: value" pair per line. The order lines appear in is not significant -- every
+# line is self-labeled by its keyword. Blank lines and lines starting with "#" are ignored,
+# and a trailing "# comment" after a value is stripped. A value may contain a colon itself
+# (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
+# from its value, so that's safe.
+#
+# outlier, accum, out_patch, scratch_dir, and executable_dir have no default and must be set
+# below (mode 2). Every other keyword falls back to the default noted in param_specs (in
+# LShunter.R) if you delete or comment out its line here.
+#
+# input_file selects mode 1: point it at an already-written LShunter input file to hand straight
+# to LShunter.exe, skipping LShunterInput() entirely. When set, every other keyword below except
+# executable_dir is ignored. See LShunter_params_mode1_example.txt for a ready-to-copy example.
+
+# Optional: path to an already-written LShunter input file (selects mode 1 -- see the note
+# above). Leave as NOFILE (the default) to build one from the parameters below (mode 2).
+input_file: NOFILE
+
+# Outlier raster (.flt) created by Align, and flow accumulation raster (.flt) created by bldgrds.
+outlier: c:\work\data\postmortem\outlier_2006_2023
+accum: c:\work\data\postmortem\accum_2006
+
+# Output patch raster (.flt), given without extension.
+out_patch: c:\work\data\postmortem\patch_2006_2023
+
+# Scratch directory (must already exist; LShunter's input file is written here) and the folder
+# containing LShunter.exe.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x64\release\
+
+# --- Two-round thresholds: a strict 1st round finds patch cores, a looser 2nd round grows them ---
+# Maximum outlier (k) value for a patch.
+threshold1: -5.0
+threshold2: -1.5
+# Minimum gradient for a patch.
+min1: 0.2
+min2: 0.1
+# Maximum flow accumulation for a patch.
+max_accum1: 1000
+max_accum2: 1000
+
+# Minimum patch size (square meters).
+min_size: 10
+
+# --- Gradient: either a precomputed raster (e.g. HuntLS's OutGrad, so LShunter uses the same
+# gradients HuntLS did), or NOFILE plus dem and grad_length (m), so LShunter computes it itself.
+# grad_length is ignored when gradient is given. ---
+gradient: c:\work\data\postmortem\grad_huntls
+dem: NOFILE
+grad_length: NA
+
+# --- Optional road layer used to exclude road-related earth movement. road_buffer (m) is
+# required when road_shapefile is given. ---
+road_shapefile: NOFILE
+road_buffer: NA
+
+# Optional gradient raster for LShunter to write out (only when it computes gradient itself).
+out_grad: NOFILE
+
+# If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
+overwrite: TRUE
