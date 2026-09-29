@@ -1,4 +1,4 @@
-## run_bldgrds_valleyfloor_ril_pipeline.R
+## ril_pipeline.R
 ##
 ## Driver script: runs bldgrds_enforce.R, then valleyfloor.R, then RIL.R, each as its own
 ## `Rscript <script> <params.txt>` subprocess (same convention run_align_pipeline.R uses for
@@ -63,9 +63,9 @@
 ##
 ## ---- Pipeline config file --------------------------------------------------------------------
 ##
-## One plain-text config file (see run_bldgrds_valleyfloor_ril_pipeline_params_template.txt for a
+## One plain-text config file (see ril_pipeline_params_template.txt for a
 ## ready-to-copy example), read from pipeline_config_path below or a command-line argument:
-##   Rscript run_bldgrds_valleyfloor_ril_pipeline.R path/to/your_pipeline_config.txt
+##   Rscript ril_pipeline.R path/to/your_pipeline_config.txt
 ##
 ## "keyword: value" lines (same rules as the three per-stage scripts' own parameter files -- order
 ## doesn't matter, blank/"#"-only lines are ignored, a trailing "# comment" is stripped, only the
@@ -112,7 +112,7 @@ get_script_dir <- function() {
 }
 
 pipeline_config_path <- file.path(get_script_dir(),
-                                   "run_bldgrds_valleyfloor_ril_pipeline_params_template.txt")  # fallback; overridden by a command-line argument below
+                                   "ril_pipeline_params_template.txt")  # fallback; overridden by a command-line argument below
 
 cli_args <- commandArgs(trailingOnly = TRUE)
 if (length(cli_args) >= 1) pipeline_config_path <- cli_args[1]  # Rscript ... pipeline_config.txt takes precedence over the hardcoded fallback above
@@ -136,7 +136,7 @@ for (script_path in c(bldgrds_enforce_script, valleyfloor_script, ril_script)) {
 }
 
 # Generated per-stage parameter files are written here (one per stage per run).
-param_dir <- file.path(tempdir(), "run_bldgrds_valleyfloor_ril_pipeline_params")
+param_dir <- file.path(tempdir(), "ril_pipeline_params")
 dir.create(param_dir, showWarnings = FALSE, recursive = TRUE)
 
 ## ---- Parse the pipeline config file -----------------------------------------------------------

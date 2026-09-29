@@ -1,4 +1,4 @@
-# Pipeline config file for run_bldgrds_valleyfloor_ril_pipeline.R
+# Pipeline config file for ril_pipeline.R
 #
 # "keyword: value" lines (same rules as bldgrds_enforce.R's/valleyfloor.R's/RIL.R's own parameter
 # files -- order within a section doesn't matter, blank lines and lines starting with "#" are
