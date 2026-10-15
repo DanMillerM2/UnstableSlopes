@@ -59,7 +59,10 @@ overall method:
 5. **Mosaic_Reproject_DTM.qmd** / **SusNRun_PointCloudWorkflow_blank(_*).qmd** — upstream data-prep
    pipeline: mosaicking downloaded DTM tiles and reprojecting them, and a batched lidar
    point-cloud pre-processing workflow (ground-point filtering, per-batch merge, optional
-   GeoPackage export, count/density rasterization, mosaic, reprojection to EPSG:2856). The
+   GeoPackage export, count/density rasterization, mosaic, reprojection to EPSG:2856). Optional
+  `clip_polygon` keeps only tiles whose LAS-header bounding box intersects it (read via
+  `lidR::readLAScatalog()`, called by namespace so lidR never masks lasR) and masks the final
+  density raster to it; the points themselves aren't clipped. The
    `_blank` files are templates meant to be copied and filled in with a project's own
    `input_dir`/`output_dir` rather than edited in place.
 
@@ -87,9 +90,23 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
 
 - **align_dtms.R** — assembled from Coregistration.qmd's first code chunk (`@sec-coregister`); runs
   `TWutils::align()` (Fortran program Align, see `..\GridUtilities`).
-- **run_align_pipeline.R** — driver: runs `ground_returns.R` once each for a "reference" and an
-  "align" set of LAZ tiles to build the two ground-point-density rasters `align_dtms.R`'s Align call
-  needs, then calls `TWutils::align()` directly with those two rasters as `refGrnd`/`alignGrnd`.
+- **run_align_pipeline.R** — driver for one study-area polygon (`[study_area]` `clip_polygon`/
+  `target_crs`, passed to every sub-run; `clip_polygon: NOFILE`, the default, uses every tile in
+  each folder unmasked): runs `ground_returns.R` once each for a "reference" and
+  an "align" set of LAZ tiles (ground-point-density rasters → `refGrnd`/`alignGrnd`), runs
+  `mosaic_dtm.R` once each for a reference and an align folder of DTM tiles (→ `refDTM`/
+  `alignDTM`; or a section sets `existing_dtm` to use an already-mosaicked `.flt` as-is, which
+  must already be in meters and `target_crs`; optional `[ref_dsm]`/`[align_dsm]` sections work the
+  same way with `output_dsm`/`existing_dsm` and default to no DSM), then calls `TWutils::align()` directly. Each sub-run is its own `Rscript`
+  subprocess and is skipped if its output already exists — existence is the only check, so
+  outputs must be deleted by hand after changing the polygon or other parameters.
+- **mosaic_dtm.R** — mosaics the GeoTIFF DTM tiles that intersect a polygon, converts elevations
+  to meters (`z_units`: auto/m/ft/ftUS), reprojects to `target_crs` only if the tiles aren't
+  already in it (keeping the input pixel size, e.g. 3 US ft → 0.9144018 m), masks to the polygon,
+  and writes `<output_dtm>.flt`. It rewrites GDAL's BIL-style `.hdr` as an ESRI GridFloat header
+  itself, because `..\modules\Grid_Module.f90` only reads ESRI keywords (`ncols`, `xllcorner`,
+  `cellsize`, ...); TWutils' `convert_hdr()` does the same job but shifts the grid by half a cell
+  (it treats GDAL's cell-center `ULXMAP`/`ULYMAP` as a corner), so don't swap it in.
 - **ground_returns.R** — assembled from `SusNRun_PointCloudWorkflow_blank_082626.qmd` (see the
   branch caveat above); the batched lidar point-cloud pre-processing workflow described in the
   document map (ground filtering → optional GeoPackage → per-batch count raster → mosaic →

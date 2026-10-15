@@ -1,0 +1,33 @@
+# Parameter file for mosaic_dtm.R
+#
+# One "keyword: value" pair per line. The order lines appear in is not significant. Blank lines
+# and lines starting with "#" are ignored, and a trailing "# comment" after a value is stripped.
+# Only the first colon on a line separates the keyword from its value, so "c:\..." and
+# "EPSG:2856" are safe.
+#
+# tile_dir and output_dtm have no default and must be set below. Every other keyword falls back
+# to the default noted in param_specs (in the .R script) if you delete or comment out its line.
+
+# Folder containing the DTM tiles (GeoTIFFs).
+tile_dir: c:\work\data\site1\dtm_2017\tiles
+
+# Output DTM path, without extension (.flt is written). Keep the "elev_<id>" naming.
+output_dtm: c:\work\data\site1\elev_2017
+
+# Polygon delimiting the area to build the DTM for (any CRS). NOFILE = use every tile, no mask.
+clip_polygon: c:\work\data\site1\study_area.shp
+
+# Regular expression matched (case-insensitively) against file names in tile_dir.
+file_pattern: \.tiff?$
+
+# CRS of the output DTM. Tiles are reprojected only if they aren't already in it.
+target_crs: EPSG:2856
+
+# Elevation units of the tiles: auto, m, ft (international), or ftUS (US survey foot).
+z_units: auto
+
+# How overlapping tiles are combined: first, last, mean, median, min, max, or sum.
+mosaic_fun: first
+
+# Margin (input cells) kept around the polygon before reprojecting, so the edge isn't left NA.
+clip_buffer_cells: 5

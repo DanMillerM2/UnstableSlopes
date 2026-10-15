@@ -13,6 +13,7 @@
 ## created -- the GeoPackage toggle only controls whether those already-ground-only points also
 ## get written out as a vector layer, not whether the filtering itself happens.
 ##
+## 0. (Optional) Keep only the LAZ tiles whose bounding box intersects clip_polygon
 ## 1. Split the full set of LAZ tiles into batches of a configurable size
 ## 2. Filter ground returns (Classification == 2) and merge LAZ tiles, one merged file per batch
 ##    -- always happens, regardless of the GeoPackage option below
@@ -21,11 +22,13 @@
 ## 4. Compute a point-count raster per batch (target pixel size = 3 m), then mosaic all batches
 ##    together into one whole-site count raster and derive density from it -- the count raster
 ##    itself is only an internal step here and is never written out as a final output
-## 5. Reproject the combined density raster to EPSG:2856 (the workflow's only raster output)
+## 5. Reproject the combined density raster to EPSG:2856 (the workflow's only raster output),
+##    masked to clip_polygon if one is set
 ##
-## Requires: lasR, terra, sf, future, future.apply
+## Requires: lasR, terra, sf, future, future.apply, and lidR (only when clip_polygon is set)
 ##
-## For terra, sf, future, and future.apply: install.packages(c("terra", "sf", "future", "future.apply"))
+## For terra, sf, future, future.apply, and lidR:
+##   install.packages(c("terra", "sf", "future", "future.apply", "lidR"))
 ##
 ## lasR is not on CRAN (by design, not due to archival)
 ## Install with: install.packages("lasR", repos = "https://r-lidar.r-universe.dev")
@@ -55,7 +58,7 @@ library(future.apply)  # future_lapply() -- parallel dispatch across batches, us
 ##
 ## Every workflow input (input_dir, output_dir, n_workers, batch_size_tiles, gpkg_layer,
 ## export_ground_points_gpkg, target_pixel_size_m, target_crs, fill_empty_cells_with_zero,
-## cleanup_intermediate_files, stream_chunk_size) is read from a plain-text parameter file
+## cleanup_intermediate_files, stream_chunk_size, clip_polygon) is read from a plain-text parameter file
 ## using "keyword: value" lines, one per line -- e.g.:
 ##
 ##   input_dir: c:\work\data\site1\cascades_north_wali_2023\laz
@@ -195,7 +198,15 @@ param_specs <- list(
   # that ceiling and bounds memory use. This value doesn't need to be precise for correctness --
   # shrink it if a chunk is still dense enough to overflow (or shrink batch_size_tiles instead,
   # if it's a whole batch, not just a chunk within it, that's overflowing).
-  stream_chunk_size = list(type = "integer", default = 100000)
+  stream_chunk_size = list(type = "integer", default = 100000),
+
+  # Optional polygon (any vector format sf reads, e.g. a .shp; any CRS) delimiting the area of
+  # interest. When set, only the LAS/LAZ tiles whose header bounding box intersects it are
+  # processed (see "Discover and batch LAZ tiles" below), and the final density raster is
+  # masked to it. The points themselves are not clipped -- merged LAZ files and any GeoPackages
+  # hold every ground point of every intersecting tile. NOFILE processes every tile in
+  # input_dir, unmasked.
+  clip_polygon = list(type = "character", default = "NOFILE")
 )
 
 # Applies param_specs on top of the raw (character) values read_param_file() returned: converts
@@ -273,6 +284,36 @@ las_files <- list.files(input_dir, pattern = "\\.(laz|las)$",
 
 if (length(las_files) == 0) {
   stop("No LAS/LAZ files found in input_dir. Check the path.")  # fail fast with a clear message if the folder is empty or misconfigured
+}
+
+# Keep only the tiles that intersect clip_polygon, if one is set. Tile extents come from each
+# file's LAS header via lidR::readLAScatalog(), which reads headers only, never points. lidR is
+# called by namespace rather than attached with library(), so none of its exports mask lasR's.
+use_clip <- nzchar(clip_polygon) && toupper(clip_polygon) != "NOFILE"
+if (use_clip) {
+  if (!file.exists(clip_polygon)) stop("clip_polygon not found: ", clip_polygon)
+  clip_sf <- st_union(st_read(clip_polygon, quiet = TRUE))  # dissolve every feature into one (multi)polygon
+  if (is.na(st_crs(clip_sf))) stop("clip_polygon has no CRS assigned: ", clip_polygon)
+
+  las_ctg  <- lidR::readLAScatalog(las_files, progress = FALSE)
+  tile_crs <- st_crs(las_ctg)
+  if (is.na(tile_crs)) {
+    stop("LAS/LAZ tile headers in input_dir carry no CRS, so clip_polygon can't be ",
+         "reprojected onto them.")
+  }
+  tile_hdr   <- as.data.frame(las_ctg@data)
+  tile_boxes <- st_sfc(lapply(seq_len(nrow(tile_hdr)), function(i) {
+    st_as_sfc(st_bbox(c(xmin = tile_hdr$Min.X[i], ymin = tile_hdr$Min.Y[i],
+                        xmax = tile_hdr$Max.X[i], ymax = tile_hdr$Max.Y[i])))[[1]]
+  }), crs = tile_crs)
+  in_poly <- lengths(st_intersects(tile_boxes, st_transform(clip_sf, tile_crs))) > 0
+
+  if (!any(in_poly)) {
+    stop("None of the ", length(las_files), " LAS/LAZ tiles in input_dir intersect clip_polygon ",
+         clip_polygon, ".")
+  }
+  message(sum(in_poly), " of ", length(las_files), " LAS/LAZ tiles intersect the clip polygon.")
+  las_files <- normalizePath(tile_hdr$filename[in_poly], winslash = "/")
 }
 
 n_tiles   <- length(las_files)
@@ -568,6 +609,10 @@ names(density_rast) <- "ground_point_density"
 
 density_rast_2856 <- project(density_rast, target_crs, method = "bilinear",
                              res = target_pixel_size_m)  # reproject the combined density raster; bilinear interpolation is appropriate for a continuous field
+if (use_clip) {
+  clip_vect_target  <- vect(st_transform(clip_sf, target_crs))
+  density_rast_2856 <- mask(crop(density_rast_2856, clip_vect_target), clip_vect_target)  # trim to the polygon; tiles were only selected by bounding box, so their points extend past it
+}
 writeRaster(density_rast_2856, density_tif_2856_path, overwrite = TRUE)
 message("Reprojected ground density raster written to: ", density_tif_2856_path)
 

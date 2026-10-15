@@ -4,15 +4,35 @@
 # files -- order within a section doesn't matter, blank lines and lines starting with "#" are
 # ignored, a trailing "# comment" after a value is stripped, and only the first colon on a line
 # separates the keyword from its value, so a value like "c:\..." or "EPSG:2856" is safe),
-# grouped under four section headers: [defaults], [ref_set], [align_set], [align].
+# grouped under section headers: [study_area], [defaults], [ref_set], [align_set], [ref_dtm],
+# [align_dtm], [ref_dsm], [align_dsm], [align].
 #
+# [study_area] holds clip_polygon and target_crs, which are passed to every ground_returns.R and
+# mosaic_dtm.R run -- set them only there. clip_polygon NOFILE (the default) uses every LAZ, DTM,
+# and DSM tile in each folder, unmasked.
 # [defaults] is optional and holds ground_returns.R parameters shared by both [ref_set] and
 # [align_set]; a set can repeat a keyword itself to override the shared default just for it.
 # [ref_set] and [align_set] are each one ground_returns.R run (see param_specs in
 # ground_returns.R for the full list of recognized keywords) and must set input_dir and
-# output_dir. [align] holds align_dtms.R / TWutils::align() parameters (see param_specs in
-# align_dtms.R) -- do NOT set refGrnd/alignGrnd there; they are always taken from the density
-# rasters [ref_set]/[align_set] produce.
+# output_dir. [ref_dtm] and [align_dtm] are each one mosaic_dtm.R run (see param_specs in
+# mosaic_dtm.R) and must set tile_dir and output_dtm -- or, to skip mosaicking, existing_dtm
+# alone: an already-mosaicked DTM used as-is (an ESRI GridFloat .flt, in meters and in
+# target_crs; it is not clipped to clip_polygon). [ref_dsm] and [align_dsm] are optional and
+# work the same way for digital surface models, with output_dsm/existing_dsm in place of
+# output_dtm/existing_dtm; leave a section out (or set existing_dsm: NOFILE) for no DSM. [align] holds align_dtms.R /
+# TWutils::align() parameters (see param_specs in align_dtms.R) -- do NOT set refDTM/alignDTM,
+# refDSM/alignDSM, or refGrnd/alignGrnd there; they are always taken from the sections above.
+#
+# Every output is skipped if it already exists. After changing clip_polygon (or anything else),
+# delete the outputs it affects so they're rebuilt.
+
+[study_area]
+# Polygon delimiting the area of interest (e.g. a .shp; any CRS). Only LAZ, DTM, and DSM tiles
+# that intersect it are used, and the density rasters, DTMs, and DSMs are masked to it.
+# NOFILE = use every tile in each folder, unmasked.
+clip_polygon: c:\work\data\site1\study_area.shp
+# CRS of every raster the pipeline produces.
+target_crs: EPSG:2856
 
 [defaults]
 n_workers: 6
@@ -20,7 +40,6 @@ batch_size_tiles: 50
 gpkg_layer: ground_points
 export_ground_points_gpkg: FALSE
 target_pixel_size_m: 3
-target_crs: EPSG:2856
 fill_empty_cells_with_zero: FALSE
 cleanup_intermediate_files: TRUE
 stream_chunk_size: 100000
@@ -34,14 +53,40 @@ input_dir: c:\work\data\site1\cascades_north_wali_2023\laz
 output_dir: c:\work\data\site1\cascades_north_wali_2023\grnd_den
 # n_workers: 4   # example: uncomment to override [defaults] for just this set
 
-[align]
-# Reference DTM (pre-change) and the DTM to be shifted/aligned to it (post-change).
-refDTM: c:\work\data\site1\elev_2017.flt
-alignDTM: c:\work\data\site1\elev_2023.flt
+[ref_dtm]
+# DTM tiles (GeoTIFFs) for the reference (pre-change) DTM, and the output path, without
+# extension (<output_dtm>.flt is written). Keep the "elev_<id>" naming Align expects.
+tile_dir: c:\work\data\site1\NP_2017\dtm_tiles
+output_dtm: c:\work\data\site1\elev_2017
+# Elevation units of the tiles: auto, m, ft (international), or ftUS (US survey foot). "auto"
+# trusts a vertical CRS if the tiles have one, otherwise assumes the horizontal unit.
+z_units: auto
+# file_pattern: \.tiff?$    # optional; also mosaic_fun (default first), clip_buffer_cells (default 5)
+# Or, instead of all of the above, use an already-mosaicked DTM (.flt, meters, target_crs) as-is:
+# existing_dtm: c:\work\data\site1\elev_2017.flt
 
-# Optional reference/align digital surface models. Leave as NOFILE if not used.
-refDSM: NOFILE
-alignDSM: NOFILE
+[align_dtm]
+# Same, for the DTM to be shifted/aligned to the reference (post-change).
+tile_dir: c:\work\data\site1\cascades_north_wali_2023\dtm_tiles
+output_dtm: c:\work\data\site1\elev_2023
+z_units: auto
+# Or, instead of all of the above, use an already-mosaicked DTM (.flt, meters, target_crs) as-is:
+# existing_dtm: c:\work\data\site1\elev_2023.flt
+
+# Optional digital surface models. Same choices as the DTM sections, with output_dsm/existing_dsm:
+# DSM tiles (GeoTIFFs) to mosaic, or an already-mosaicked DSM (.flt, meters, target_crs) as-is.
+# existing_dsm: NOFILE (or leaving a section out entirely) means no DSM.
+[ref_dsm]
+existing_dsm: NOFILE
+# tile_dir: c:\work\data\site1\NP_2017\dsm_tiles
+# output_dsm: c:\work\data\site1\dsm_2017
+# z_units: auto
+
+[align_dsm]
+existing_dsm: NOFILE
+# existing_dsm: c:\work\data\site1\dsm_2023.flt
+
+[align]
 
 # Number of times to repeat the alignment calculation.
 iterations: 4
