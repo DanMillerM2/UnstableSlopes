@@ -1,0 +1,44 @@
+# Parameter file for LSstats.R
+#
+# One "keyword: value" pair per line. The order lines appear in is not significant -- every
+# line is self-labeled by its keyword. Blank lines and lines starting with "#" are ignored,
+# and a trailing "# comment" after a value is stripped. A value may contain a colon itself
+# (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
+# from its value, so that's safe.
+#
+# polygon_raster, landform_raster, rasters, out_csv, scratch_dir, and executable_dir have no
+# default and must be set below (mode 2). Every other keyword falls back to the default noted
+# in param_specs (in LSstats.R) if you delete or comment out its line here.
+#
+# input_file selects mode 1: point it at an already-written LSstats input file to hand straight
+# to LSstats.exe, skipping LSstats_input() entirely. When set, every other keyword below except
+# executable_dir is ignored. See LSstats_params_mode1_example.txt for a ready-to-copy example.
+
+# Optional: path to an already-written LSstats input file (selects mode 1 -- see the note
+# above). Leave as NOFILE (the default) to build one from the parameters below (mode 2).
+input_file: NOFILE
+
+# Landslide polygon (patch) raster from LShunter, and landform raster from RIL (classes 1-10,
+# 1 = floodplain).
+polygon_raster: c:\work\data\postmortem\patch_2006_2023
+landform_raster: c:\work\data\postmortem\landform_2006
+
+# Rasters to summarize over each polygon and landform class, comma-separated. They're numbered
+# 1, 2, ... in the order given, and that number is the <i> in the output csv names.
+rasters: c:\work\data\postmortem\grad_huntls, c:\work\data\postmortem\outlier_2006_2023
+
+# Base name for the output csv files. LSstats writes <out_csv>_<i>.csv (one row per landslide
+# polygon) and <out_csv>_landforms_<i>.csv (one row per landform class) for each raster.
+out_csv: c:\work\data\postmortem\LSstats_2006_2023
+
+# --- Distance to the floodplain edge: either an existing distance raster, or NOFILE plus a
+# search radius (m) out to which LSstats computes it. out_distance_raster optionally saves the
+# computed distance, to reuse as distance_raster in later runs. ---
+distance_raster: NOFILE
+radius: 500
+out_distance_raster: c:\work\data\postmortem\distFP_2006
+
+# Scratch directory (must already exist; LSstats's input file is written here) and the folder
+# containing LSstats.exe.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\landslideutilities\projects\LSstats\x64\release\

@@ -1,0 +1,22 @@
+# Example parameter file for LSstats.R -- MODE 1 (existing LSstats input file).
+#
+# Mode 1 hands an already-written LSstats input file straight to LSstats.exe, skipping
+# LSstats_input() entirely -- see LSstats_params_template.txt for mode 2 (build the input file
+# from polygon_raster/landform_raster/rasters/... parameters instead), which is the more common
+# case.
+#
+# Setting input_file to anything other than NOFILE selects mode 1. Every mode-2-only keyword is
+# then ignored -- the input file already carries everything LSstats needs -- so this example
+# only sets the two keywords mode 1 actually uses:
+#   - input_file: the existing LSstats input file. It must contain the keywords LANDSLIDE
+#     POLYGON RASTER, LANDFORM RASTER, RASTER LIST, OUTPUT CSV and SCRATCH DIRECTORY
+#     (TWutils::LSstats() checks for these), plus either DISTANCE TO RASTER or RADIUS, and uses
+#     LSstats.exe's own keyword grammar, not this parameter file's "keyword: value" grammar.
+#   - executable_dir: the folder containing LSstats.exe. Only used as a FALLBACK -- if the
+#     input file has its own working "EXECUTABLE DIR:" line, that wins instead.
+#
+# Treat the path below as illustrative -- e.g. a file left in a scratch directory by a prior
+# mode-2 run of LSstats.R (input_LSstats.txt) -- and point input_file at your own.
+
+input_file: c:\work\scratch\input_LSstats.txt
+executable_dir: c:\work\sandbox\landslideutilities\projects\LSstats\x64\release\

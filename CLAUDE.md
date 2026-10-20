@@ -123,6 +123,16 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `LShunter()`'s current wrapper signature takes named, capitalized arguments (`Outlier`, `Accum`,
   `OutPatch`, `ScratchDir`, `Executable_dir`, plus `...` to `LShunterInput()`); MappingLandslides.qmd's
   LShunter chunk still uses an older positional call and would fail against it.
+- **LSstats.R** — runs `TWutils::LSstats()` (Fortran program LSstats, see
+  `..\LandslideUtilities\LSstats.f90`) to summarize a comma-separated list of rasters over
+  LShunter's landslide polygons and RIL's landform classes (`<out_csv>_<i>.csv` /
+  `<out_csv>_landforms_<i>.csv` per raster). Supports both modes like LShunter.R; distance to the
+  floodplain edge comes from `distance_raster` or is computed out to `radius`.
+- **lshunter_lsstats_pipeline.R** — driver: runs `LShunter.R` then `LSstats.R` as `Rscript`
+  subprocesses, each handed its own unmodified parameter file (so either stage may be mode 1 or
+  2). Stops unless LShunter's output patch raster is LSstats's polygon raster; skips a stage whose
+  final output exists, and stops (rather than skipping) if LSstats's csv is older than the patch
+  raster.
 - **bldgrds.R** — runs `TWutils::bldgrds()` (Fortran program bldgrds, see
   `..\GridUtilities\bldGrds2.f90`) to compute D-infinity flow direction and flow accumulation for a
   DEM and, unless `no_channels` is set, trace the channel network downstream into a node-list
