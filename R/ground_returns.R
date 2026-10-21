@@ -327,6 +327,12 @@ if (use_clip) {
   if (!file.exists(clip_polygon)) stop("clip_polygon not found: ", clip_polygon)
   clip_sf <- st_union(st_read(clip_polygon, quiet = TRUE))  # dissolve every feature into one (multi)polygon
   if (is.na(st_crs(clip_sf))) stop("clip_polygon has no CRS assigned: ", clip_polygon)
+  # The same polygon as terra builds it -- dissolved by aggregate() and reprojected by project(),
+  # exactly as mosaic_dtm.R masks the DTM -- for masking the template-grid count raster, so it
+  # keeps exactly the cells the template DTM keeps along the polygon's edge. (sf's union and
+  # reprojection give a slightly different edge: on site2's 0.91 m reference grid, ~85,000
+  # boundary cells disagreed with the DTM's mask.)
+  clip_vect <- aggregate(vect(clip_polygon))
 
   las_ctg  <- lidR::readLAScatalog(las_files, progress = FALSE)
   tile_crs <- st_crs(las_ctg)
@@ -620,7 +626,14 @@ count_batch_on_template <- function(las_source, native_crs, hull, template_path,
 
   values(window) <- counts
   names(window)  <- "ground_point_count"
-  writeRaster(window, count_tif_path, datatype = "INT4S", overwrite = TRUE)
+  # Written under a temporary name and renamed when complete: the skip at the top of this
+  # function trusts any count_tif_path that exists, so an interrupted write must not leave one.
+  partial_tif <- sub("[.]tif$", "_partial.tif", count_tif_path, ignore.case = TRUE)
+  invisible(writeRaster(window, partial_tif, datatype = "INT4S", overwrite = TRUE))
+  invisible(gc())  # release terra's handle on the file before renaming it (Windows)
+  if (!file.rename(partial_tif, count_tif_path)) {
+    stop("Could not rename ", partial_tif, " to ", count_tif_path)
+  }
   message("Batch template-grid ground count raster written to: ", count_tif_path, " (",
           n_counted, " points counted",
           if (n_outside > 0) paste0(", ", n_outside, " outside template_raster's extent"), ")")
@@ -751,7 +764,7 @@ if (use_template) {
   count_rast <- if (fill_empty_cells_with_zero) subst(count_rast, NA, 0) else
     classify(count_rast, cbind(0, NA))
   if (use_clip) {
-    count_rast <- mask(count_rast, vect(st_transform(clip_sf, st_crs(template_crs))))
+    count_rast <- mask(count_rast, project(clip_vect, template_crs))
   }
 
   n_with_pts <- global(count_rast > 0, fun = "sum", na.rm = TRUE)[1, 1]
@@ -760,8 +773,15 @@ if (use_template) {
 
   # Written as an ESRI GridFloat (.flt with an ESRI-keyword .hdr) for the Fortran grid reader,
   # same as mosaic_dtm.R's output (see the note there on why GDAL's own BIL-style .hdr is
-  # rewritten rather than converted with TWutils' convert_hdr()).
-  count_rast <- writeRaster(count_rast, ref_grid_count_flt_path, filetype = "EHdr",
+  # rewritten rather than converted with TWutils' convert_hdr()) -- and, as there, under a
+  # "_partial" name renamed into place only once complete, so an interrupted run never leaves a
+  # truncated ground_count_ref_grid.flt that run_align_pipeline.R would skip as finished.
+  out_base     <- sub("[.]flt$", "", ref_grid_count_flt_path, ignore.case = TRUE)
+  partial_base <- paste0(out_base, "_partial")
+  raster_exts  <- c(".flt", ".hdr", ".prj", ".stx", ".flt.aux.xml")  # every file of one GridFloat raster
+  unlink(paste0(c(out_base, partial_base), rep(raster_exts, each = 2)))  # stale sidecars / leftovers
+
+  count_rast <- writeRaster(count_rast, paste0(partial_base, ".flt"), filetype = "EHdr",
                             datatype = "FLT4S", NAflag = -9999, gdal = "BYTEORDER=LSB",
                             overwrite = TRUE)
   count_ext <- ext(count_rast)
@@ -771,9 +791,17 @@ if (use_template) {
                      c(ncol(count_rast), nrow(count_rast), sprintf("%.6f", xmin(count_ext)),
                        sprintf("%.6f", ymin(count_ext)), sprintf("%.12f", res(count_rast)[1]),
                        "-9999", "LSBFIRST")),
-             sub("[.]flt$", ".hdr", ref_grid_count_flt_path))
+             paste0(partial_base, ".hdr"))
+
+  rm(count_rast); invisible(gc())  # release terra's handle on the partial file before renaming it
+  for (e in c(setdiff(raster_exts, ".flt"), ".flt")) {  # the .flt last: it marks the output complete
+    if (!file.exists(paste0(partial_base, e))) next
+    if (!file.rename(paste0(partial_base, e), paste0(out_base, e))) {
+      stop("Could not rename ", partial_base, e, " to ", out_base, e)
+    }
+  }
   message("Ground-point count per template cell written to: ", ref_grid_count_flt_path)
-  final_rast <- count_rast
+  final_rast <- rast(ref_grid_count_flt_path)
 
 } else {
 

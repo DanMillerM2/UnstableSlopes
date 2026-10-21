@@ -129,7 +129,10 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   tiles' LAS headers), points are read straight from each tile — one `exec()` per tile, ground
   filtered at read time, no merged LAZ unless `export_ground_points_gpkg` needs one — projected into
   the template's CRS, and tallied per template cell in a lasR `callback()`; the output is the point
-  count per template cell, `ground_count_ref_grid.flt`, instead of the density raster.
+  count per template cell, `ground_count_ref_grid.flt`, instead of the density raster. It's masked
+  with the polygon built exactly as `mosaic_dtm.R` builds it (terra `aggregate()` + `project()`, not
+  sf), so it keeps the same boundary cells as the DTM, and — like the per-batch `.tif`s — it's
+  written under a `_partial` name and renamed into place when complete.
 - **run_ground_returns_batches.R** — driver: runs `ground_returns.R` sequentially, once per named
   set in a batch config file, each as its own `Rscript` subprocess (isolating each set's
   `future::plan` and global-environment state rather than `source()`-ing repeatedly in one session).
