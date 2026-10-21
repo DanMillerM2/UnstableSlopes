@@ -25,7 +25,15 @@
 ## 5. Reproject the combined density raster to EPSG:2856 (the workflow's only raster output),
 ##    masked to clip_polygon if one is set
 ##
-## Requires: lasR, terra, sf, future, future.apply, and lidR (only when clip_polygon is set)
+## With template_raster set (e.g. the reference DEM, as run_align_pipeline.R does), steps 4-5 are
+## replaced: the output grid -- extent, cell corners, and cellsize -- is taken from the template
+## before any points are counted, each ground point is projected into the template's CRS and
+## counted in the template cell containing it, and the result is the ground-point COUNT per
+## template cell, written as ground_count_ref_grid.flt (ESRI GridFloat) instead of the density
+## raster. See "Count points on the template grid" below.
+##
+## Requires: lasR, terra, sf, future, future.apply, and lidR (only when clip_polygon or
+## template_raster is set -- it reads LAS headers only)
 ##
 ## For terra, sf, future, future.apply, and lidR:
 ##   install.packages(c("terra", "sf", "future", "future.apply", "lidR"))
@@ -206,7 +214,15 @@ param_specs <- list(
   # masked to it. The points themselves are not clipped -- merged LAZ files and any GeoPackages
   # hold every ground point of every intersecting tile. NOFILE processes every tile in
   # input_dir, unmasked.
-  clip_polygon = list(type = "character", default = "NOFILE")
+  clip_polygon = list(type = "character", default = "NOFILE"),
+
+  # Optional raster (e.g. the reference DEM, any format terra reads) whose grid the output is
+  # built on: same extent, cell corners, and cellsize. When set, ground points are counted
+  # directly per template cell (after projecting them into the template's CRS -- or target_crs,
+  # if the template carries no CRS), and the output is that count raster,
+  # ground_count_ref_grid.flt, instead of the reprojected density raster; target_pixel_size_m is
+  # then unused. NOFILE builds the density raster on its own target_pixel_size_m grid as usual.
+  template_raster = list(type = "character", default = "NOFILE")
 )
 
 # Applies param_specs on top of the raw (character) values read_param_file() returned: converts
@@ -275,6 +291,23 @@ batch_path <- function(name, batch_id) {
 # stay split across the per-batch GeoPackages built in the "Export" section.
 density_tif_2856_path <- file.path(output_dir, "ground_density_epsg2856.tif")
 
+# With template_raster set, the workflow's only raster output is instead the ground-point count
+# per template cell, on the template's own grid (see "Count points on the template grid").
+use_template <- nzchar(template_raster) && toupper(template_raster) != "NOFILE"
+ref_grid_count_flt_path <- file.path(output_dir, "ground_count_ref_grid.flt")
+if (use_template) {
+  if (!file.exists(template_raster)) stop("template_raster not found: ", template_raster)
+  template_crs <- crs(rast(template_raster))
+  if (template_crs == "") {
+    template_crs <- crs(rast(crs = target_crs))
+    warning("template_raster has no CRS -- assuming it is in target_crs ", target_crs, ": ",
+            template_raster)
+  }
+  if (linearUnits(rast(crs = template_crs)) == 0) {
+    stop("template_raster must be in a projected CRS: ", template_raster)
+  }
+}
+
 ## ---- Discover and batch LAZ tiles --------------------------------------------------------
 ## Lists every input tile once, then splits that list into batch_size_tiles-sized groups.
 ## Everything from here on operates on one batch at a time.
@@ -342,7 +375,15 @@ filter_merge_batch <- function(las_files_batch, merged_path) {
   write_stage <- write_las(merged_path)               # no "*" -> single merged file for this batch
 
   filter_merge_pipeline <- read_stage + write_stage   # chain the two stages into one lasR pipeline: read+filter, then write
-  exec(filter_merge_pipeline, on = las_files_batch)    # run the pipeline over this batch's tiles only
+  # chunk = stream_chunk_size, not lasR's default of one chunk per file: by default each file's
+  # bounding box is a chunk that collects every file's points inside it, so where tiles' boxes
+  # overlap (e.g. quarter-quad tiles, at their skewed corners) those points would be written
+  # once per overlapping tile. Spatial chunks on a regular grid don't overlap, so each point is
+  # written once -- exactly, when one chunk covers the whole batch (the default
+  # stream_chunk_size does, for any realistic batch); with smaller chunks, the odd point lying
+  # exactly on a chunk edge can still be read by both chunks.
+  exec(filter_merge_pipeline, on = las_files_batch,
+       with = list(chunk = stream_chunk_size))         # run the pipeline over this batch's tiles only
 
   message("Ground-only merged point cloud written to: ", merged_path)
   invisible(merged_path)
@@ -361,10 +402,29 @@ detect_native_crs <- function(merged_path) {
   probe_hull <- exec(probe_pipeline, on = merged_path,
                      with = list(chunk = stream_chunk_size))  # stream in spatial chunks rather than reading the whole merged file at once -- see stream_chunk_size above
 
-  native_crs   <- st_crs(probe_hull)         # CRS embedded in the LAZ file, carried through onto the hull
+  info <- crs_units_info(st_crs(probe_hull), merged_path)  # CRS embedded in the LAZ file, carried through onto the hull
+  info$hull <- probe_hull  # hull: sizes this batch's window of the template grid (see count_batch_on_template)
+  info
+}
+
+# Same result as detect_native_crs(), but read from the batch's own tile headers (via
+# lidR::readLAScatalog(), header only -- no points are read): the CRS, and the tiles' bounding
+# boxes as the "hull" that sizes the batch's template-grid window. Used when template_raster is
+# set and no merged LAZ is needed (see process_one_batch), so the batch is never read just to
+# find its CRS and extent.
+tiles_crs_info <- function(las_files_batch) {
+  ctg  <- lidR::readLAScatalog(las_files_batch, progress = FALSE)
+  info <- crs_units_info(st_crs(ctg), las_files_batch[1])
+  info$hull <- st_as_sf(ctg)[0]  # one bounding-box polygon per tile, geometry only
+  info
+}
+
+# Linear units of a point cloud's CRS, and the raster resolution (in those units)
+# corresponding to target_pixel_size_m. source_desc only names the file(s) in the error.
+crs_units_info <- function(native_crs, source_desc) {
   native_units <- native_crs$units_gdal      # linear units of that CRS (e.g. "metre", "foot", "us survey foot")
-  if (is.null(native_units)) {
-    stop("Could not determine linear units of the LAS file's CRS for ", merged_path, ". ",
+  if (is.null(native_units) || is.na(native_units)) {  # NA when the file carries no CRS at all
+    stop("Could not determine linear units of the LAS file's CRS for ", source_desc, ". ",
          "Check that the point cloud has a valid projected CRS assigned.")  # a missing or geographic (lat/long) CRS has no linear units, so bail out here
   }
 
@@ -481,6 +541,92 @@ rasterize_batch_count <- function(merged_path, native_res, count_tif_path) {
   count_rast
 }
 
+## ---- Count points on the template grid -----------------------------------------------------
+## Used instead of rasterize_batch_count() when template_raster is set. lasR's rasterize() can't
+## do this: it lays its own grid in the point cloud's native CRS, with cell edges at multiples of
+## the resolution, so its cells can't be made to coincide with a template in another CRS (or
+## even in the same CRS, with corners that aren't such multiples). Instead, the output grid is
+## fixed first -- this batch's window of the template grid, cut from the template with
+## snap = "out" so it keeps the template's own cell corners and cellsize -- and then each chunk's
+## points are projected into the template's CRS and tallied by the window cell containing them.
+## Only one chunk of points and the batch window's integer counts are ever held in memory.
+##
+## The points come straight from the batch's own tiles, read one file at a time with
+## keep_ground() applied at read time, so a batch takes a single pass over its points -- no
+## merged LAZ is written and re-read -- unless export_ground_points_gpkg needs the merged file
+## anyway, in which case they come from it instead, read in stream_chunk_size chunks.
+
+# Counts one batch's ground points per template cell over the part of the template grid the
+# batch covers, and writes that window (template-aligned) to count_tif_path. las_source is the
+# batch's tiles (read file by file) or its merged LAZ (read in chunks). Returns count_tif_path,
+# or NA if the batch lies entirely outside the template. Skips the work if count_tif_path
+# already exists, so an interrupted run can resume without recounting batches that finished.
+count_batch_on_template <- function(las_source, native_crs, hull, template_path, template_crs,
+                                    count_tif_path, from_merged) {
+  if (file.exists(count_tif_path)) {
+    message("Template-grid count raster already exists, skipping: ", count_tif_path)
+    return(count_tif_path)
+  }
+
+  template <- rast(template_path)
+  crs(template) <- template_crs  # no-op unless the template carries no CRS (see use_template above)
+
+  # This batch's window: the bounding box of its points' hull (or tiles' bounding boxes),
+  # densified so its edges follow any curvature under reprojection, projected into the
+  # template's CRS and padded by 2 cells, clipped to the template, then snapped outward onto the
+  # template's own cells.
+  hull_box <- st_bbox(st_transform(st_segmentize(hull, 100),  # vertices every 100 native-CRS units
+                                   st_crs(template_crs)))
+  pad      <- 2 * max(res(template))
+  batch_ext <- intersect(ext(hull_box[["xmin"]] - pad, hull_box[["xmax"]] + pad,
+                             hull_box[["ymin"]] - pad, hull_box[["ymax"]] + pad), ext(template))
+  if (is.null(batch_ext)) {
+    message("Batch lies entirely outside template_raster -- no points to count: ", las_source[1])
+    return(NA_character_)
+  }
+  window <- crop(rast(template), batch_ext, snap = "out")  # rast(template): geometry only, no cell values read
+
+  counts      <- integer(ncell(window))
+  same_crs    <- st_crs(native_crs) == st_crs(template_crs)
+  native_wkt  <- native_crs$wkt
+  n_counted   <- 0
+  n_outside   <- 0
+
+  count_chunk <- function(data) {
+    if (nrow(data) == 0) return(0L)  # lasR can call back with an empty chunk near tile edges
+    xy <- cbind(data$X, data$Y)
+    if (!same_crs) xy <- sf_project(native_wkt, template_crs, xy)
+    cells <- cellFromXY(window, xy)
+    inside <- !is.na(cells)
+    counts    <<- counts + tabulate(cells[inside], nbins = length(counts))
+    n_counted <<- n_counted + sum(inside)
+    n_outside <<- n_outside + sum(!inside)
+    0L  # return nothing of size, so exec()'s combined result stays tiny
+  }
+
+  # drop_buffer = TRUE: a chunked read can hand the callback a chunk's buffer points too, which
+  # are also another chunk's own points -- counting them would count them twice.
+  cb <- callback(count_chunk, expose = "xy", drop_buffer = TRUE, no_las_update = TRUE)
+  if (from_merged) {
+    exec(reader() + cb, on = las_source, with = list(chunk = stream_chunk_size))
+  } else {
+    # One exec() per tile, NOT one over all the batch's tiles: given several files, lasR treats
+    # them as one seamless point cloud and processes each file's bounding box as a chunk, reading
+    # every file's points inside it -- so wherever tiles' bounding boxes overlap (e.g. quarter-
+    # quad tiles, whose boxes overlap at their skewed corners), those points would be read, and
+    # counted, once per overlapping tile. Read alone, each tile yields exactly its own points.
+    for (f in las_source) exec(reader(filter = keep_ground()) + cb, on = f)
+  }
+
+  values(window) <- counts
+  names(window)  <- "ground_point_count"
+  writeRaster(window, count_tif_path, datatype = "INT4S", overwrite = TRUE)
+  message("Batch template-grid ground count raster written to: ", count_tif_path, " (",
+          n_counted, " points counted",
+          if (n_outside > 0) paste0(", ", n_outside, " outside template_raster's extent"), ")")
+  count_tif_path
+}
+
 ## ---- Run the workflow across all batches ---------------------------------------------------
 ## Calls the four functions defined above once per batch, in order, using batch-specific paths.
 ## Batches run in parallel, up to n_workers at a time (set in Setup), via
@@ -502,20 +648,36 @@ process_one_batch <- function(b) {
 
   merged_path <- batch_path("ground_merged.laz", b)
   gpkg_path   <- batch_path("ground_points.gpkg", b)
-  count_path  <- batch_path("ground_count_native_crs.tif", b)
+  count_path  <- batch_path(if (use_template) "ground_count_ref_grid.tif" else
+                              "ground_count_native_crs.tif", b)
 
-  filter_merge_batch(tile_batches[[b]], merged_path)
+  # With template_raster set, counting reads the tiles directly, so the merged LAZ is only built
+  # when the GeoPackage export needs it (see "Count points on the template grid").
+  needs_merged <- !use_template || export_ground_points_gpkg
 
-  crs_info <- detect_native_crs(merged_path)
+  if (needs_merged) {
+    filter_merge_batch(tile_batches[[b]], merged_path)
+    crs_info <- detect_native_crs(merged_path)
+  } else {
+    crs_info <- tiles_crs_info(tile_batches[[b]])
+  }
 
   if (export_ground_points_gpkg) {
     export_to_gpkg(merged_path, gpkg_path, gpkg_layer, crs_info$crs)
   }
 
-  rasterize_batch_count(merged_path, crs_info$res, count_path)  # writes count_path; the SpatRaster this returns is discarded here -- see note above
+  if (use_template) {
+    count_path_written <- count_batch_on_template(
+      if (needs_merged) merged_path else tile_batches[[b]], crs_info$crs, crs_info$hull,
+      template_raster, template_crs, count_path, from_merged = needs_merged)
+  } else {
+    rasterize_batch_count(merged_path, crs_info$res, count_path)  # writes count_path; the SpatRaster this returns is discarded here -- see note above
+    count_path_written <- count_path
+  }
+  crs_info$hull <- NULL  # not needed past this point -- keep what's returned to the main session small
 
   list(merged_path = merged_path, gpkg_path = gpkg_path, count_path = count_path,
-       crs_info = crs_info)
+       count_path_written = count_path_written, crs_info = crs_info)
 }
 
 # Cap workers at n_batches -- e.g. n_workers = 4 with only 2 batches would otherwise spin up 2
@@ -523,9 +685,11 @@ process_one_batch <- function(b) {
 plan(multisession, workers = min(n_workers, n_batches))
 
 # future_lapply() dispatches one process_one_batch() call per batch across the worker processes
-# set up just above. future.seed = FALSE because nothing here draws random numbers -- it just
-# silences future's "no parallel-safe RNG seed" advisory.
-batch_results <- future_lapply(seq_along(tile_batches), process_one_batch, future.seed = FALSE)
+# set up just above. Nothing here depends on random numbers, but some package code a worker
+# calls does draw one, and with future.seed = FALSE that draw makes future warn "UNRELIABLE
+# VALUE ... unexpectedly generated random numbers" once per batch -- future.seed = TRUE just
+# gives each worker a proper parallel RNG stream instead, which silences it.
+batch_results <- future_lapply(seq_along(tile_batches), process_one_batch, future.seed = TRUE)
 
 # Batches are done with parallel workers -- everything from here runs sequentially in this
 # session, so release the worker processes.
@@ -539,15 +703,6 @@ batch_gpkg_paths   <- vapply(batch_results, function(r) r$gpkg_path, character(1
 batch_count_paths  <- vapply(batch_results, function(r) r$count_path, character(1))
 batch_native_crs   <- lapply(batch_results, function(r) r$crs_info)  # checked for consistency below
 
-# Re-read each batch's native-CRS count raster from disk now that every worker has finished --
-# see the note on process_one_batch() above for why the SpatRaster itself isn't passed back
-# directly from a worker.
-batch_count_rasts <- lapply(batch_count_paths, function(p) {
-  r <- rast(p)
-  names(r) <- "ground_point_count"
-  r
-})
-
 # All batches come from the same site/collection, so they should share one native CRS, units,
 # and resolution -- confirm that rather than assume it, since a mismatch (e.g. mixed-CRS tiles
 # slipping into input_dir) would otherwise silently corrupt the mosaic step below.
@@ -559,66 +714,141 @@ if (length(unique(native_units_all)) > 1 || max(native_res_all) - min(native_res
 }
 native_crs <- batch_native_crs[[1]]$crs
 native_res <- batch_native_crs[[1]]$res
-message("Native-CRS resolution corresponding to ", target_pixel_size_m,
-        " m pixels: ", round(native_res, 6), " (", native_units_all[1], ")")
 
-## ---- Combine batches -----------------------------------------------------------------------
-## Mosaics every batch's native-CRS count raster into one whole-site count raster, then derives
-## density from that combined total. Both are kept in memory only -- the count raster is purely
-## an intermediate on the way to the density value and is never written to disk in any CRS, and
-## the density raster is only written to disk once, after reprojection, in the next step.
+if (use_template) {
 
-# Mosaic every batch's native count raster into one whole-site count raster. fun = "sum"
-# (rather than the default "first") means that if any batches' tiles happen to overlap in
-# space, their counts are added together instead of one silently overwriting the other; for
-# the ordinary case of non-overlapping tiles this behaves just like a plain mosaic. This
-# assumes every batch's raster shares the same origin/grid alignment, which holds here because
-# lasR's rasterize() snaps cell edges to multiples of native_res regardless of a batch's
-# extent, and native_res was confirmed identical across batches above.
-count_rast <- if (length(batch_count_rasts) == 1) {
-  batch_count_rasts[[1]]
+  ## ---- Combine batches on the template grid --------------------------------------------------
+  ## Every batch's window was cut from the template's own grid, so the windows share its cell
+  ## corners and cellsize and can be summed directly -- fun = "sum" is required here, not just a
+  ## safeguard: windows are sized from each batch's bounding box, so neighboring batches' windows
+  ## overlap, and each point was counted in exactly one batch. The sum is then extended/cropped to
+  ## the template's full extent, so the output matches the template cell for cell.
+
+  batch_count_rasts <- lapply(Filter(Negate(is.na),
+                                     vapply(batch_results, function(r) r$count_path_written,
+                                            character(1))),
+                              rast)
+  template <- rast(template_raster)
+  crs(template) <- template_crs
+  if (length(batch_count_rasts) == 0) {
+    stop("No batch overlaps template_raster -- check that the LAS/LAZ tiles and ",
+         template_raster, " cover the same area.")
+  }
+  count_rast <- if (length(batch_count_rasts) == 1) {
+    batch_count_rasts[[1]]
+  } else {
+    mosaic(sprc(batch_count_rasts), fun = "sum")
+  }
+  crs(count_rast) <- template_crs
+  count_rast <- extend(crop(count_rast, template, snap = "near"), template)
+  if (!compareGeom(count_rast, template, stopOnError = FALSE)) {
+    stop("Internal error: combined count raster does not match template_raster's grid.")
+  }
+  names(count_rast) <- "ground_point_count"
+
+  # Cells with no ground points: 0 from the per-batch counts (or NA outside every batch's
+  # window) -- made uniformly NA, or uniformly 0 with fill_empty_cells_with_zero.
+  count_rast <- if (fill_empty_cells_with_zero) subst(count_rast, NA, 0) else
+    classify(count_rast, cbind(0, NA))
+  if (use_clip) {
+    count_rast <- mask(count_rast, vect(st_transform(clip_sf, st_crs(template_crs))))
+  }
+
+  n_with_pts <- global(count_rast > 0, fun = "sum", na.rm = TRUE)[1, 1]
+  message(sprintf("%.0f of %.0f template cells (%.1f%%) have ground points.",
+                  n_with_pts, ncell(count_rast), 100 * n_with_pts / ncell(count_rast)))
+
+  # Written as an ESRI GridFloat (.flt with an ESRI-keyword .hdr) for the Fortran grid reader,
+  # same as mosaic_dtm.R's output (see the note there on why GDAL's own BIL-style .hdr is
+  # rewritten rather than converted with TWutils' convert_hdr()).
+  count_rast <- writeRaster(count_rast, ref_grid_count_flt_path, filetype = "EHdr",
+                            datatype = "FLT4S", NAflag = -9999, gdal = "BYTEORDER=LSB",
+                            overwrite = TRUE)
+  count_ext <- ext(count_rast)
+  writeLines(sprintf("%-14s %s",
+                     c("ncols", "nrows", "xllcorner", "yllcorner", "cellsize", "NODATA_value",
+                       "byteorder"),
+                     c(ncol(count_rast), nrow(count_rast), sprintf("%.6f", xmin(count_ext)),
+                       sprintf("%.6f", ymin(count_ext)), sprintf("%.12f", res(count_rast)[1]),
+                       "-9999", "LSBFIRST")),
+             sub("[.]flt$", ".hdr", ref_grid_count_flt_path))
+  message("Ground-point count per template cell written to: ", ref_grid_count_flt_path)
+  final_rast <- count_rast
+
 } else {
-  do.call(mosaic, c(batch_count_rasts, fun = "first"))
+
+  # Re-read each batch's native-CRS count raster from disk now that every worker has finished --
+  # see the note on process_one_batch() above for why the SpatRaster itself isn't passed back
+  # directly from a worker.
+  batch_count_rasts <- lapply(batch_count_paths, function(p) {
+    r <- rast(p)
+    names(r) <- "ground_point_count"
+    r
+  })
+
+  message("Native-CRS resolution corresponding to ", target_pixel_size_m,
+          " m pixels: ", round(native_res, 6), " (", native_units_all[1], ")")
+
+  ## ---- Combine batches -----------------------------------------------------------------------
+  ## Mosaics every batch's native-CRS count raster into one whole-site count raster, then derives
+  ## density from that combined total. Both are kept in memory only -- the count raster is purely
+  ## an intermediate on the way to the density value and is never written to disk in any CRS, and
+  ## the density raster is only written to disk once, after reprojection, in the next step.
+
+  # Mosaic every batch's native count raster into one whole-site count raster. fun = "sum"
+  # (rather than the default "first") means that if any batches' tiles happen to overlap in
+  # space, their counts are added together instead of one silently overwriting the other; for
+  # the ordinary case of non-overlapping tiles this behaves just like a plain mosaic. This
+  # assumes every batch's raster shares the same origin/grid alignment, which holds here because
+  # lasR's rasterize() snaps cell edges to multiples of native_res regardless of a batch's
+  # extent, and native_res was confirmed identical across batches above.
+  count_rast <- if (length(batch_count_rasts) == 1) {
+    batch_count_rasts[[1]]
+  } else {
+    do.call(mosaic, c(batch_count_rasts, fun = "first"))
+  }
+  names(count_rast) <- "ground_point_count"
+
+  if (fill_empty_cells_with_zero) {
+    count_rast <- subst(count_rast, NA, 0)  # replace "no points" cells (NA) with 0, per fill_empty_cells_with_zero
+  }
+  # Native-CRS count_rast is kept in memory only -- it's an intermediate on the way to
+  # density_rast below (see "Project Density Raster to EPSG:2856"), never a final output itself,
+  # so it's not written to disk.
+
+  n_na <- global(count_rast, fun = "isNA")[1, 1]  # number of cells with no ground points (NA), for reporting
+  n_total <- ncell(count_rast)                    # total number of cells in the raster
+  message(sprintf("%d of %d cells (%.1f%%) have no ground points.",
+                   n_na, n_total, 100 * n_na / n_total))  # report the fraction of empty cells so coverage gaps are visible
+
+  # Normalized density (ground points per square meter), computed once from the combined counts
+  cell_area    <- target_pixel_size_m^2   # true physical cell area, in m^2 instead of native_res^2, which would be in native (e.g. square feet) units and give density in the wrong units
+  density_rast <- count_rast / cell_area  # convert combined counts to density (points per m^2) using the true physical cell area
+  names(density_rast) <- "ground_point_density"
+
+  # Likewise, native-CRS density_rast is kept in memory only -- see the note on count_rast above.
+  # count_rast itself is discarded after this point -- it was only ever a step toward density_rast
+  # and is never written to disk or reprojected.
+
+  ## ---- Project Density Raster to EPSG:2856 -----------------------------------------------------
+  ## Bilinear resampling is appropriate here since density is a continuous field. This is the
+  ## workflow's only raster output -- no count raster is written, in any CRS.
+
+  density_rast_2856 <- project(density_rast, target_crs, method = "bilinear",
+                               res = target_pixel_size_m)  # reproject the combined density raster; bilinear interpolation is appropriate for a continuous field
+  if (use_clip) {
+    clip_vect_target  <- vect(st_transform(clip_sf, target_crs))
+    density_rast_2856 <- mask(crop(density_rast_2856, clip_vect_target), clip_vect_target)  # trim to the polygon; tiles were only selected by bounding box, so their points extend past it
+  }
+  writeRaster(density_rast_2856, density_tif_2856_path, overwrite = TRUE)
+  message("Reprojected ground density raster written to: ", density_tif_2856_path)
+  final_rast <- density_rast_2856
+
 }
-names(count_rast) <- "ground_point_count"
-
-if (fill_empty_cells_with_zero) {
-  count_rast <- subst(count_rast, NA, 0)  # replace "no points" cells (NA) with 0, per fill_empty_cells_with_zero
-}
-# Native-CRS count_rast is kept in memory only -- it's an intermediate on the way to
-# density_rast below (see "Project Density Raster to EPSG:2856"), never a final output itself,
-# so it's not written to disk.
-
-n_na <- global(count_rast, fun = "isNA")[1, 1]  # number of cells with no ground points (NA), for reporting
-n_total <- ncell(count_rast)                    # total number of cells in the raster
-message(sprintf("%d of %d cells (%.1f%%) have no ground points.",
-                 n_na, n_total, 100 * n_na / n_total))  # report the fraction of empty cells so coverage gaps are visible
-
-# Normalized density (ground points per square meter), computed once from the combined counts
-cell_area    <- target_pixel_size_m^2   # true physical cell area, in m^2 instead of native_res^2, which would be in native (e.g. square feet) units and give density in the wrong units
-density_rast <- count_rast / cell_area  # convert combined counts to density (points per m^2) using the true physical cell area
-names(density_rast) <- "ground_point_density"
-
-# Likewise, native-CRS density_rast is kept in memory only -- see the note on count_rast above.
-# count_rast itself is discarded after this point -- it was only ever a step toward density_rast
-# and is never written to disk or reprojected.
-
-## ---- Project Density Raster to EPSG:2856 -----------------------------------------------------
-## Bilinear resampling is appropriate here since density is a continuous field. This is the
-## workflow's only raster output -- no count raster is written, in any CRS.
-
-density_rast_2856 <- project(density_rast, target_crs, method = "bilinear",
-                             res = target_pixel_size_m)  # reproject the combined density raster; bilinear interpolation is appropriate for a continuous field
-if (use_clip) {
-  clip_vect_target  <- vect(st_transform(clip_sf, target_crs))
-  density_rast_2856 <- mask(crop(density_rast_2856, clip_vect_target), clip_vect_target)  # trim to the polygon; tiles were only selected by bounding box, so their points extend past it
-}
-writeRaster(density_rast_2856, density_tif_2856_path, overwrite = TRUE)
-message("Reprojected ground density raster written to: ", density_tif_2856_path)
 
 ## ---- Quick check to see if it worked ---------------------------------------------------------
 
-print(density_rast_2856)  # inspect CRS, extent, and resolution of the reprojected density raster
+print(final_rast)  # inspect CRS, extent, and resolution of the workflow's raster output
 
 # GeoPackage export is optional (export_ground_points_gpkg in Setup); only look for/sample them
 # if that step actually ran.

@@ -93,14 +93,28 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
 - **run_align_pipeline.R** — driver for one study-area polygon (`[study_area]` `clip_polygon`/
   `target_crs`, passed to every sub-run; `clip_polygon: NOFILE`, the default, uses every tile in
   each folder unmasked): runs `ground_returns.R` once each for a "reference" and
-  an "align" set of LAZ tiles (ground-point-density rasters → `refGrnd`/`alignGrnd`), runs
+  an "align" set of LAZ tiles (ground-point count rasters → `refGrnd`/`alignGrnd`), runs
   `mosaic_dtm.R` once each for a reference and an align folder of DTM tiles (→ `refDTM`/
-  `alignDTM`; or a section sets `existing_dtm` to use an already-mosaicked `.flt` as-is, which
-  must already be in meters and `target_crs`; optional `[ref_dsm]`/`[align_dsm]` sections work the
-  same way with `output_dsm`/`existing_dsm` and default to no DSM), then calls `TWutils::align()` directly. Each sub-run is its own `Rscript`
-  subprocess and is skipped if its output already exists — existence is the only check, so
-  outputs must be deleted by hand after changing the polygon or other parameters.
-- **mosaic_dtm.R** — mosaics the GeoTIFF DTM tiles that intersect a polygon, converts elevations
+  `alignDTM`; or a section sets `input_dtm` to run one raster file through `mosaic_dtm.R` as a
+  single tile — clipped, unit-converted, reprojected into `output_dtm` — or `existing_dtm` to use
+  an already-mosaicked `.flt` as-is, which must already be in meters and `target_crs`; optional
+  `[ref_dsm]`/`[align_dsm]` sections work the same way with `output_dsm`/`input_dsm`/`existing_dsm`
+  and default to no DSM), then calls `TWutils::align()` directly. The reference DTM is built first;
+  the align DTM and both DSMs are then built in a background R session (`future`, logging to
+  `<output>_mosaic_dtm.log`) while the ground returns are counted, and Align waits for them — a
+  counting failure waits for them too before stopping. Each `ground_returns.R` run gets
+  `template_raster` = the reference DTM: ground points are
+  counted per reference DTM cell (`ground_count_ref_grid.flt` in each set's `output_dir`, used as
+  `refGrnd`/`alignGrnd`), so the counts share the DTM's extent, cell corners, and cellsize; the
+  pipeline stops if a count raster is older than the reference DTM. Each sub-run is its own `Rscript`
+  subprocess and is skipped if its output already exists — apart from that count-raster age check,
+  existence is the only check, so outputs must be deleted by hand after changing the polygon or
+  other parameters.
+- **mosaic_dtm.R** — mosaics the GeoTIFF DTM tiles that intersect a polygon (or, with
+  `input_file` in place of `tile_dir`, takes one raster as the only tile) — as a GDAL VRT, with the
+  unit conversion as scale metadata and a units-only CRS change (e.g. EPSG:2927 → 2856) as a
+  relabel, so pixels are read once, in a single masked write to `<output>_partial.*` that's renamed
+  into place when complete (no truncated `.flt` for a resumed run to skip) — converts elevations
   to meters (`z_units`: auto/m/ft/ftUS), reprojects to `target_crs` only if the tiles aren't
   already in it (keeping the input pixel size, e.g. 3 US ft → 0.9144018 m), masks to the polygon,
   and writes `<output_dtm>.flt`. It rewrites GDAL's BIL-style `.hdr` as an ESRI GridFloat header
@@ -110,7 +124,12 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
 - **ground_returns.R** — assembled from `SusNRun_PointCloudWorkflow_blank_082626.qmd` (see the
   branch caveat above); the batched lidar point-cloud pre-processing workflow described in the
   document map (ground filtering → optional GeoPackage → per-batch count raster → mosaic →
-  reprojection to EPSG:2856).
+  reprojection to EPSG:2856). With `template_raster` set, lasR's `rasterize()` (which lays its own
+  native-CRS grid) is bypassed: each batch's window of the template grid is fixed first (from the
+  tiles' LAS headers), points are read straight from each tile — one `exec()` per tile, ground
+  filtered at read time, no merged LAZ unless `export_ground_points_gpkg` needs one — projected into
+  the template's CRS, and tallied per template cell in a lasR `callback()`; the output is the point
+  count per template cell, `ground_count_ref_grid.flt`, instead of the density raster.
 - **run_ground_returns_batches.R** — driver: runs `ground_returns.R` sequentially, once per named
   set in a batch config file, each as its own `Rscript` subprocess (isolating each set's
   `future::plan` and global-environment state rather than `source()`-ing repeatedly in one session).
@@ -157,6 +176,14 @@ than the `TWutils::` form used everywhere else in this repo.
 - **lasR pipelines are lazy and namespace-sensitive**: `terra` is loaded after `lasR` in setup
   chunks and its `rasterize()` generic masks `lasR::rasterize()`; always call `lasR::rasterize()`
   explicitly inside a lasR pipeline, or it silently dispatches to `terra::rasterize()` and errors.
+- **lasR double-reads overlapping tiles**: given several files, lasR's `exec()` treats them as one
+  seamless point cloud and, by default, makes each file's bounding box a chunk that collects every
+  file's points inside it — so where tiles' boxes overlap (e.g. quarter-quad tiles, whose boxes
+  overlap at their skewed corners), those points are processed once per overlapping tile (+3.9% on
+  an 8-tile site2 2017 block; no point is actually duplicated in the files). Either `exec()` one
+  file at a time, or pass `with = list(chunk = <size>)`: regular-grid chunks don't overlap, and
+  with one chunk covering everything the result is exact (smaller chunks can still double-read the
+  odd point lying exactly on a chunk edge).
 - **Batch-oriented processing**: large point-cloud/raster workflows split input tiles into batches
   (`batch_size_tiles`), namespace every intermediate file by batch number (e.g.
   `b003_ground_merged.laz`), and process batches in parallel worker processes via

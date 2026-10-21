@@ -1,49 +1,58 @@
 ## run_align_pipeline.R
 ##
-## Driver script: builds ground-point-density rasters for two sets of LAZ/LAS tiles (a
-## "reference" set and the set to be aligned to it -- the same per-set work
+## Driver script: gets one reference and one to-be-aligned DTM (and, optionally, DSM) -- each
+## either mosaicked from a folder of GeoTIFF tiles, processed from one raster file, or read from
+## an already-mosaicked raster -- then counts ground returns per reference DTM cell for two sets
+## of LAZ/LAS tiles (a "reference" set and the set to be aligned to it -- the same per-set work
 ## run_ground_returns_batches.R does, here fixed to exactly these two named sets instead of an
-## arbitrary list), gets one reference and one to-be-aligned DTM (and, optionally, DSM) -- each
-## either mosaicked from a folder of GeoTIFF tiles or read from an already-mosaicked raster --
-## then runs the Fortran program Align via TWutils (the same call align_dtms.R makes) on them,
-## using the two density rasters as refGrnd/alignGrnd.
+## arbitrary list), and runs the Fortran program Align via TWutils (the same call align_dtms.R
+## makes) on them, using the two count rasters as refGrnd/alignGrnd.
 ##
 ## Everything can be limited to one study-area polygon ([study_area] clip_polygon): only tiles
 ## intersecting it are used, and every raster built from tiles is masked to it. With
 ## clip_polygon NOFILE (the default), every tile in each tile folder is used, unmasked.
 ##
-## Stage 1 (ground_returns.R x2): each of [ref_set] and [align_set] below is run as its own
-## `Rscript ground_returns.R <params.txt>` subprocess, one at a time -- see
+## Stage 1 (mosaic_dtm.R, up to x4): each of [ref_dtm], [align_dtm], and the optional [ref_dsm]
+## and [align_dsm] that sets tile_dir or input_dtm/input_dsm is run as its own
+## `Rscript mosaic_dtm.R <params.txt>` subprocess, one at a time -- see
 ## run_ground_returns_batches.R for why each run gets its own subprocess (isolated future::plan
-## and global-environment state) rather than being source()'d into this session.
-##
-## Stage 2 (mosaic_dtm.R, up to x4): each of [ref_dtm], [align_dtm], and the optional [ref_dsm]
-## and [align_dsm] that sets tile_dir is run the same way, as its own `Rscript mosaic_dtm.R
-## <params.txt>` subprocess: the tiles (intersecting clip_polygon, if set) are mosaicked,
-## converted to meters, reprojected to target_crs if they aren't already in it (keeping their own
-## pixel size), masked to the polygon, and written to <output_dtm>.flt / <output_dsm>.flt.
+## and global-environment state) rather than being source()'d into this session. The tiles
+## (intersecting clip_polygon, if set) -- or the single input_dtm/input_dsm raster -- are
+## mosaicked, converted to meters, reprojected to target_crs if they aren't already in it
+## (keeping their own pixel size), masked to the polygon, and written to <output_dtm>.flt /
+## <output_dsm>.flt. The reference DTM is built first, because Stage 2 counts on its grid; the
+## align DTM and the DSMs are built in a background R session while Stage 2 runs (logging to
+## <output>_mosaic_dtm.log), and Stage 3 waits for them.
 ## Alternatively, a section can name an already-mosaicked raster with existing_dtm/existing_dsm;
 ## that raster is used as-is (no mosaic_dtm.R run, no clipping/reprojection/unit conversion), so
 ## it must already be an ESRI GridFloat .flt in meters and in target_crs -- checked before
-## anything runs. A DSM section that's left out (or sets existing_dsm: NOFILE) means no DSM.
+## anything runs. A DSM section that's left out (or sets no source, e.g. existing_dsm: NOFILE)
+## means no DSM.
 ##
-## Stage 3 (Align): once both density rasters and all DTMs/DSMs exist, TWutils::align() is called
+## Stage 2 (ground_returns.R x2): each of [ref_set] and [align_set] below is run the same way,
+## with template_raster set to the reference DTM, so the output grid -- extent, cell corners,
+## and cellsize -- is fixed before any points are rasterized: each ground point is counted in
+## the reference DTM cell containing it, giving ground_count_ref_grid.flt (points per reference
+## DTM cell) inside each set's own output_dir.
+##
+## Stage 3 (Align): once both count rasters and all DTMs/DSMs exist, TWutils::align() is called
 ## directly in this session (as in align_dtms.R) with refDTM/alignDTM/refDSM/alignDSM set to
-## Stage 2's rasters and refGrnd/alignGrnd set to Stage 1's two rasters --
-## ground_density_epsg2856.tif inside each set's own output_dir, the fixed filename
-## ground_returns.R always writes its final raster to.
+## Stage 1's rasters and refGrnd/alignGrnd set to Stage 2's two count rasters.
 ##
 ## Resumability: every file this pipeline produces is checked for existence before it's
 ## (re)created, and skipped if it's already there -- same convention used throughout this repo
 ## (see ground_returns.R's per-batch merged-file skip and align_dtms.R's outOutlier skip). In
 ## particular, since outOutlier is the very last thing the whole pipeline produces, if its output
 ## already exists the entire pipeline -- both ground_returns.R runs included -- is skipped
-## outright; see "Skip everything" below. Existence is the only check: after changing
-## clip_polygon (or any other parameter), delete the outputs it affects so they're rebuilt.
+## outright; see "Skip everything" below. Existence is the only check (except that a count raster
+## older than the reference DTM stops the pipeline, since it may be on a stale grid): after
+## changing clip_polygon (or any other parameter), delete the outputs it affects so they're
+## rebuilt.
 ##
 ## Requires: TWutils (local package -- must already be installed/available in the R environment),
-## terra, plus whatever ground_returns.R and mosaic_dtm.R require (lasR, terra, sf, lidR, future,
-## future.apply) in the R installation Rscript runs them with.
+## terra, future (for the background mosaics), plus whatever ground_returns.R and mosaic_dtm.R
+## require (lasR, terra, sf, lidR, future, future.apply) in the R installation Rscript runs them
+## with.
 ##
 ## ---- Pipeline config file --------------------------------------------------------------------
 ##
@@ -67,12 +76,13 @@
 ##                   LAZ tiles (pre-change).
 ##   [align_set]  -- ground_returns.R parameters for the LAZ tiles to be aligned (post-change).
 ##   [ref_dtm]    -- mosaic_dtm.R parameters (tile_dir, output_dtm, z_units, ...) for the
-##                   reference DTM tiles (pre-change), or existing_dtm alone to use an
-##                   already-mosaicked DTM instead.
+##                   reference DTM tiles (pre-change); or input_dtm (one raster file) with
+##                   output_dtm, to clip/convert/reproject a single DTM the same way; or
+##                   existing_dtm alone to use an already-mosaicked DTM as-is.
 ##   [align_dtm]  -- the same, for the DTM to be aligned (post-change).
 ##   [ref_dsm]    -- optional; the same as [ref_dtm] but for a reference DSM, with the keywords
-##                   output_dsm/existing_dsm. Leave the section out, or set existing_dsm: NOFILE,
-##                   for no DSM.
+##                   output_dsm/input_dsm/existing_dsm. Leave the section out, or set
+##                   existing_dsm: NOFILE, for no DSM.
 ##   [align_dsm]  -- optional; the same, for the DSM to be aligned.
 ##   [align]      -- align_dtms.R / TWutils::align() parameters (iterations, k, ..., outOutlier,
 ##                   scratch_dir, executable_dir, program_name). refDTM/alignDTM,
@@ -80,9 +90,9 @@
 ##                   taken from the sections above; any found in [align] are ignored (with a
 ##                   warning).
 ##
-## input_dir/output_dir (per LAZ set), tile_dir/output_dtm or existing_dtm (per DTM), and
-## outDTM/outbins/outDif/outOutlier/scratch_dir/executable_dir (in [align]) have no default and
-## must be set. Everything else falls back to ground_returns.R's, mosaic_dtm.R's, or
+## input_dir/output_dir (per LAZ set), tile_dir or input_dtm with output_dtm, or existing_dtm
+## (per DTM), and outDTM/outbins/outDif/outOutlier/scratch_dir/executable_dir (in [align]) have
+## no default and must be set. Everything else falls back to ground_returns.R's, mosaic_dtm.R's, or
 ## align_dtms.R's own built-in default -- see param_specs in each of those scripts.
 
 library(TWutils)
@@ -228,6 +238,19 @@ align_dtm <- drop_study_area_keys(align_dtm, "align_dtm")
 ref_dsm   <- drop_study_area_keys(ref_dsm,   "ref_dsm")
 align_dsm <- drop_study_area_keys(align_dsm, "align_dsm")
 
+# template_raster is always the reference DTM (set in Stage 2 below), never a user parameter.
+drop_template_key <- function(section, section_name) {
+  if (!is.null(section$template_raster)) {
+    warning("template_raster in [", section_name, "] ignored -- ground points are always ",
+            "counted on the reference DTM's grid.")
+    section$template_raster <- NULL
+  }
+  section
+}
+ground_returns_defaults <- drop_template_key(ground_returns_defaults, "defaults")
+ref_set   <- drop_template_key(ref_set,   "ref_set")
+align_set <- drop_template_key(align_set, "align_set")
+
 ground_returns_defaults <- modifyList(ground_returns_defaults, study_area_params)
 
 # <output>.flt -- the file mosaic_dtm.R writes (it accepts its output path with or without ".flt").
@@ -261,37 +284,76 @@ check_existing_raster <- function(existing, section_name, kind) {
   flt
 }
 
-# Each DTM/DSM section either names an already-mosaicked raster (existing_dtm/existing_dsm) or
-# the tiles to build one from (tile_dir + output_dtm/output_dsm). Returns the .flt path Align
-# will read as path, whether Stage 2 must run mosaic_dtm.R for it as from_tiles, and if so that
-# run's mosaic_dtm.R parameters (output_dsm is passed on as mosaic_dtm.R's output_dtm). With
-# optional = TRUE (the DSM sections), a missing/empty section or existing_dsm: NOFILE resolves to
-# path NOFILE -- no DSM.
+# Each DTM/DSM section gets its raster from exactly one of:
+#   existing_dtm/existing_dsm -- an already-mosaicked raster, handed to Align as-is;
+#   input_dtm/input_dsm       -- one raster file, run through mosaic_dtm.R (as its input_file) to
+#                                be clipped, converted to meters, and reprojected into
+#                                output_dtm/output_dsm;
+#   tile_dir                  -- a folder of tiles, mosaicked by mosaic_dtm.R into
+#                                output_dtm/output_dsm.
+# Returns the .flt path Align will read as path, whether Stage 1 must run mosaic_dtm.R for it as
+# from_tiles, and if so that run's mosaic_dtm.R parameters (output_dsm is passed on as
+# mosaic_dtm.R's output_dtm, input_dtm/input_dsm as its input_file). A source set to NOFILE
+# counts as not set. With optional = TRUE (the DSM sections), a section with no source set (left
+# out, empty, or e.g. existing_dsm: NOFILE) resolves to path NOFILE -- no DSM.
 resolve_raster_section <- function(section, section_name, kind, optional = FALSE) {
   existing_key <- paste0("existing_", kind)
+  input_key    <- paste0("input_", kind)
   output_key   <- paste0("output_", kind)
   no_raster    <- list(from_tiles = FALSE, path = "NOFILE")
 
-  if (optional && length(section) == 0) return(no_raster)
+  source_keys <- c(existing_key, input_key, "tile_dir")
+  sources <- Filter(function(k) !is.null(section[[k]]) && nzchar(section[[k]]) &&
+                      toupper(section[[k]]) != "NOFILE",
+                    source_keys)
+  section[setdiff(intersect(source_keys, names(section)), sources)] <- NULL  # drop NOFILE sources
 
-  if (!is.null(section[[existing_key]])) {
-    ignored <- intersect(names(section), c("tile_dir", output_key, "z_units", "file_pattern",
+  if (length(sources) > 1) {
+    stop("[", section_name, "] sets ", paste(sources, collapse = " and "), " -- set only one of ",
+         existing_key, ", ", input_key, ", or tile_dir: ", pipeline_config_path)
+  }
+
+  if (optional && length(sources) == 0 && is.null(section[[output_key]])) return(no_raster)
+
+  if (identical(sources, existing_key)) {
+    ignored <- intersect(names(section), c(output_key, "z_units", "file_pattern",
                                            "mosaic_fun", "clip_buffer_cells"))
     if (length(ignored) > 0) {
       warning(paste(ignored, collapse = "/"), " in [", section_name, "] ignored -- ",
               existing_key, " is set, so nothing is mosaicked for it.")
     }
-    if (optional && toupper(section[[existing_key]]) == "NOFILE") return(no_raster)
     return(list(from_tiles = FALSE,
                 path = check_existing_raster(section[[existing_key]], section_name, kind)))
   }
 
-  if (is.null(section$tile_dir) || is.null(section[[output_key]])) {
-    stop("[", section_name, "] must set either ", existing_key, ", or tile_dir and ", output_key,
+  if (length(sources) == 0 || is.null(section[[output_key]])) {
+    stop("[", section_name, "] must set either ", existing_key, ", or ", input_key, " or ",
+         "tile_dir together with ", output_key,
          if (optional) paste0(" (or ", existing_key, ": NOFILE, or leave the section out)"),
          ": ", pipeline_config_path)
   }
+
   params <- section
+  if (identical(sources, input_key)) {
+    if (!file.exists(section[[input_key]])) {
+      stop(input_key, " in [", section_name, "] not found: ", section[[input_key]])
+    }
+    # Stage 1 skips mosaic_dtm.R whenever output_<kind> exists, so an output naming the input
+    # itself would hand the unprocessed input to Align.
+    if (tolower(normalizePath(section[[input_key]], winslash = "/", mustWork = FALSE)) ==
+        tolower(normalizePath(flt_path(section[[output_key]]), winslash = "/", mustWork = FALSE))) {
+      stop(output_key, " in [", section_name, "] must differ from ", input_key, " (",
+           section[[input_key]], ") -- it names the processed copy written from it.")
+    }
+    ignored <- intersect(names(section), c("file_pattern", "mosaic_fun"))
+    if (length(ignored) > 0) {
+      warning(paste(ignored, collapse = "/"), " in [", section_name, "] ignored -- ", input_key,
+              " is a single raster, so there are no tiles to match or combine.")
+      params[ignored] <- NULL
+    }
+    params[[input_key]] <- NULL
+    params$input_file <- section[[input_key]]
+  }
   params[[output_key]] <- NULL
   params$output_dtm <- section[[output_key]]
   list(from_tiles = TRUE, path = flt_path(section[[output_key]]),
@@ -315,7 +377,8 @@ derived_align_keys <- intersect(names(align_section),
                                   "alignDSM"))
 if (length(derived_align_keys) > 0) {
   warning(paste(derived_align_keys, collapse = "/"), " in [align] ignored -- refGrnd/alignGrnd ",
-          "are always Stage 1's density rasters, and refDTM/alignDTM/refDSM/alignDSM come from ",
+          "are always Stage 2's ground-point count rasters (on the reference DTM grid), and ",
+          "refDTM/alignDTM/refDSM/alignDSM come from ",
           "[ref_dtm]/[align_dtm]/[ref_dsm]/[align_dsm].")
   align_section[derived_align_keys] <- NULL
 }
@@ -390,10 +453,11 @@ build_params <- function(raw_params, specs, path) {
 align_params <- build_params(align_section, align_param_specs, pipeline_config_path)
 
 # Expected paths only -- none of these files needs to exist yet at this point; whether they do
-# is checked in Stages 1-2 below (which skip (re)running ground_returns.R/mosaic_dtm.R once
-# their own output already exists).
-align_params$refGrnd   <- file.path(ref_set$output_dir,   "ground_density_epsg2856.tif")
-align_params$alignGrnd <- file.path(align_set$output_dir, "ground_density_epsg2856.tif")
+# is checked in Stages 1-2 below (which skip (re)building each output once it already exists).
+# With template_raster set, ground_returns.R always writes its count raster to
+# ground_count_ref_grid.flt in the set's output_dir.
+align_params$refGrnd   <- file.path(ref_set$output_dir,   "ground_count_ref_grid.flt")
+align_params$alignGrnd <- file.path(align_set$output_dir, "ground_count_ref_grid.flt")
 align_params$refDTM    <- ref_dtm$path
 align_params$alignDTM  <- align_dtm$path
 align_params$refDSM    <- ref_dsm$path    # NOFILE when there's no [ref_dsm]
@@ -415,23 +479,6 @@ if (file.exists(outOutlier_path)) {
           outOutlier_path)
 } else {
 
-  ## ---- Stage 1: ground_returns.R, once each for ref_set and align_set ------------------------
-  ## Sequential, one Rscript subprocess at a time (see run_ground_returns_batches.R for why each
-  ## set gets its own subprocess) -- parallelism happens *within* each run, across that run's own
-  ## batches, via that run's own n_workers. Each set's own density raster is skipped (not
-  ## regenerated) if it already exists, same as ground_returns.R's own per-batch resumability.
-
-  # Merges one set's own parameters over ground_returns_defaults (set-specific values win),
-  # writes the result out as a "keyword: value" ground_returns.R parameter file, and returns that
-  # file's path. Same helper as write_param_file() in run_ground_returns_batches.R.
-  write_ground_returns_param_file <- function(set_params, defaults, path) {
-    params <- modifyList(defaults, set_params)
-    if (is.null(params$input_dir) || is.null(params$output_dir)) {
-      stop("Both [ref_set] and [align_set] must set input_dir and output_dir.")
-    }
-    write_param_file(params, path)
-  }
-
   # Writes a named list out as a "keyword: value" parameter file and returns that file's path.
   write_param_file <- function(params, path) {
     lines <- vapply(names(params), function(nm) paste0(nm, ": ", params[[nm]]), character(1))
@@ -442,22 +489,35 @@ if (file.exists(outOutlier_path)) {
   # Runs one sibling script (ground_returns.R or mosaic_dtm.R) as its own Rscript subprocess on an
   # already-written parameter file and returns the path to the output it's expected to produce.
   # Skips the Rscript call entirely if that output already exists. label is just for messages.
-  run_script_step <- function(script, label, param_path, expected_output) {
+  # With log_file set, the subprocess's console output goes to that file instead of this
+  # session's -- needed for the background mosaics (see Stage 1), whose output would otherwise
+  # be lost.
+  run_script_step <- function(script, label, param_path, expected_output, log_file = NULL) {
     if (file.exists(expected_output)) {
       message("\n==== ", label, ": output already exists, skipping ", basename(script), ": ",
               expected_output, " ====")
       return(expected_output)
     }
 
-    message("\n==== ", label, " (", basename(script), ") ====")
+    message("\n==== ", label, " (", basename(script), ") ====",
+            if (!is.null(log_file)) paste0("\n  log: ", log_file))
 
     start_time <- Sys.time()
-    status <- system2("Rscript", args = shQuote(c(script, param_path)))
+    status <- if (is.null(log_file)) {
+      system2("Rscript", args = shQuote(c(script, param_path)))
+    } else {
+      system2("Rscript", args = shQuote(c(script, param_path)),
+              stdout = log_file, stderr = log_file)
+    }
     elapsed <- Sys.time() - start_time
 
     if (status != 0) {
       stop(basename(script), " failed for ", label, " (parameters: ", param_path,
-           ") -- exit status ", status, ".")
+           ") -- exit status ", status, ".",
+           if (!is.null(log_file) && file.exists(log_file)) {
+             paste0(" Last lines of its log (", log_file, "):\n",
+                    paste(tail(readLines(log_file, warn = FALSE), 10), collapse = "\n"))
+           })
     }
 
     message(label, " finished in ", format(unclass(elapsed), digits = 4), " ", units(elapsed))
@@ -469,29 +529,21 @@ if (file.exists(outOutlier_path)) {
     expected_output
   }
 
-  # Runs ground_returns.R for one named set and returns the path to the density raster it
-  # produces.
-  run_ground_returns_for_set <- function(label, set_params, defaults, expected_density_tif) {
-    param_path <- write_ground_returns_param_file(set_params, defaults,
-                                                  file.path(param_dir, paste0("params_", label, ".txt")))
-    run_script_step(ground_returns_script, label, param_path, expected_density_tif)
-  }
+  ## ---- Stage 1: mosaic_dtm.R for each DTM/DSM built from tiles or one input file --------------
+  ## One Rscript subprocess per raster (see run_ground_returns_batches.R for why each run gets
+  ## its own subprocess); mosaic_dtm.R handles DSM tiles exactly like DTM tiles, and an
+  ## input_dtm/input_dsm raster as a single tile. Each raster is skipped (not rebuilt) if its
+  ## .flt already exists, and one given as existing_dtm/existing_dsm -- or a DSM that is NOFILE
+  ## -- is never mosaicked at all.
+  ##
+  ## Only the reference DTM is built here, before anything else: Stage 2 counts ground points on
+  ## its grid. The align DTM and both DSMs aren't needed until Align (Stage 3), so they're built
+  ## in a background R session (one after another) while Stage 2 counts in the foreground, and
+  ## Stage 3 waits for them. Each background mosaic writes its console output to
+  ## <output>_mosaic_dtm.log next to its output, since a background session's subprocess output
+  ## isn't relayed back here; their "====" messages appear only once they've all finished.
 
-  ref_density_tif   <- run_ground_returns_for_set("ref_set",   ref_set,   ground_returns_defaults,
-                                                   refGrnd)
-  align_density_tif <- run_ground_returns_for_set("align_set", align_set, ground_returns_defaults,
-                                                   alignGrnd)
-
-  message("\nStage 1 complete. Ground-return density rasters:")
-  message("  ref_set:   ", ref_density_tif)
-  message("  align_set: ", align_density_tif)
-
-  ## ---- Stage 2: mosaic_dtm.R for each DTM/DSM built from tiles ---------------------------------
-  ## Same one-subprocess-per-run pattern as Stage 1 (mosaic_dtm.R handles DSM tiles exactly like
-  ## DTM tiles). Each raster is skipped (not rebuilt) if its .flt already exists, and one given
-  ## as existing_dtm/existing_dsm -- or a DSM that is NOFILE -- is never mosaicked at all.
-
-  run_mosaic <- function(label, raster) {
+  run_mosaic <- function(label, raster, log_file = NULL) {
     if (identical(raster$path, "NOFILE")) {
       message("\n==== ", label, ": none (NOFILE) ====")
       return(raster$path)
@@ -503,15 +555,103 @@ if (file.exists(outOutlier_path)) {
     }
     param_path <- write_param_file(raster$params,
                                    file.path(param_dir, paste0("params_", label, ".txt")))
-    run_script_step(mosaic_dtm_script, label, param_path, raster$path)
+    run_script_step(mosaic_dtm_script, label, param_path, raster$path, log_file)
   }
 
-  ref_dtm_flt   <- run_mosaic("ref_dtm",   ref_dtm)
-  align_dtm_flt <- run_mosaic("align_dtm", align_dtm)
-  ref_dsm_flt   <- run_mosaic("ref_dsm",   ref_dsm)
-  align_dsm_flt <- run_mosaic("align_dsm", align_dsm)
+  ref_dtm_flt <- run_mosaic("ref_dtm", ref_dtm)
 
-  message("\nStage 2 complete. DTMs/DSMs:")
+  later_rasters <- list(align_dtm = align_dtm, ref_dsm = ref_dsm, align_dsm = align_dsm)
+  needs_mosaic  <- vapply(later_rasters, function(r) isTRUE(r$from_tiles) && !file.exists(r$path),
+                          logical(1))
+  mosaic_log <- function(raster) paste0(sub("\\.flt$", "", raster$path, ignore.case = TRUE),
+                                        "_mosaic_dtm.log")
+
+  if (any(needs_mosaic)) {
+    message("\n==== Starting ", paste(names(later_rasters)[needs_mosaic], collapse = ", "),
+            " in a background R session (mosaic_dtm.R), to run during Stage 2 ====")
+    for (label in names(later_rasters)[needs_mosaic]) {
+      message("  ", label, " log: ", mosaic_log(later_rasters[[label]]))
+    }
+    future::plan(future::multisession, workers = 1)
+    background_mosaics <- future::future({
+      lapply(names(later_rasters), function(label) {
+        raster <- later_rasters[[label]]
+        run_mosaic(label, raster, log_file = if (isTRUE(raster$from_tiles)) mosaic_log(raster))
+      })
+    }, seed = TRUE)
+  } else {
+    background_mosaics <- NULL
+    later_flts <- lapply(names(later_rasters),
+                         function(label) run_mosaic(label, later_rasters[[label]]))
+  }
+
+  message("\nStage 1: reference DTM ready: ", ref_dtm_flt)
+
+  ## ---- Stage 2: ground_returns.R, once each for ref_set and align_set ------------------------
+  ## Sequential, one Rscript subprocess at a time -- parallelism happens *within* each run,
+  ## across that run's own batches, via that run's own n_workers. Each run gets
+  ## template_raster = the reference DTM, so its output is the ground-point count per reference
+  ## DTM cell (ground_count_ref_grid.flt), counted directly on that grid: same extent, cell
+  ## corners, and cellsize. Each set's count raster is skipped (not regenerated) if it already
+  ## exists -- unless it's older than the reference DTM, in which case the DTM was rebuilt after
+  ## the points were counted on it and the counts may be on a stale grid, so this stops rather
+  ## than hand them to Align.
+
+  # Merges one set's own parameters over ground_returns_defaults (set-specific values win), adds
+  # the reference DTM as template_raster, writes the result out as a "keyword: value"
+  # ground_returns.R parameter file, and returns that file's path. Same helper as
+  # write_param_file() in run_ground_returns_batches.R.
+  write_ground_returns_param_file <- function(set_params, defaults, path) {
+    params <- modifyList(defaults, set_params)
+    if (is.null(params$input_dir) || is.null(params$output_dir)) {
+      stop("Both [ref_set] and [align_set] must set input_dir and output_dir.")
+    }
+    params$template_raster <- ref_dtm_flt
+    write_param_file(params, path)
+  }
+
+  # Runs ground_returns.R for one named set and returns the path to the count raster it produces.
+  run_ground_returns_for_set <- function(label, set_params, defaults, expected_count_flt) {
+    if (file.exists(expected_count_flt) &&
+        file.mtime(expected_count_flt) < file.mtime(ref_dtm_flt)) {
+      stop(label, " ground-point count raster (", expected_count_flt, ") is older than the ",
+           "reference DTM (", ref_dtm_flt, "), so it may have been counted on a different grid. ",
+           "Delete it and rerun this pipeline to recount.")
+    }
+    param_path <- write_ground_returns_param_file(set_params, defaults,
+                                                  file.path(param_dir, paste0("params_", label, ".txt")))
+    run_script_step(ground_returns_script, label, param_path, expected_count_flt)
+  }
+
+  # If counting fails, wait for the background mosaics to finish before stopping: stopping now
+  # would end the background session and could leave its current mosaic unfinished.
+  tryCatch({
+    run_ground_returns_for_set("ref_set",   ref_set,   ground_returns_defaults, refGrnd)
+    run_ground_returns_for_set("align_set", align_set, ground_returns_defaults, alignGrnd)
+  }, error = function(e) {
+    if (!is.null(background_mosaics)) {
+      message("\nStage 2 failed -- waiting for the background mosaics to finish before stopping.")
+      try(future::value(background_mosaics), silent = TRUE)
+      future::plan(future::sequential)
+    }
+    stop(e)
+  })
+
+  message("\nStage 2 complete. Ground-point count rasters on the reference DTM grid:")
+  message("  ref_set:   ", refGrnd)
+  message("  align_set: ", alignGrnd)
+
+  if (!is.null(background_mosaics)) {
+    message("\n==== Waiting for the background mosaics (",
+            paste(names(later_rasters)[needs_mosaic], collapse = ", "), ") ====")
+    later_flts <- future::value(background_mosaics)  # re-raises a background mosaic's error, if any
+    future::plan(future::sequential)
+  }
+  align_dtm_flt <- later_flts[[1]]
+  ref_dsm_flt   <- later_flts[[2]]
+  align_dsm_flt <- later_flts[[3]]
+
+  message("\nAll DTMs/DSMs ready:")
   message("  ref_dtm:   ", ref_dtm_flt)
   message("  align_dtm: ", align_dtm_flt)
   message("  ref_dsm:   ", ref_dsm_flt)

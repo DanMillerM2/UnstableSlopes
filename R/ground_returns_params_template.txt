@@ -47,3 +47,9 @@ stream_chunk_size: 100000
 # Optional polygon (e.g. a .shp, any CRS). Only LAS/LAZ tiles whose bounding box intersects it
 # are processed, and the density raster is masked to it. NOFILE = process every tile.
 clip_polygon: NOFILE
+
+# Optional raster (e.g. the reference DEM) whose grid -- extent, cell corners, cellsize -- the
+# output is built on: ground points are counted per template cell and written as
+# ground_count_ref_grid.flt instead of the density raster (target_pixel_size_m is then unused).
+# NOFILE = build the density raster on its own target_pixel_size_m grid.
+template_raster: NOFILE

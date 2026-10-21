@@ -14,12 +14,19 @@
 # [align_set]; a set can repeat a keyword itself to override the shared default just for it.
 # [ref_set] and [align_set] are each one ground_returns.R run (see param_specs in
 # ground_returns.R for the full list of recognized keywords) and must set input_dir and
-# output_dir. [ref_dtm] and [align_dtm] are each one mosaic_dtm.R run (see param_specs in
-# mosaic_dtm.R) and must set tile_dir and output_dtm -- or, to skip mosaicking, existing_dtm
-# alone: an already-mosaicked DTM used as-is (an ESRI GridFloat .flt, in meters and in
-# target_crs; it is not clipped to clip_polygon). [ref_dsm] and [align_dsm] are optional and
-# work the same way for digital surface models, with output_dsm/existing_dsm in place of
-# output_dtm/existing_dtm; leave a section out (or set existing_dsm: NOFILE) for no DSM. [align] holds align_dtms.R /
+# output_dir; each writes ground_count_ref_grid.flt there -- ground points per reference DTM
+# cell -- which Align gets as its ground-return raster. [ref_dtm] and [align_dtm] each take
+# their DTM from exactly one of:
+#   tile_dir + output_dtm  -- a folder of tiles, mosaicked by mosaic_dtm.R (see param_specs in
+#                             mosaic_dtm.R) and clipped to clip_polygon;
+#   input_dtm + output_dtm -- one raster file (GeoTIFF, .flt, ...), run through mosaic_dtm.R the
+#                             same way: clipped to clip_polygon, converted to meters, and
+#                             reprojected to target_crs, then written to output_dtm;
+#   existing_dtm alone     -- an already-mosaicked DTM used as-is (an ESRI GridFloat .flt, in
+#                             meters and in target_crs; it is not clipped to clip_polygon).
+# [ref_dsm] and [align_dsm] are optional and work the same way for digital surface models, with
+# output_dsm/input_dsm/existing_dsm in place of output_dtm/input_dtm/existing_dtm; leave a
+# section out (or set existing_dsm: NOFILE) for no DSM. [align] holds align_dtms.R /
 # TWutils::align() parameters (see param_specs in align_dtms.R) -- do NOT set refDTM/alignDTM,
 # refDSM/alignDSM, or refGrnd/alignGrnd there; they are always taken from the sections above.
 #
@@ -28,18 +35,20 @@
 
 [study_area]
 # Polygon delimiting the area of interest (e.g. a .shp; any CRS). Only LAZ, DTM, and DSM tiles
-# that intersect it are used, and the density rasters, DTMs, and DSMs are masked to it.
+# that intersect it are used, and the ground-point count rasters, DTMs, and DSMs are masked to it.
 # NOFILE = use every tile in each folder, unmasked.
 clip_polygon: c:\work\data\site1\study_area.shp
 # CRS of every raster the pipeline produces.
 target_crs: EPSG:2856
 
 [defaults]
+# Ground points are counted per reference DTM cell (ground_returns.R's template_raster is always
+# set to the reference DTM), so the count rasters take the DTM's extent, cell corners, and
+# cellsize; target_pixel_size_m doesn't apply and template_raster can't be set here.
 n_workers: 6
 batch_size_tiles: 50
 gpkg_layer: ground_points
 export_ground_points_gpkg: FALSE
-target_pixel_size_m: 3
 fill_empty_cells_with_zero: FALSE
 cleanup_intermediate_files: TRUE
 stream_chunk_size: 100000
@@ -62,6 +71,9 @@ output_dtm: c:\work\data\site1\elev_2017
 # trusts a vertical CRS if the tiles have one, otherwise assumes the horizontal unit.
 z_units: auto
 # file_pattern: \.tiff?$    # optional; also mosaic_fun (default first), clip_buffer_cells (default 5)
+# Or, instead of tile_dir, one DTM file to clip/convert/reproject into output_dtm (keep
+# output_dtm, z_units, and clip_buffer_cells; file_pattern/mosaic_fun don't apply):
+# input_dtm: c:\work\data\site1\NP_2017\dtm_2017.tif
 # Or, instead of all of the above, use an already-mosaicked DTM (.flt, meters, target_crs) as-is:
 # existing_dtm: c:\work\data\site1\elev_2017.flt
 
@@ -70,12 +82,18 @@ z_units: auto
 tile_dir: c:\work\data\site1\cascades_north_wali_2023\dtm_tiles
 output_dtm: c:\work\data\site1\elev_2023
 z_units: auto
+# Or, instead of tile_dir, one DTM file to clip/convert/reproject into output_dtm:
+# input_dtm: c:\work\data\site1\cascades_north_wali_2023\dtm_2023.tif
 # Or, instead of all of the above, use an already-mosaicked DTM (.flt, meters, target_crs) as-is:
 # existing_dtm: c:\work\data\site1\elev_2023.flt
 
-# Optional digital surface models. Same choices as the DTM sections, with output_dsm/existing_dsm:
-# DSM tiles (GeoTIFFs) to mosaic, or an already-mosaicked DSM (.flt, meters, target_crs) as-is.
-# existing_dsm: NOFILE (or leaving a section out entirely) means no DSM.
+# Optional digital surface models. Same three choices as the DTM sections, with
+# output_dsm/input_dsm/existing_dsm:
+#   tile_dir + output_dsm   -- DSM tiles (GeoTIFFs) to mosaic and clip to clip_polygon;
+#   input_dsm + output_dsm  -- one DSM file to clip, convert to meters, and reproject;
+#   existing_dsm            -- an already-mosaicked DSM (.flt, meters, target_crs), used as-is.
+# A section with none of these set (existing_dsm: NOFILE, or the section left out) means no DSM.
+# output_dsm must differ from input_dsm -- it's the processed copy written from it.
 [ref_dsm]
 existing_dsm: NOFILE
 # tile_dir: c:\work\data\site1\NP_2017\dsm_tiles
@@ -84,6 +102,9 @@ existing_dsm: NOFILE
 
 [align_dsm]
 existing_dsm: NOFILE
+# input_dsm: c:\work\data\site1\cascades_north_wali_2023\dsm_2023.tif
+# output_dsm: c:\work\data\site1\dsm_2023
+# z_units: auto
 # existing_dsm: c:\work\data\site1\dsm_2023.flt
 
 [align]

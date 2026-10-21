@@ -5,11 +5,16 @@
 # Only the first colon on a line separates the keyword from its value, so "c:\..." and
 # "EPSG:2856" are safe.
 #
-# tile_dir and output_dtm have no default and must be set below. Every other keyword falls back
-# to the default noted in param_specs (in the .R script) if you delete or comment out its line.
+# output_dtm and exactly one of tile_dir or input_file have no default and must be set below.
+# Every other keyword falls back to the default noted in param_specs (in the .R script) if you
+# delete or comment out its line.
 
 # Folder containing the DTM tiles (GeoTIFFs).
 tile_dir: c:\work\data\site1\dtm_2017\tiles
+# Or, instead of tile_dir, one already-mosaicked raster (GeoTIFF, .flt, ...), processed as the
+# only tile: clipped to clip_polygon, converted to meters, and reprojected like a mosaic.
+# file_pattern and mosaic_fun are then unused.
+# input_file: c:\work\data\site1\dtm_2017\dtm_2017.tif
 
 # Output DTM path, without extension (.flt is written). Keep the "elev_<id>" naming.
 output_dtm: c:\work\data\site1\elev_2017

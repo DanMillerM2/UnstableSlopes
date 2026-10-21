@@ -8,17 +8,28 @@
 ## run_align_pipeline.R uses it for its [ref_dsm]/[align_dsm] sections too. With clip_polygon
 ## NOFILE, every tile in tile_dir is mosaicked, unmasked.
 ##
-## 1. List the tiles in tile_dir matching file_pattern and read each one's extent/CRS (header
-##    metadata only -- no pixel values are read at this point)
+## Instead of tile_dir, input_file can name one already-mosaicked raster (a GeoTIFF, or a .flt
+## with its .hdr/.prj, ...). It's treated as a single tile: steps 2-6 below still apply, so it is
+## clipped to the polygon, converted to meters, and reprojected exactly like a mosaic would be.
+##
+## 1. List the tiles in tile_dir matching file_pattern (or take input_file as the only tile) and
+##    read each one's extent/CRS (header metadata only -- no pixel values are read at this point)
 ## 2. Keep only the tiles that intersect clip_polygon (reprojected to the tiles' own CRS)
-## 3. Mosaic the kept tiles, then crop to the polygon plus a margin of clip_buffer_cells cells,
-##    so the reprojection in step 5 has real data to interpolate from right up to the polygon's
-##    edge instead of leaving a rim of NA cells along it
-## 4. Convert elevations to meters (see z_units below)
+## 3. Mosaic the kept tiles -- as a GDAL virtual raster (VRT) when mosaic_fun is "first"/"last"
+##    and the tiles share one cell grid, so nothing is written yet (otherwise terra::mosaic()).
+##    If step 5 must reproject, it first crops to the polygon plus a margin of
+##    clip_buffer_cells cells, so the reprojection has real data to interpolate from right up to
+##    the polygon's edge instead of leaving a rim of NA cells along it
+## 4. Convert elevations to meters (see z_units below) -- as scale metadata on the mosaic, applied
+##    when the pixels are read in step 6
 ## 5. If the tiles' CRS differs from target_crs, reproject (bilinear) at the tiles' own pixel
 ##    size expressed in target_crs units -- e.g. 3 US-survey-foot tiles come out at
-##    3 * 1200/3937 = 0.9144018 m pixels -- so the output keeps the input's resolution
-## 6. Mask to the exact polygon and write <output_dtm>.flt
+##    3 * 1200/3937 = 0.9144018 m pixels -- so the output keeps the input's resolution. When
+##    the two CRSs are the same projection in different units (e.g. EPSG:2927 ftUS vs
+##    EPSG:2856 m), the coordinates are just rescaled instead: no resampling, same cells
+## 6. Mask to the exact polygon and write <output_dtm>.flt, in one pass over the pixels: written
+##    as <output_dtm>_partial.* and renamed into place when complete, so an interrupted run never
+##    leaves a truncated .flt that a later run would skip as finished
 ##
 ## Resumability: if <output_dtm>.flt already exists, the script does nothing -- same
 ## exists-then-skip convention used throughout this repo. Delete it to rebuild (e.g. after
@@ -89,8 +100,10 @@ read_param_file <- function(path) {
 # The full set of recognized parameter-file keywords: expected type, and default value used
 # when a keyword is omitted from the file (required = TRUE means there is no default).
 param_specs <- list(
-  # Folder containing the DTM tiles. No default -- must be set.
-  tile_dir = list(type = "character", required = TRUE),
+  # Folder containing the DTM tiles, or (input_file) a single raster to process as the only
+  # tile. Exactly one of the two must be set.
+  tile_dir   = list(type = "character", default = "NOFILE"),
+  input_file = list(type = "character", default = "NOFILE"),
 
   # Output DTM path, without extension -- ".flt" (plus GDAL's ".hdr"/".prj" sidecars) is
   # written there. A trailing ".flt" is accepted and ignored. Keep the Fortran programs'
@@ -175,9 +188,28 @@ if (!mosaic_fun %in% mosaic_funs) {
        " (got \"", mosaic_fun, "\").")
 }
 
-use_clip <- nzchar(clip_polygon) && toupper(clip_polygon) != "NOFILE"
+is_set <- function(x) nzchar(x) && toupper(x) != "NOFILE"
+
+use_clip <- is_set(clip_polygon)
 
 output_flt <- paste0(sub("\\.flt$", "", output_dtm, ignore.case = TRUE), ".flt")
+
+if (is_set(tile_dir) == is_set(input_file)) {
+  stop("Set exactly one of tile_dir (a folder of tiles to mosaic) or input_file (a single ",
+       "raster) in ", config_path, ".")
+}
+if (is_set(input_file)) {
+  if (!file.exists(input_file)) stop("input_file not found: ", input_file)
+  # Writing the output over the input would destroy it -- and once it existed, the skip below
+  # would hand back the unprocessed input as if it were the output.
+  same_file <- function(a, b) {
+    tolower(normalizePath(a, winslash = "/", mustWork = FALSE)) ==
+      tolower(normalizePath(b, winslash = "/", mustWork = FALSE))
+  }
+  if (same_file(input_file, output_flt)) {
+    stop("output_dtm must differ from input_file (", input_file, ").")
+  }
+}
 
 ## ---- Skip if the output already exists ------------------------------------------------------
 
@@ -187,10 +219,16 @@ if (file.exists(output_flt)) {
 
   ## ---- Discover tiles and select those intersecting the polygon ----------------------------
 
-  tile_files <- list.files(tile_dir, pattern = file_pattern, full.names = TRUE,
-                           ignore.case = TRUE)
-  if (length(tile_files) == 0) {
-    stop("No DTM tiles matching \"", file_pattern, "\" found in tile_dir: ", tile_dir)
+  if (is_set(input_file)) {
+    tile_files <- input_file
+    source_desc <- input_file
+  } else {
+    tile_files <- list.files(tile_dir, pattern = file_pattern, full.names = TRUE,
+                             ignore.case = TRUE)
+    if (length(tile_files) == 0) {
+      stop("No DTM tiles matching \"", file_pattern, "\" found in tile_dir: ", tile_dir)
+    }
+    source_desc <- tile_dir
   }
 
   tiles <- lapply(tile_files, function(f) rast(f)[[1]])  # header only; first band, in case a tile carries more than one
@@ -232,20 +270,43 @@ if (file.exists(output_flt)) {
     }, logical(1))
 
     if (!any(in_poly)) {
-      stop("None of the ", length(tiles), " DTM tiles in ", tile_dir, " intersect clip_polygon ",
-           clip_polygon, ".")
+      stop("None of the ", length(tiles), " DTM tile(s) in ", source_desc,
+           " intersect clip_polygon ", clip_polygon, ".")
     }
     message(sum(in_poly), " of ", length(tiles), " DTM tiles intersect the clip polygon.")
-    tiles <- tiles[in_poly]
+    tiles      <- tiles[in_poly]
+    tile_files <- tile_files[in_poly]
   } else {
     message("No clip_polygon -- mosaicking all ", length(tiles), " DTM tiles.")
   }
 
-  ## ---- Mosaic --------------------------------------------------------------------------------
+  ## ---- Mosaic (virtually) --------------------------------------------------------------------
+  ## The mosaic is never written out on its own: with mosaic_fun "first" or "last" and tiles on
+  ## one common grid (the usual case), it's a GDAL virtual raster (VRT) over the tiles, and the
+  ## unit conversion and rescaling below are metadata changes on it, so the tiles' pixels are
+  ## read exactly once -- in the final masked write. Other mosaic_fun values (or tiles that
+  ## aren't cell-aligned) fall back to terra::mosaic(), which writes a temporary mosaic first.
 
-  message("Mosaicking ", length(tiles), " tile(s)...")
-  dtm <- if (length(tiles) == 1) tiles[[1]] else mosaic(sprc(tiles), fun = mosaic_fun)
-  if (use_clip) dtm <- crop(dtm, clip_native_buf)
+  # TRUE when every tile's cell edges line up with the first tile's (origins equal modulo the
+  # cell size) -- required for the VRT, which would otherwise resample silently.
+  half <- res(ref_tile) / 2
+  aligned <- all(vapply(tiles, function(t) {
+    max(abs((origin(t) - origin(ref_tile) + half) %% res(ref_tile) - half)) <
+      1e-6 * max(res(ref_tile))
+  }, logical(1)))
+
+  if (length(tiles) == 1) {
+    dtm <- tiles[[1]]
+  } else if (mosaic_fun %in% c("first", "last") && aligned) {
+    message("Building a virtual mosaic (VRT) of ", length(tiles), " tile(s)...")
+    # GDAL paints later VRT sources over earlier ones, so "first" (the first tile wins where
+    # tiles overlap, as in terra::mosaic()) needs the tiles listed in reverse.
+    dtm <- vrt(if (mosaic_fun == "first") rev(tile_files) else tile_files, options = c("-b", "1"))
+  } else {
+    message("Mosaicking ", length(tiles), " tile(s)",
+            if (!aligned) " (not all on one cell grid)", "...")
+    dtm <- mosaic(sprc(tiles), fun = mosaic_fun)
+  }
 
   ## ---- Vertical units -> meters --------------------------------------------------------------
 
@@ -279,10 +340,30 @@ if (file.exists(output_flt)) {
 
   if (abs(z_factor - 1) > 1e-12) {
     message("Converting elevations to meters (x ", signif(z_factor, 10), ").")
-    dtm <- dtm * z_factor
+    # As scale metadata (composed with any scale/offset the source already carries), so values
+    # are converted as they're read in the final write instead of in a pass of their own. An
+    # in-memory raster has no file to attach it to, so it's multiplied directly instead.
+    dtm <- tryCatch({
+      sc <- scoff(dtm)
+      scoff(dtm) <- cbind(sc[, 1] * z_factor, sc[, 2] * z_factor)
+      dtm
+    }, error = function(e) dtm * z_factor)
   }
 
   ## ---- Reproject to target_crs if needed -----------------------------------------------------
+
+  # TRUE when native_crs and target_crs are the same projection in different linear units (e.g.
+  # EPSG:2927, WA South in US survey feet, and EPSG:2856, WA South in meters): then every
+  # coordinate converts by the one factor unit_scale, checked here by projecting the extent's
+  # corners and center and comparing against plain scaling. Tolerance is 1 mm (in target_crs
+  # units, assumed meters-like).
+  is_unit_rescale <- function(r, target_crs, unit_scale) {
+    e  <- ext(r)
+    xy <- cbind(c(xmin(e), xmin(e), xmax(e), xmax(e), mean(c(xmin(e), xmax(e)))),
+                c(ymin(e), ymax(e), ymin(e), ymax(e), mean(c(ymin(e), ymax(e)))))
+    projected <- tryCatch(project(xy, from = crs(r), to = target_crs), error = function(e) NULL)
+    !is.null(projected) && max(abs(projected - xy * unit_scale)) < 1e-3
+  }
 
   if (same.crs(dtm, target_crs)) {
     message("DTM tiles are already in ", target_crs, " -- no reprojection needed.")
@@ -291,19 +372,38 @@ if (file.exists(output_flt)) {
     if (target_m_per_u == 0) {
       stop("target_crs must be a projected CRS: ", target_crs)
     }
-    # Keep the input's pixel size: native units -> meters -> target_crs units.
-    target_res <- res(dtm) * native_m_per_u / target_m_per_u
-    message("Reprojecting to ", target_crs, " at ", paste(signif(target_res, 8), collapse = " x "),
-            " (target CRS units) pixels.")
-    dtm <- project(dtm, target_crs, method = "bilinear", res = target_res)
+    unit_scale <- native_m_per_u / target_m_per_u  # target_crs units per native unit
+    if (is_unit_rescale(dtm, target_crs, unit_scale)) {
+      # Same projection, different units: relabel instead of resampling. Scaling the extent
+      # rescales the cells with it, so every cell keeps its own value (no bilinear smoothing)
+      # and the grid is exactly the input grid expressed in target_crs units.
+      message("DTM tiles' CRS differs from ", target_crs, " only in linear units -- rescaling ",
+              "coordinates by ", signif(unit_scale, 10), " instead of reprojecting.")
+      ext(dtm) <- as.vector(ext(dtm)) * unit_scale
+      crs(dtm) <- target_crs
+    } else {
+      # Keep the input's pixel size: native units -> meters -> target_crs units. Cropped first
+      # to the polygon plus its margin, so only that much is resampled (see step 3 above).
+      if (use_clip) dtm <- crop(dtm, clip_native_buf)
+      target_res <- res(dtm) * unit_scale
+      message("Reprojecting to ", target_crs, " at ", paste(signif(target_res, 8), collapse = " x "),
+              " (target CRS units) pixels.")
+      dtm <- project(dtm, target_crs, method = "bilinear", res = target_res)
+    }
   }
 
-  if (use_clip) {
-    clip_out <- project(clip_vect, crs(dtm))
-    dtm <- mask(crop(dtm, clip_out), clip_out)
+  cell_size <- res(dtm)
+  if (abs(cell_size[1] - cell_size[2]) > 1e-6 * cell_size[1]) {
+    stop("Output DTM pixels are not square (", paste(cell_size, collapse = " x "), ") -- the ",
+         ".flt header supports only one cellsize.")
   }
 
-  ## ---- Write ---------------------------------------------------------------------------------
+  ## ---- Clip and write --------------------------------------------------------------------------
+  ## One pass: window() limits reading to the polygon's extent -- snapped to the nearest cell
+  ## edges, as crop() does by default -- and mask() masks to the polygon while writing the
+  ## output. Written under a "_partial" name and renamed into place only once complete, so an
+  ## interrupted run never leaves a truncated <output_dtm>.flt that the skip-if-exists check
+  ## (here, and in run_align_pipeline.R) would then accept as finished.
 
   # The Fortran grid reader (..\modules\Grid_Module.f90) only understands ESRI GridFloat header
   # keywords (ncols, nrows, xllcorner, yllcorner, cellsize, NODATA_value, byteorder), but GDAL's
@@ -311,18 +411,38 @@ if (file.exists(output_flt)) {
   # rewritten below from terra's own extent. Not via TWutils' convert_hdr(): that treats
   # ULXMAP/ULYMAP as the upper-left cell's corner, but GDAL defines them as its center, so its
   # output is shifted by half a cell.
-  cell_size <- res(dtm)
-  if (abs(cell_size[1] - cell_size[2]) > 1e-6 * cell_size[1]) {
-    stop("Output DTM pixels are not square (", paste(cell_size, collapse = " x "), ") -- the ",
-         ".flt header supports only one cellsize.")
+  dir.create(dirname(output_flt), showWarnings = FALSE, recursive = TRUE)
+  out_base     <- sub("\\.flt$", "", output_flt, ignore.case = TRUE)
+  partial_base <- paste0(out_base, "_partial")
+  partial_flt  <- paste0(partial_base, ".flt")
+  # The files making up one GridFloat raster <base>: .flt, .hdr, .prj, and GDAL's .stx /
+  # .flt.aux.xml, if present.
+  raster_exts <- c(".flt", ".hdr", ".prj", ".stx", ".flt.aux.xml")
+  sidecars <- function(base) {
+    candidates <- paste0(base, raster_exts)
+    candidates[file.exists(candidates)]
+  }
+  unlink(sidecars(partial_base))  # leftovers from an earlier interrupted run
+
+  wopt <- list(filetype = "EHdr", datatype = "FLT4S", NAflag = -9999, gdal = "BYTEORDER=LSB",
+               names = "elevation")
+  if (use_clip) {
+    clip_out  <- project(clip_vect, crs(dtm))
+    clip_ext  <- intersect(ext(clip_out), ext(dtm))
+    if (is.null(clip_ext)) stop("clip_polygon does not overlap the mosaicked tiles.")
+    clip_ext <- align(clip_ext, dtm, snap = "near")
+    if (all(nzchar(sources(dtm)))) {
+      window(dtm) <- clip_ext       # file-backed (VRT, tile, or rescaled): limit reading, no copy
+    } else {
+      dtm <- crop(dtm, clip_ext)    # in memory (small mosaic() / project() result): window() needs a file
+    }
+    dtm <- mask(dtm, clip_out, filename = partial_flt, overwrite = TRUE, wopt = wopt)
+  } else {
+    dtm <- writeRaster(dtm, partial_flt, overwrite = TRUE, filetype = wopt$filetype,
+                       datatype = wopt$datatype, NAflag = wopt$NAflag, gdal = wopt$gdal,
+                       names = wopt$names)
   }
 
-  names(dtm) <- "elevation"
-  dir.create(dirname(output_flt), showWarnings = FALSE, recursive = TRUE)
-  writeRaster(dtm, output_flt, filetype = "EHdr", datatype = "FLT4S", NAflag = -9999,
-              gdal = "BYTEORDER=LSB", overwrite = TRUE)
-
-  hdr_path <- sub("\\.flt$", ".hdr", output_flt, ignore.case = TRUE)
   dtm_ext  <- ext(dtm)
   hdr_lines <- sprintf("%-14s %s",
                        c("ncols", "nrows", "xllcorner", "yllcorner", "cellsize", "NODATA_value",
@@ -330,7 +450,18 @@ if (file.exists(output_flt)) {
                        c(ncol(dtm), nrow(dtm), sprintf("%.6f", xmin(dtm_ext)),
                          sprintf("%.6f", ymin(dtm_ext)), sprintf("%.12f", cell_size[1]), "-9999",
                          "LSBFIRST"))
-  writeLines(hdr_lines, hdr_path)
+  writeLines(hdr_lines, paste0(partial_base, ".hdr"))
+
+  # Rename every file of the finished raster into place -- the .flt last, since its existence is
+  # what marks the output complete. Stale sidecars of an earlier output are removed first.
+  rm(dtm); invisible(gc())  # release terra's handle on the partial file before renaming it
+  unlink(sidecars(out_base))  # output_flt itself can't exist here (see the skip above)
+  for (e in c(setdiff(raster_exts, ".flt"), ".flt")) {
+    if (!file.exists(paste0(partial_base, e))) next
+    if (!file.rename(paste0(partial_base, e), paste0(out_base, e))) {
+      stop("Could not rename ", partial_base, e, " to ", out_base, e)
+    }
+  }
   message("DTM written to: ", output_flt)
-  print(dtm)
+  print(rast(output_flt))
 }
