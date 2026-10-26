@@ -6,9 +6,9 @@
 # (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
 # from its value, so that's safe.
 #
-# outlier, accum, out_patch, scratch_dir, and executable_dir have no default and must be set
-# below (mode 2). Every other keyword falls back to the default noted in param_specs (in
-# LShunter.R) if you delete or comment out its line here.
+# gradient, accum, out_patch, scratch_dir, and executable_dir have no default and must be set
+# below (mode 2), as must exactly one of exceedance and outlier. Every other keyword falls back
+# to the default noted in param_specs (in LShunter.R) if you delete or comment out its line here.
 #
 # input_file selects mode 1: point it at an already-written LShunter input file to hand straight
 # to LShunter.exe, skipping LShunterInput() entirely. When set, every other keyword below except
@@ -18,7 +18,10 @@
 # above). Leave as NOFILE (the default) to build one from the parameters below (mode 2).
 input_file: NOFILE
 
-# Outlier raster (.flt) created by Align, and flow accumulation raster (.flt) created by bldgrds.
+# Raster created by Align -- exactly one of: exceedance (OUTPUT EXCEEDANCE PROBABILITY RASTER;
+# recommended, thresholds in S = -log10(p)) or outlier (OUTPUT OUTLIER RASTER) -- and flow
+# accumulation raster (.flt) created by bldgrds.
+exceedance: NOFILE
 outlier: c:\work\data\postmortem\outlier_2006_2023
 accum: c:\work\data\postmortem\accum_2006
 
@@ -31,10 +34,11 @@ scratch_dir: c:\work\scratch
 executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x64\release\
 
 # --- Two-round thresholds: a strict 1st round finds patch cores, a looser 2nd round grows them ---
-# Maximum outlier (k) value for a patch.
+# Maximum value for a patch: outlier (k) values with outlier; with exceedance, S values such as
+# threshold1: -4 and threshold2: -2 (p <= 0.01% and p <= 1%).
 threshold1: -5.0
 threshold2: -1.5
-# Minimum gradient for a patch.
+# Minimum gradient for a patch, as tan(slope).
 min1: 0.2
 min2: 0.1
 # Maximum flow accumulation for a patch.
@@ -44,20 +48,16 @@ max_accum2: 1000
 # Minimum patch size (square meters).
 min_size: 10
 
-# --- Gradient: either a precomputed raster (e.g. HuntLS's OutGrad, so LShunter uses the same
-# gradients HuntLS did), or NOFILE plus dem and grad_length (m), so LShunter computes it itself.
-# grad_length is ignored when gradient is given. ---
-gradient: c:\work\data\postmortem\grad_huntls
-dem: NOFILE
-grad_length: NA
+# --- Gradient (required): the raster Align uses -- Align's OUTPUT GRADIENT RASTER: YES writes
+# <reference DEM>_grad<RADIUS>m, as sin(slope). gradient_units: SIN (default) or TAN; LShunter
+# converts to tan(slope), the units of min1/min2. LShunter no longer computes gradient itself. ---
+gradient: c:\work\data\postmortem\elev_2006_grad15m
+gradient_units: SIN
 
 # --- Optional road layer used to exclude road-related earth movement. road_buffer (m) is
 # required when road_shapefile is given. ---
 road_shapefile: NOFILE
 road_buffer: NA
-
-# Optional gradient raster for LShunter to write out (only when it computes gradient itself).
-out_grad: NOFILE
 
 # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
 overwrite: TRUE

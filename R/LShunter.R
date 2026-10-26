@@ -1,8 +1,9 @@
 ## LShunter.R
 ##
 ## Runs the Fortran program LShunter via the local TWutils package's LShunter() wrapper.
-## LShunter finds candidate landslide patches on a DEM of difference (DoD), using the outlier
-## (k-value) raster created by program Align. It works in two rounds -- a strict set of
+## LShunter finds candidate landslide patches on a DEM of difference (DoD), using a raster created
+## by program Align: its exceedance probability raster (exceedance; recommended, thresholds in
+## S = -log10(p)) or its outlier (k-value) raster (outlier). It works in two rounds -- a strict set of
 ## thresholds finds patch cores, then a looser set grows them -- so most thresholds come in
 ## pairs (threshold1/threshold2, min1/min2, max_accum1/max_accum2). Patches are also screened by
 ## gradient, flow accumulation and (optionally) proximity to roads, and the result is written as
@@ -23,10 +24,10 @@
 ##     TWutils::LShunterInput() (called by TWutils::LShunter()), from the outlier/accum/
 ##     out_patch/... parameters below.
 ##
-## Gradient can be supplied two ways (mode 2): as a precomputed raster (gradient parameter) --
-## e.g. the OutGrad raster written by HuntLS, so LShunter uses exactly the same gradients (and
-## gradient length scale) HuntLS did -- or, if gradient is NOFILE, LShunter computes it itself
-## from dem over grad_length meters, in which case both dem and grad_length are required.
+## Gradient (mode 2) must be supplied as a raster: the one Align uses (Align's OUTPUT GRADIENT
+## RASTER: YES writes <reference DEM>_grad<RADIUS>m, as sin(slope) -- gradient_units SIN, the
+## default). LShunter no longer computes gradient itself, so it shares Align's slope and length
+## scale; min1/min2 stay tan(slope).
 ##
 ## All input parameters are read from a plain-text parameter file rather than hardcoded in this
 ## script -- see the "Parameter file" section just below for its format, and
@@ -52,9 +53,9 @@ library(TWutils)
 ## their defaults. Blank lines and lines starting with "#" are ignored, and a trailing
 ## "# comment" after a value is stripped. A value may itself contain a colon (e.g. a Windows
 ## drive letter, "c:\..."); only the FIRST colon on a line splits the keyword from its value, so
-## that's safe. outlier, accum, out_patch, scratch_dir, and executable_dir have no default and
-## must be present in the file (in mode 2); every other keyword falls back to the default shown
-## in param_specs if omitted.
+## that's safe. gradient, accum, out_patch, scratch_dir, and executable_dir have no default and
+## must be present in the file (in mode 2), as must exactly one of exceedance and outlier; every
+## other keyword falls back to the default shown in param_specs if omitted.
 
 # Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
 # fallback config_path below is found by this script's location on disk rather than by the
@@ -129,10 +130,12 @@ param_specs <- list(
   # the parameters below instead (mode 2).
   input_file = list(type = "character", default = "NOFILE"),
 
-  # Outlier raster (.flt) created by Align, and flow accumulation raster (.flt) created by
-  # bldgrds. No defaults -- must be set (mode 2 only; ignored in mode 1).
-  outlier = list(type = "character", required = TRUE),
-  accum   = list(type = "character", required = TRUE),
+  # Raster created by Align: exactly one of exceedance (OUTPUT EXCEEDANCE PROBABILITY RASTER,
+  # recommended) and outlier (OUTPUT OUTLIER RASTER). Flow accumulation raster (.flt) created by
+  # bldgrds. accum has no default -- must be set (mode 2 only; ignored in mode 1).
+  exceedance = list(type = "character", default = "NOFILE"),
+  outlier    = list(type = "character", default = "NOFILE"),
+  accum      = list(type = "character", required = TRUE),
 
   # Output patch raster (.flt), given without extension. No default (mode 2 only -- in mode 1
   # the output path comes from the input file's own OUTPUT PATCH RASTER keyword).
@@ -143,11 +146,13 @@ param_specs <- list(
   scratch_dir    = list(type = "character", required = TRUE),
   executable_dir = list(type = "character", required = TRUE),
 
-  # Maximum outlier (k) value for a patch, 1st (strict) and 2nd (looser) rounds.
+  # Maximum value for a patch, 1st (strict) and 2nd (looser) rounds: outlier (k) values with
+  # outlier, or S = -log10(p) values with exceedance (e.g. -4 and -2, i.e. p <= 0.01% and 1%).
+  # The defaults suit outlier; set both for exceedance.
   threshold1 = list(type = "numeric", default = -5.0),
   threshold2 = list(type = "numeric", default = -1.5),
 
-  # Minimum gradient for a patch, 1st and 2nd rounds.
+  # Minimum gradient for a patch, 1st and 2nd rounds, as tan(slope).
   min1 = list(type = "numeric", default = 0.2),
   min2 = list(type = "numeric", default = 0.1),
 
@@ -158,21 +163,16 @@ param_specs <- list(
   # Minimum patch size in square meters.
   min_size = list(type = "numeric", default = 10),
 
-  # Gradient: either a precomputed gradient raster (.flt) -- e.g. HuntLS's OutGrad -- or, when
-  # gradient is NOFILE, dem and grad_length (m), from which LShunter computes gradient itself.
-  # grad_length is ignored when gradient is supplied.
-  gradient    = list(type = "character", default = "NOFILE"),
-  dem         = list(type = "character", default = "NOFILE"),
-  grad_length = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  # Gradient raster (.flt) that Align uses (Align's OUTPUT GRADIENT RASTER: YES writes
+  # <reference DEM>_grad<RADIUS>m). Required (mode 2). gradient_units: SIN (default, as Align
+  # writes it) or TAN; LShunter converts to tan(slope), the units of min1/min2.
+  gradient       = list(type = "character", required = TRUE),
+  gradient_units = list(type = "character", default = "SIN"),
 
   # Optional road-layer polyline shapefile (.shp) used to exclude road-related earth movement,
   # and the buffer (m) around it. road_buffer is required when road_shapefile is supplied.
   road_shapefile = list(type = "character", default = "NOFILE"),
   road_buffer    = list(type = "numeric", default = NA_real_, allow_na = TRUE),
-
-  # Optional gradient raster for LShunter to write out (only meaningful when it computes
-  # gradient itself). NOFILE means not wanted.
-  out_grad = list(type = "character", default = "NOFILE"),
 
   # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
   overwrite = list(type = "logical", default = TRUE)
@@ -231,7 +231,7 @@ raw_params <- read_param_file(config_path)
 raw_input_file <- if (!is.null(raw_params[["input_file"]])) raw_params[["input_file"]] else "NOFILE"
 use_existing_input_file <- !is_nofile_text(raw_input_file)
 if (use_existing_input_file) {
-  for (nm in c("outlier", "accum", "out_patch", "scratch_dir", "executable_dir")) {
+  for (nm in c("gradient", "accum", "out_patch", "scratch_dir", "executable_dir")) {
     param_specs[[nm]]$required <- FALSE
     param_specs[[nm]]$default  <- "NOFILE"
   }
@@ -265,27 +265,25 @@ if (use_existing_input_file) {
 
   if (!file.exists(out_patch_flt)) {
 
-    # TWutils::LShunterInput() wants NULL (not a sentinel) for road_buffer/grad_length when they
-    # aren't applicable, and validates the Gradient-vs-DEM+GradLength and Roads-vs-road_buffer
-    # dependencies itself -- so just translate the "not given" NA to NULL and let it stop with a
-    # clear message if a required companion is missing.
+    # TWutils::LShunter()/LShunterInput() check that exactly one of Outlier and Exceedance is
+    # given, that Gradient is, and that road_buffer comes with Roads; LShunterInput() wants NULL
+    # (not a sentinel) for road_buffer when it isn't applicable, so translate the "not given" NA.
     TWutils::LShunter(Outlier = outlier,
+                      Exceedance = exceedance,
+                      Gradient = gradient,
                       Accum = accum,
                       OutPatch = out_patch,
                       ScratchDir = scratch_dir,
                       threshold1 = threshold1,
                       threshold2 = threshold2,
+                      GradientUnits = gradient_units,
                       min1 = min1,
                       min2 = min2,
                       maxAccum1 = max_accum1,
                       maxAccum2 = max_accum2,
                       MinSize = min_size,
-                      Gradient = gradient,
-                      DEM = dem,
-                      GradLength = if (is.na(grad_length)) NULL else grad_length,
                       Roads = road_shapefile,
                       road_buffer = if (is.na(road_buffer)) NULL else road_buffer,
-                      OutGrad = out_grad,
                       overwrite = overwrite,
                       Executable_dir = executable_dir)
 

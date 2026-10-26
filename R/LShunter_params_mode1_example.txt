@@ -7,8 +7,9 @@
 # Setting input_file to anything other than NOFILE selects mode 1. Every mode-2-only keyword is
 # then ignored -- the input file already carries everything LShunter needs -- so this example
 # only sets the two keywords mode 1 actually uses:
-#   - input_file: the existing LShunter input file. It must contain the keywords OUTLIER,
-#     GRADIENT, FLOW ACCUMULATION, MINIMUM SIZE, OUTPUT PATCH RASTER and SCRATCH DIRECTORY
+#   - input_file: the existing LShunter input file. It must contain the keywords OUTLIER or
+#     EXCEEDANCE RASTER, GRADIENT (with the gradient raster Align uses -- LShunter no longer
+#     computes it), FLOW ACCUMULATION, MINIMUM SIZE, OUTPUT PATCH RASTER and SCRATCH DIRECTORY
 #     (TWutils::LShunter() checks for these) and uses LShunter.exe's own keyword grammar, not
 #     this parameter file's "keyword: value" grammar.
 #   - executable_dir: the folder containing LShunter.exe. Only used as a FALLBACK -- if the
