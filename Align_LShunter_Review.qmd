@@ -1,0 +1,244 @@
+---
+title: "Measuring ground-surface change and identifying landslide scars with align and LShunter"
+subtitle: "What the programs do, how they work together, how well they meet the goals, and what could improve them"
+author: "Dan Miller"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    embed-resources: true
+    theme: cosmo
+    fig-cap-location: bottom
+    mermaid:
+      theme: default
+editor: visual
+---
+
+## Purpose and goals
+
+Two Fortran programs turn a pair of lidar surveys into candidate landslide scars:
+
+-   **align** (`alignSlope2.f90` and its modules in `GridUtilities/align_modules`) coregisters the newer digital terrain model (DTM) to the older one, measures the elevation change, and estimates how much change noise alone can produce.
+-   **LShunter** (`LandslideUtilities/LShunter.f90`) delineates patches of elevation loss from align's outputs, and describes each patch so it can be ranked and checked in the field.
+
+Both serve two goals:
+
+1.  **An accurate measure of ground-surface elevation change** between the two DTMs, so landslide scars can be found, particularly on steep slopes, and their volumes measured.
+2.  **A defensible level of detection (LoD)**, so that the confidence placed in each identified scar rests on how much change noise alone can produce.
+
+This document describes the programs as of 26 October 2026: align on branch `align_clean` (commit `5057d8b`) and LShunter on branch `LShunter_update` (commit `e37b98c`). The numbers quoted come from Site2: a 2017 survey (0.914 m grid) and a 2025 survey (0.457 m grid), about 48 600 × 13 600 points on the reference grid. There is no landslide inventory for Site2, so the patches LShunter finds there are candidates for field surveys. Detection rates can't yet be measured against mapped landslides.
+
+Throughout, elevation differences are **newer minus older**, so loss is negative. Raster values are treated as **point measurements** at the lower-left corner of each cell, with elevations between points interpolated.
+
+## How the two programs work together
+
+::: column-page
+```{mermaid}
+%%| fig-cap: "Data flow from the two surveys to candidate landslide patches. align's outputs feed LShunter; the gradient raster is shared so both programs use one slope on one length scale."
+%%{init: {"themeVariables": {"fontSize": "24px"}, "flowchart": {"nodeSpacing": 35, "rankSpacing": 55}}}%%
+flowchart TB
+  subgraph IN [Inputs]
+    direction LR
+    A[2017 DTM and DSM]
+    B[2025 DTM and DSM]
+    C[Ground-return<br/>count rasters]
+  end
+  subgraph AL [align]
+    direction LR
+    D[Coregistration<br/>global and tiled fits]
+    E[Density LoD<br/>fitted on stable ground]
+    F[Noise correlation]
+  end
+  subgraph OUT [align outputs]
+    direction LR
+    G[Aligned DTM,<br/>difference rasters]
+    H[Exceedance<br/>probability S]
+    I[Centred difference,<br/>IQR, LoD rasters]
+    J[Gradient raster]
+    K[Correlogram CSV]
+  end
+  subgraph LS [LShunter]
+    direction LR
+    L[Seed and grow<br/>loss patches]
+    M[Patch table:<br/>volume and uncertainty]
+    N[Null patches:<br/>sign flip, simulation]
+  end
+  A --> D
+  B --> D
+  C --> E
+  D --> G
+  D --> E
+  E --> H
+  E --> I
+  D --> J
+  E --> F
+  F --> K
+  H --> L
+  J --> L
+  C --> L
+  I --> M
+  K --> M
+  L --> M
+  L --> N
+  N --> M
+  M --> O[Candidate scars<br/>for field surveys]
+  classDef box fill:#e8f0fa,stroke:#3b6aa0,stroke-width:1px,color:#1a1a1a,font-size:24px
+  classDef result fill:#fdf0d5,stroke:#b07d1a,stroke-width:1px,color:#1a1a1a,font-size:24px
+  class A,B,C,D,E,F,G,H,I,J,K,L,M,N box
+  class O result
+  style IN fill:#ffffff,stroke:#999999,color:#1a1a1a
+  style AL fill:#ffffff,stroke:#999999,color:#1a1a1a
+  style OUT fill:#ffffff,stroke:#999999,color:#1a1a1a
+  style LS fill:#ffffff,stroke:#999999,color:#1a1a1a
+```
+:::
+
+| align output | What it holds | How LShunter uses it |
+|---------------------|----------------------------|------------------------|
+| Exceedance probability raster (`OUTPUT EXCEEDANCE PROBABILITY RASTER`) | Signed significance S = −log₁₀(p): the share of stable ground of the same kind that is at least as extreme. Negative for loss; S = −2 is p = 1%. | Seed and growth thresholds (`EXCEEDANCE RASTER`) |
+| Gradient raster (`OUTPUT GRADIENT RASTER: YES`) | sin(slope) over the 15 m radius align uses throughout | Gradient thresholds (`GRADIENT`), converted to tan(slope) |
+| Centred difference raster (`OUTPUT CENTERED DIFFERENCE RASTER`) | dz minus the expected dz on stable ground (canopy, density and slope offsets removed) | Patch depth and volume |
+| IQR raster (`<LoD raster>_iqr`) | The spread of noise at each point | Per-point noise SD, for volume uncertainty |
+| Correlogram (`<BINS OUTPUT>_densityLodCorr.csv`) | Correlation of the noise with distance, by cover and slope class, and SDz (IQR → SD) | Volume uncertainty; the null simulation |
+| Ground-return count rasters (inputs to both) | Returns per point for each survey | Seed density limit (`SEED DENSITY`) |
+
+: align outputs used by LShunter {#tbl-interface}
+
+## align: measuring the change
+
+align runs as a sequence of stages, each in its own module: read the inputs, prepare the grids, fit the outlier fence, fit the global shift, refine by tiles, compute the density LoD, and write the outputs.
+
+### Coregistration
+
+-   **Reading the surveys.** The newer DTM and DSM are read on their own 0.457 m grid and sampled at reference-grid points. Earlier versions snapped them to the reference grid first, which interpolated twice.
+-   **Reference slope.** Gradient and aspect are computed over a 15 m radius, about the width of a shallow-landslide scar, the scale on which the soil forces that control slope stability act.
+-   **Outlier fence.** Elevation differences are binned by aspect, slope and the two surveys' canopy-height classes. A Tukey fence fitted across the bins (quartiles modelled by slope, aspect, canopy class and combinations of the two surveys' classes) excludes real change from the alignment fit.
+-   **Global fit.** One least-squares fit per iteration, with columns for the x and y derivatives, a vertical offset, two slope terms, and 20 canopy-class terms. The canopy terms are estimated but **never applied** to the DEM, so the DEM transform stays purely geometric and canopy-loss cells, where scars are, aren't altered by a canopy correction.
+-   **Rebuild from the originals.** After each iteration the aligned DEM is resampled once from the original grid at the accumulated shift. Repeated resampling had been smoothing the DEM by about 12 mm RMS overall and 44 mm on steep slopes.
+-   **Tiled refinement.** Overlapping tiles (16 × 6 on Site2) each fit their own shift, pulled towards their neighbours by a prior, and the shifts are interpolated between tile midpoints.
+-   **Convergence.** Each loop stops when the aligned DEM stops changing: the 99th percentile of the change on steep ground, and the predicted remaining change, both below a tolerance (5 mm recommended). On Site2 the global loop converged in 4 iterations and the tiles in 7. Stopping the tiles at 4 left 4.5 mm RMS on slopes steeper than g = 0.6.
+
+### The density LoD
+
+The LoD asks: for a point like this one, how large a change does noise produce?
+
+-   **Ground-return density.** Each survey's count raster becomes a local density (mean over 5 × 5 points), in five classes from under 0.25 to over 4 returns/m². Where returns are sparse, the DTM is interpolated and its error larger.
+-   **Fitted on stable ground only.** Points whose canopy class is the same in both surveys. Canopy-change points, which include harvest units and scars, don't widen their own limit.
+-   **Model.** The expected dz (centre) and the spread (IQR) are modelled from the two surveys' density classes, canopy class and slope. The spread is multiplicative (ln IQR); bare ground has its own density terms in the centre.
+-   **Open water excluded.** Open ground with almost no returns in a survey (mostly water on Site2) gets no LoD.
+-   **Tail calibration.** Tails beyond the quartiles differ by group, so each group (canopy class × sparser survey's density class × slope class for vegetated ground) gets its own loss and gain multipliers, set so its stable points exceed the limit at the same rate. Open ground is calibrated across all slopes, to stay sensitive on streamside slopes, inner-gorge walls and scars.
+-   **Checked out of sample.** Multipliers set on one half of a 250 m checkerboard and tested on the other give 1.08–1.11% loss and 0.88% gain on stable vegetated ground in every slope class.
+
+### Outputs used downstream
+
+| Output | Meaning |
+|---------------------------|---------------------------------------------|
+| Difference raster | aligned − reference (contains canopy and density offsets; covers only points with ground returns in both surveys) |
+| Centred difference | dz − expected dz; every point with a LoD; the measure for volumes |
+| Exceedance probability (S) | per-point significance with the same meaning on every kind of ground |
+| LoD raster and `_gain`, `_centre`, `_iqr` | loss and gain limits, expected dz, spread |
+| Correlogram CSV | how noise is correlated with distance |
+
+: Main align outputs for change detection {#tbl-align-out}
+
+## LShunter: finding candidate scars
+
+### Delineating patches
+
+1.  **Seeds:** points with S ≤ `THRESHOLD1`, gradient above `MIN1`, flow accumulation below `MAX1`, outside a road buffer, and (optionally) where both surveys' ground-return density reaches `SEED DENSITY MINIMUM`.
+2.  **Seed zones:** grown from the seeds through points meeting the same tests.
+3.  **Expansion:** grown again through points with S ≤ `THRESHOLD2`, gradient above `MIN2` and accumulation below `MAX2`, regardless of density.
+4.  **Size:** patches smaller than `MINIMUM SIZE` are dropped. Labels run 1 to n.
+
+The gradient raster is required and is align's own, so both programs use one slope on one length scale.
+
+### Describing patches
+
+`OUTPUT PATCH TABLE` gives, for each candidate: area and centroid; mean and deepest loss and volume from the centred difference; the volume's standard deviation from the spatially correlated noise; mean and maximum gradient; the most extreme S; the shares in the road buffer, valley floor, hollow and inner gorge (from RIL); and the distance to the nearest channel.
+
+### Comparing with noise
+
+-   **Sign-flip control** (`SIGN FLIP CONTROL: YES`): the same rules applied to the negated input find patches of *gain*, which approximate the patches noise produces (with some real gains).
+-   **Null simulation** (`NULL SIMULATION`): Gaussian noise fields with align's measured correlogram, turned into S and run through the same rules.
+-   For each candidate, the table gives the number of noise patches at least as large and as extreme, and a false-discovery estimate from each null.
+
+## How well the tasks meet the goals
+
+### Goal 1: accurate measurement of elevation change
+
+| Task | Contribution | Evidence on Site2 |
+|-----------------------|----------------------------|-----------------------|
+| Coregistration (global + tiles, cumulative rebuild) | Removes misregistration without smoothing the DEM | ±0.5 m RMSE of dz about 125 mm; block-mean spread 10.7–11.5 mm |
+| Slope terms per tile | Removes a slope-dependent bias between surveys | Stable-ground dz from flat to g 0.5–0.7: bare −3 → −11 mm, forest −2 → −2 mm (corrected difference) |
+| Canopy bias estimated, not applied | Keeps the DEM transform geometric; the bias is still measured | Under stable tall forest the 2025 DTM is about 15 mm lower |
+| Centred difference | Removes canopy, density and slope offsets together, at every point with a LoD | Density offsets alone reach about 100 mm where returns are sparse |
+| Convergence on DEM change | Results no longer depend on the iteration count | Tiles converge in 7 iterations to 2 mm (99th percentile, steep ground) |
+
+: Goal 1 {#tbl-goal1}
+
+**Remaining limits:**
+
+-   The expected dz has no canopy term where the canopy class changed between surveys, because each survey's share of the canopy bias can't be separated from stable ground. Scar points, which often lose canopy, may carry a bias of a few tens of millimetres.
+-   The ordinary difference raster covers only points with ground returns in both surveys; use the centred difference instead.
+-   Where one survey has no ground returns (under dense canopy), the DTM is interpolated and individual deep losses there may be artefacts.
+
+### Goal 2: a defensible LoD
+
+| Task | What makes it defensible | Evidence on Site2 |
+|-----------------------|----------------------------|-----------------------|
+| Stable-ground fit | Real change doesn't widen its own limit | Canopy-change and open-water points excluded |
+| Density, canopy and slope model | The limit follows the physical sources of error | IQR from about 140 mm (dense returns) to 310 mm (sparse) |
+| Tail calibration, cross-validated | The same false-alarm rate on every kind of ground | 1.08–1.11% loss in every vegetated class, out of sample |
+| Exceedance probability | Thresholds mean the same probability everywhere, at any level | Stable points at p ≤ 1%: 0.98–1.14% by slope class |
+| Noise correlation | Shows how much averaging over a patch really helps | A 500 m² patch on steep forest has about 7 independent measurements |
+| Volume uncertainty | Each candidate's volume has a standard deviation | 100 m² scar: SD of mean depth about 0.11 m |
+
+: Goal 2 {#tbl-goal2}
+
+**What is not yet defensible:**
+
+-   **Per-point limits are defensible; patch-level significance is not yet.** Neighbouring errors cluster into broad, shallow patches ("plateaus"), probably locally offset areas from residual misregistration, interpolation and local biases. A stationary Gaussian simulation with the measured correlogram produces about a third as many noise patches as the real data (about 570 per realization against 1 907 loss candidates), so its false-discovery estimates are far too optimistic.
+-   **The sign-flip control matches the loss candidates almost class for class** (2 157 gain patches against 1 907 loss candidates at S ≤ −2.5 / −2). Either most candidates are noise-like, or real gains (deposits, slash, fill) are about as common as real losses. Without ground truth this can't be resolved.
+-   **"Stable" means stable canopy, not stable ground.** Small slides between trees, which change no canopy, fall into the calibration sample, though they are rare enough to matter little.
+
+### Current recommended settings
+
+-   align: `DENSITY LOD: YES`, `DERIVATIVES: CENTRAL` (optional), `ITERATIONS: 8` with `CONVERGENCE: 0.005`, and outputs for the exceedance probability, centred difference, LoD (with IQR) and gradient rasters.
+-   LShunter: `EXCEEDANCE RASTER` with `THRESHOLD1 = -2.5` and `THRESHOLD2 = -2` (this recovers 145 of the 151 patches found with the earlier fence thresholds), align's gradient raster, and `SEED DENSITY` with `MINIMUM = 1` return/m² (1 142 candidates, keeping all 145) or `MINIMUM = 2` for a shorter list (356, keeping 132).
+
+| Seed density ≥ (returns/m², both surveys) | Seeds allowed on | Loss candidates | Gain patches (control) | Fence patches recovered |
+|------------------|---------------|---------------|---------------|---------------|
+| none | 100% | 1 907 | 2 157 | 145 of 151 |
+| 1 | 55% | 1 142 | 1 495 | 145 |
+| 2 | 26% | 356 | 506 | 132 |
+| 4 | 9% | 93 | 98 | 77 |
+
+: Effect of the seed density limit on full Site2 {#tbl-seeddensity}
+
+## Potential improvements
+
+Ranked roughly by how much they would help the two goals, with a rough effort.
+
+| \# | Improvement | Why | Effort |
+|------------|------------------------------|---------------------|------------|
+| 1 | **Field validation of candidates** | The only way to measure detection rates, false alarms and which patch attributes separate real scars. A ranked, stratified sample (by size, depth, landform, density) gives the most information per field day | Field |
+| 2 | **Remove local offsets before finding patches** | Subtract a local median of the centred difference over about 100–200 m (larger than scars, smaller than the offset areas) and recompute S. Targets the plateau-shaped noise directly; testable at once with the sign-flip control | Moderate |
+| 3 | **A non-stationary null** | Add a long-range or locally varying offset component to the simulation, estimated from block-to-block variation on stable ground, so its noise patches look like the real ones | Moderate–high |
+| 4 | **Canopy term for changed-canopy points** | Reduce the bias in the expected dz on scar points, for example with constraints from points just across canopy-class boundaries, or by fitting the joint classes on stable ground nearby | Moderate |
+| 5 | **Patch shape and context in the table** | Elongation downslope, position in a hollow or on a gorge wall, a gain patch just downslope (deposit). These may separate scars from plateaus where size and depth can't | Low–moderate |
+| 6 | **Grow patch edges for volume** | Grow each patch from its own points to the edge of the loss, as a volume footprint separate from the detection footprint, so volumes include the shallow margins | Low |
+| 7 | **Roads as an attribute, not an exclusion** | Apply the road test during expansion too, and flag road-adjacent patches instead of discarding seeds within 55 m; road-related failures are often of interest | Low |
+| 8 | **Inner-gorge definition** | RIL's inner gorge requires a 35° slope at the valley-floor edge and stops where slopes steepen downhill, so it may miss undercut streamside slopes; candidates near channels but outside inner gorges are worth checking in the field | Moderate |
+| 9 | **Debris-flow runout** | The flow-accumulation cap excludes channels, so channel scour below initiation sites isn't captured; a separate pass could look for loss in channels below candidates and gain further down | Moderate |
+| 10 | **Tile fit as one smooth field** | Fitting the tile shifts as bilinear coefficients at the tile midpoints, all at once, would make fitted and applied shifts the same and converge in a few iterations | High |
+
+: Potential improvements {#tbl-improve}
+
+## Summary
+
+-   align now gives a **geometrically clean, well-converged measure of elevation change**. With the centred difference, it removes the systematic offsets that depend on canopy, ground-return density and slope, and covers twice the area of the older difference raster.
+-   Its **density LoD gives per-point limits and exceedance probabilities with the same meaning on every kind of ground**, calibrated on stable ground and checked out of sample. This is the defensible part of the LoD.
+-   LShunter turns these into **candidate patches with volumes and volume uncertainties**, using align's own gradient so both programs work on one slope scale. The seed density limit focuses seeds on well-sampled ground without losing the patches found earlier.
+-   What remains open is **patch-level confidence**: real noise forms broad, shallow patches that per-point statistics and a stationary noise model can't capture, and the gain control can't tell noise from real gains. The candidate list is ready to guide field surveys, and field results are the step needed to turn patch rankings into defensible statements about individual scars.
