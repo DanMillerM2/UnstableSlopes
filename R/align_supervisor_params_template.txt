@@ -1,0 +1,66 @@
+# Parameter file for align_supervisor.R
+#
+# "keyword: value" lines, as in align_dtms_params_template.txt: order doesn't matter, blank
+# lines and lines starting with "#" are ignored, a trailing "# comment" is stripped, and only
+# the first colon on a line splits keyword from value. run_align_pipeline.R writes this file
+# itself from its [align] section when tileNx/tileNy are "auto"; use this template to run the
+# tile search on its own, on DTMs that already exist.
+#
+# refDTM, alignDTM, outDTM, outbins, outDif, outOutlier, scratch_dir, and executable_dir have no
+# default and must be set. Everything else falls back to the default in param_specs
+# (align_supervisor.R) -- the values shown here.
+
+# Reference DTM (pre-change) and the DTM to align to it (post-change), as ESRI GridFloat .flt.
+refDTM: c:\work\data\site1\elev_2017.flt
+alignDTM: c:\work\data\site1\elev_2023.flt
+
+# Ground points per reference DTM cell for each DTM (ground_returns.R with template_raster
+# set to refDTM), or NOFILE. Must be on the reference DTM's grid.
+refGrnd: c:\work\data\site1\NP_2017\grnd_den\ground_count_ref_grid.flt
+alignGrnd: c:\work\data\site1\cascades_north_wali_2023\grnd_den\ground_count_ref_grid.flt
+
+# Optional reference/align DSMs; NOFILE if not used.
+refDSM: NOFILE
+alignDSM: NOFILE
+
+# Maximum iterations in each of Align's global and tiled loops, and the RMSE change (m) below
+# which Align stops iterating (needs alignSlope2 1.0.6 or later).
+iterations: 10
+convergence: 0.001
+
+# Tukey-fence multiplier for outliers, and the proportion of each iteration's shift applied.
+k: 1.5
+dampener: 1.0
+
+# "auto" to search for the number of tiles, or numbers to start the search from that layout.
+tileNx: auto
+tileNy: auto
+overlap: 0.5
+
+# Radius (m) for slope and aspect; slope bins, maximum binned slope, aspect bins.
+radius: 15
+nslope: 7
+maxSlope: 1.0
+nAzimuth: 8
+
+# Final outputs (no extension). Each attempt writes to <folder of outOutlier>\align_attempts\
+# attempt_<n>\, and the chosen attempt's files are moved here; outOutlier's .flt existing means
+# the search is done.
+outDTM: c:\work\data\site1\elev_2023aligned
+outbins: c:\work\data\site1\outbins
+outDif: c:\work\data\site1\dif
+outOutlier: c:\work\data\site1\outlier_tiled
+
+# Align's scratch folder (each attempt uses a subfolder), executable folder, and executable name.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release\
+program_name: align
+
+# Tile search.
+tile_size_m: 2000            # first attempt's target tile spacing (m)
+max_attempts: 3              # Align runs at most
+tile_growth: 2               # each attempt aims for this many times the previous solved tiles
+min_rmse_reduction: 0.02     # a finer attempt must lower the ending RMSE by this fraction
+min_tile_points: 100000      # Align's TILES MIN POINTS: regression points to solve a tile
+keep_attempt_rasters: FALSE  # keep the rasters of the attempts not chosen
+progress_interval_s: 30      # how often Align's progress is echoed (s)

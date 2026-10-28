@@ -109,8 +109,11 @@ existing_dsm: NOFILE
 
 [align]
 
-# Number of times to repeat the alignment calculation.
-iterations: 4
+# Maximum number of times to repeat the alignment calculation (in each of Align's global and
+# tiled loops), and the RMSE change (m) below which Align stops iterating early; convergence 0
+# runs every iteration. convergence needs alignSlope2 1.0.6 or later.
+iterations: 10
+convergence: 0.001
 
 # Tukey-fence multiplier used to identify and exclude outliers (e.g. landslide sites) from the
 # alignment calculation; k <= 0 filters more points as outliers.
@@ -123,9 +126,22 @@ dampener: 1.0
 outDTM: c:\work\data\site1\elev_2023aligned
 
 # Number of tiles in x (east-west) and y (north-south), and the fractional overlap between them.
-tileNx: 4
-tileNy: 2
+# "auto" hands Align to align_supervisor.R, which picks the tiles from the study area's size
+# and shape, then tries finer tilings while each lowers the ending RMSE by at least
+# min_rmse_reduction, up to max_attempts Align runs in all, and keeps the best (see its
+# header). Numbers run Align once with exactly those tiles.
+tileNx: auto
+tileNy: auto
 overlap: 0.5
+
+# Tile search (tileNx/tileNy: auto only; the values shown are the defaults):
+# tile_size_m: 2000            # first attempt's target tile spacing (m)
+# max_attempts: 3              # Align runs at most
+# tile_growth: 2               # each attempt aims for this many times the solved tiles
+# min_rmse_reduction: 0.02     # a finer attempt must lower the ending RMSE by this fraction
+# min_tile_points: 100000      # Align's TILES MIN POINTS: regression points to solve a tile
+# keep_attempt_rasters: FALSE  # keep the rasters of attempts not chosen
+# progress_interval_s: 30      # how often Align's progress is echoed
 
 # Radius (m) for calculating local slope and aspect.
 radius: 15

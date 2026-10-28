@@ -109,7 +109,28 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   pipeline stops if a count raster is older than the reference DTM. Each sub-run is its own `Rscript`
   subprocess and is skipped if its output already exists — apart from that count-raster age check,
   existence is the only check, so outputs must be deleted by hand after changing the polygon or
-  other parameters.
+  other parameters. With `[align]` `tileNx: auto`/`tileNy: auto` (the template's default), Stage 3
+  runs **align_supervisor.R** instead of calling `TWutils::align()` once.
+- **align_supervisor.R** — runs Align up to `max_attempts` times, choosing the tiles for each:
+  it reproduces Align's `getTiles()` layout over the reference DTM grid and counts cells with data
+  per tile to predict which tiles reach `min_tile_points` (Align's `TILES … MIN POINTS`), so the
+  first layout follows the study area's size *and shape*; each later attempt aims for
+  `tile_growth`× the solved tiles, and is kept only if its ending RMSE is `min_rmse_reduction`
+  below the best so far. Iterations stop early inside Align via its `CONVERGENCE` keyword
+  (alignSlope2 1.0.6+; the supervisor kills an older exe within seconds). It runs the exe itself
+  via `processx` (input file from `TWutils::align_input()`), streaming `align.log` per attempt,
+  then moves the chosen attempt's outputs to `outDTM`/`outDif`/`outOutlier`/`outbins` (outOutlier
+  last) and writes `align_attempts.csv`/`align_iterations.csv`/`align_tiles.csv` to
+  `<outOutlier folder>/align_attempts/` — tile `dx_total`/`dy_total` sum the global and every
+  tiled iteration's shift, since each iteration's shift applies on top of the last.
+- **run_landslide_pipelines.R** — driver for the whole method: runs `run_align_pipeline.R` and
+  `ril_pipeline.R` concurrently (processx, logs in `<report_dir>/logs/`), then
+  `lshunter_lsstats_pipeline.R`, checking first that LShunter's outlier raster is `[align]
+  outOutlier`; writes `pipeline_manifest.txt` and renders **PipelineReport.qmd** (repo root,
+  `embed-resources: true`) to `<report_dir>/<study_name>_report.html`, including
+  `narrative.md` as its Interpretation section. The report reads only the manifest's outputs, so
+  a rerun (every pipeline skipping) just re-renders. `.claude/skills/landslide-pipelines/` is the
+  Claude Code skill that drives this end to end.
 - **mosaic_dtm.R** — mosaics the GeoTIFF DTM tiles that intersect a polygon (or, with
   `input_file` in place of `tile_dir`, takes one raster as the only tile) — as a GDAL VRT, with the
   unit conversion as scale metadata and a units-only CRS change (e.g. EPSG:2927 → 2856) as a

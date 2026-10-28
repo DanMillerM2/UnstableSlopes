@@ -115,8 +115,12 @@ param_specs <- list(
   refDSM   = list(type = "character", default = "NOFILE"),
   alignDSM = list(type = "character", default = "NOFILE"),
 
-  # Number of times to repeat the alignment calculation.
+  # Number of times to repeat the alignment calculation -- the maximum, when convergence is set.
   iterations = list(type = "integer", default = 5),
+
+  # Stop iterating once an iteration changes the RMSE by less than this (m); 0 runs every
+  # iteration. Needs alignSlope2 1.0.6 or later (older executables ignore it).
+  convergence = list(type = "numeric", default = 0),
 
   # Tukey-fence multiplier used to identify and exclude outliers (e.g. landslide sites) from the
   # alignment calculation; k <= 0 filters more points as outliers.
@@ -233,7 +237,8 @@ if (!file.exists(paste0(outOutlier, ".flt"))) {
                                outOutlier,
                                scratch_dir,
                                executable_dir,
-                               program_name)
+                               program_name,
+                               convergence = convergence)
 
   if (returnCode != 0) {
     stop("Error in Align")
