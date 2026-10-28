@@ -35,9 +35,14 @@
 ## the reference DTM cell containing it, giving ground_count_ref_grid.flt (points per reference
 ## DTM cell) inside each set's own output_dir.
 ##
-## Stage 3 (Align): once both count rasters and all DTMs/DSMs exist, TWutils::align() is called
-## directly in this session (as in align_dtms.R) with refDTM/alignDTM/refDSM/alignDSM set to
-## Stage 1's rasters and refGrnd/alignGrnd set to Stage 2's two count rasters.
+## Stage 3 (Align): once both count rasters and all DTMs/DSMs exist, Align is run with
+## refDTM/alignDTM/refDSM/alignDSM set to Stage 1's rasters and refGrnd/alignGrnd set to Stage
+## 2's two count rasters. With tileNx/tileNy: auto in [align], align_supervisor.R runs it (as
+## its own Rscript subprocess): it picks the number of tiles from the study area's size and
+## shape, refines it over up to max_attempts runs while the RMSE keeps falling, and moves the
+## best run's outputs to outDTM/outDif/outOutlier/outbins -- see that script's header. With
+## numbers for tileNx/tileNy, TWutils::align() is called directly in this session, as in
+## align_dtms.R. Either way, convergence (m) lets Align stop iterating early.
 ##
 ## Resumability: every file this pipeline produces is checked for existence before it's
 ## (re)created, and skipped if it's already there -- same convention used throughout this repo
@@ -84,8 +89,11 @@
 ##                   output_dsm/input_dsm/existing_dsm. Leave the section out, or set
 ##                   existing_dsm: NOFILE, for no DSM.
 ##   [align_dsm]  -- optional; the same, for the DSM to be aligned.
-##   [align]      -- align_dtms.R / TWutils::align() parameters (iterations, k, ..., outOutlier,
-##                   scratch_dir, executable_dir, program_name). refDTM/alignDTM,
+##   [align]      -- align_dtms.R / TWutils::align() parameters (iterations, convergence, k, ...,
+##                   outOutlier, scratch_dir, executable_dir, program_name), plus, with
+##                   tileNx/tileNy: auto, align_supervisor.R's tile-search keywords
+##                   (tile_size_m, max_attempts, tile_growth, min_rmse_reduction,
+##                   min_tile_points, keep_attempt_rasters, progress_interval_s). refDTM/alignDTM,
 ##                   refDSM/alignDSM, and refGrnd/alignGrnd are NOT set here -- they are always
 ##                   taken from the sections above; any found in [align] are ignored (with a
 ##                   warning).
@@ -122,6 +130,7 @@ if (!file.exists(pipeline_config_path)) {
 
 ground_returns_script <- file.path(get_script_dir(), "ground_returns.R")  # sibling script, same folder as this one
 mosaic_dtm_script     <- file.path(get_script_dir(), "mosaic_dtm.R")      # likewise
+supervisor_script     <- file.path(get_script_dir(), "align_supervisor.R")  # likewise
 param_dir <- file.path(tempdir(), "run_align_pipeline_params")  # generated ground_returns.R/mosaic_dtm.R parameter files are written here
 dir.create(param_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -385,18 +394,28 @@ if (length(derived_align_keys) > 0) {
 
 # Same table as align_dtms.R's param_specs, minus refGrnd/alignGrnd/refDTM/alignDTM/refDSM/
 # alignDSM (those are set directly from Stage 1's and Stage 2's outputs below, never read from
-# [align]).
+# [align]). tileNx/tileNy are read as text, since they may be "auto"; the tile-search keywords
+# have no default here -- align_supervisor.R applies its own when they're left out.
 align_param_specs <- list(
 
-  iterations = list(type = "integer", default = 5),
-  k          = list(type = "numeric", default = 0),
-  dampener   = list(type = "numeric", default = 1),
+  iterations  = list(type = "integer", default = 5),
+  convergence = list(type = "numeric", default = 0),
+  k           = list(type = "numeric", default = 0),
+  dampener    = list(type = "numeric", default = 1),
 
   outDTM = list(type = "character", required = TRUE),
 
-  tileNx  = list(type = "integer", default = 0),
-  tileNy  = list(type = "integer", default = 0),
+  tileNx  = list(type = "character", default = "0"),
+  tileNy  = list(type = "character", default = "0"),
   overlap = list(type = "numeric", default = 0.5),
+
+  tile_size_m          = list(type = "character"),
+  max_attempts         = list(type = "character"),
+  tile_growth          = list(type = "character"),
+  min_rmse_reduction   = list(type = "character"),
+  min_tile_points      = list(type = "character"),
+  keep_attempt_rasters = list(type = "character"),
+  progress_interval_s  = list(type = "character"),
 
   radius = list(type = "numeric", default = 15),
 
@@ -451,6 +470,26 @@ build_params <- function(raw_params, specs, path) {
 }
 
 align_params <- build_params(align_section, align_param_specs, pipeline_config_path)
+
+auto_tiles <- tolower(align_params$tileNx) == "auto" || tolower(align_params$tileNy) == "auto"
+supervisor_keys <- c("tile_size_m", "max_attempts", "tile_growth", "min_rmse_reduction",
+                     "min_tile_points", "keep_attempt_rasters", "progress_interval_s")
+if (!auto_tiles) {
+  for (nm in c("tileNx", "tileNy")) {
+    n_tiles <- suppressWarnings(as.integer(align_params[[nm]]))
+    if (is.na(n_tiles)) {
+      stop("Could not parse parameter '", nm, "' (value \"", align_params[[nm]], "\") as a ",
+           "number of tiles or \"auto\" -- check [align] in ", pipeline_config_path, ".")
+    }
+    align_params[[nm]] <- n_tiles
+  }
+  ignored <- intersect(names(align_params), supervisor_keys)
+  if (length(ignored) > 0) {
+    warning(paste(ignored, collapse = "/"), " in [align] ignored -- they apply only with ",
+            "tileNx/tileNy: auto.")
+    align_params[ignored] <- NULL
+  }
+}
 
 # Expected paths only -- none of these files needs to exist yet at this point; whether they do
 # is checked in Stages 1-2 below (which skip (re)building each output once it already exists).
@@ -661,37 +700,46 @@ if (file.exists(outOutlier_path)) {
   ## Reaching here means outOutlier_path did not exist when this run started, so Align has not
   ## already produced this pipeline's final output -- run it.
 
-  message("\n==== Align ====")
+  if (auto_tiles) {
+    # align_supervisor.R reads the same keywords as [align], plus the six raster paths.
+    supervisor_params <- write_param_file(align_params,
+                                          file.path(param_dir, "params_align_supervisor.txt"))
+    run_script_step(supervisor_script, "Align (tile search)", supervisor_params, outOutlier_path)
+    message("Align finished. Aligned DTM written to: ", outDTM)
+  } else {
+    message("\n==== Align ====")
 
-  returnCode <- TWutils::align(refDTM,
-                               alignDTM,
-                               refGrnd,
-                               alignGrnd,
-                               refDSM,
-                               alignDSM,
-                               iterations,
-                               k,
-                               dampener,
-                               outDTM,
-                               tileNx,
-                               tileNy,
-                               overlap,
-                               radius,
-                               nslope,
-                               maxSlope,
-                               nAzimuth,
-                               outbins,
-                               outDif,
-                               outOutlier,
-                               scratch_dir,
-                               executable_dir,
-                               program_name)
+    returnCode <- TWutils::align(refDTM,
+                                 alignDTM,
+                                 refGrnd,
+                                 alignGrnd,
+                                 refDSM,
+                                 alignDSM,
+                                 iterations,
+                                 k,
+                                 dampener,
+                                 outDTM,
+                                 tileNx,
+                                 tileNy,
+                                 overlap,
+                                 radius,
+                                 nslope,
+                                 maxSlope,
+                                 nAzimuth,
+                                 outbins,
+                                 outDif,
+                                 outOutlier,
+                                 scratch_dir,
+                                 executable_dir,
+                                 program_name,
+                                 convergence = convergence)
 
-  if (returnCode != 0) {
-    stop("Error in Align")
+    if (returnCode != 0) {
+      stop("Error in Align")
+    }
+
+    message("Align finished. Aligned DTM written to: ", outDTM)
   }
-
-  message("Align finished. Aligned DTM written to: ", outDTM)
 }
 
 message("\nPipeline complete.")

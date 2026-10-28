@@ -1,0 +1,31 @@
+# Config file for run_landslide_pipelines.R
+#
+# "keyword: value" lines; order doesn't matter, "#" starts a comment, and only the first colon
+# on a line splits keyword from value. The three pipeline configs are each pipeline's own file,
+# used unchanged -- see run_align_pipeline_params_template.txt, ril_pipeline_params_template.txt,
+# and lshunter_lsstats_pipeline_params_template.txt.
+#
+#   Rscript R/run_landslide_pipelines.R path/to/this_file.txt
+#
+# Rerunning is cheap: each pipeline skips what it has already made, so a rerun after a failure
+# picks up where it stopped, and a rerun after editing narrative_md just re-renders the report.
+
+# Name for the report title and file name.
+study_name: Site 1, 2017-2023
+
+# Each pipeline's own config. LShunter's outlier raster must be [align] outOutlier in the align
+# config (checked before anything runs).
+align_pipeline_config: c:\work\data\site1\run_align_pipeline.txt
+ril_pipeline_config: c:\work\data\site1\ril_pipeline.txt
+lshunter_lsstats_config: c:\work\data\site1\lshunter_lsstats_pipeline.txt
+
+# Folder for the rendered report, its manifest, and the pipelines' logs (default: a "report"
+# folder next to outOutlier).
+# report_dir: c:\work\data\site1\report
+
+# Markdown included as the report's Interpretation section (default <report_dir>\narrative.md;
+# the report notes its absence if it doesn't exist yet).
+# narrative_md: c:\work\data\site1\report\narrative.md
+
+render_report: TRUE
+progress_interval_s: 30
