@@ -1,49 +1,50 @@
 ## align_supervisor.R
 ##
-## Runs the Fortran program Align (TWutils::align_input() writes its input file) up to
-## max_attempts times on one reference/align DTM pair, choosing the number of tiles for each
-## attempt, and keeps the attempt with the best RMSE. Run on its own (Rscript align_supervisor.R
-## params.txt) or from run_align_pipeline.R, whose Stage 3 runs it when [align] sets
-## tileNx: auto.
+## Runs the Fortran program Align once on one reference/align DTM pair (TWutils::align_input()
+## writes its input file), follows its progress, checks the executable supports every option
+## asked for, and writes tables of the run for the pipeline report. Run on its own
+## (Rscript align_supervisor.R params.txt) or from run_align_pipeline.R, whose Stage 3 always
+## runs it.
 ##
-## Iterations. Each attempt runs at most `iterations` iterations, and Align itself stops early
-## once an iteration changes the RMSE by less than `convergence` meters (Align's CONVERGENCE
-## keyword -- alignSlope2 1.0.6 or later; an older executable ignores the keyword, so this
-## script stops if the log shows it wasn't applied). The global loop and the tiled loop are
-## tested separately: the global loop starts from the unaligned RMSE, the tiled loop from the
-## last global RMSE.
+## Needs Align at GridUtilities 8a08fa6 or later (alignSlope2 with align_modules\, built from
+## Projects\align). The settings echo is checked a few seconds into the run: if Align reports
+## unrecognized keywords, or doesn't echo an option set here (the convergence test on the change
+## of the aligned DEM, cross-validated tile selection, central derivatives, the gradient raster,
+## the density LoD), the executable is too old and the run is stopped.
 ##
-## Tiles. Align lays its tiles over the reference DTM's whole grid (getTiles() in
-## alignSlope2.f90), not the study-area polygon, and solves a tile only if it holds at least
-## MIN POINTS regression points (100000 by default) and a quarter of its cells with data; the
-## rest are filled from their neighbors. So the useful number of tiles depends on the polygon's
-## shape, not just its area. This script reproduces getTiles() and counts the cells with data in
-## each tile (reference DTM, align DTM if it shares the reference grid, and both ground-return
-## rasters > 0) to predict which tiles Align will solve:
-##   attempt 1 -- the tileNx x tileNy layout (tile aspect ratio following the DTM's) whose
-##                predicted number of solved tiles is closest to (area with data)/tile_size_m^2;
-##                or tileNx/tileNy themselves, if given as numbers;
-##   attempt n -- the layout whose predicted number of solved tiles is closest to tile_growth
-##                times the previous attempt's.
-## An attempt is kept only if its ending RMSE is at least min_rmse_reduction (a fraction) below
-## the best attempt so far; once one isn't, or no finer layout adds solved tiles, or
-## max_attempts is reached, the search stops and the best attempt is used. More tiles let the
-## shift -- and so the LoD -- vary across the study area, but each tile has fewer points, so a
-## finer layout must earn its place with a lower RMSE.
+## Tiles. With tileNx/tileNy: auto (the default), Align chooses the tile count and the prior
+## strength itself by block cross-validation (TILES FIT = JOINT, SELECT = AUTO): square tiles from
+## max_tile_size down to min_tile_size, scored on held-out 1 km blocks with a 100 m buffer (Align's
+## defaults; cv_block, cv_buffer). min_tile_size is a judgement, not a fit: a shift field finer
+## than the scale of real change (a large slow landslide, widespread deposition) can absorb it.
+## With numbers, those tiles are used (tile_select NONE, or REPORT/CV to cross-validate around
+## them).
 ##
-## Outputs. Each attempt writes to <dirname(outOutlier)>/align_attempts/attempt_<n>/ (Align's
-## scratch files to <scratch_dir>/align_attempt_<n>/), with Align's console output in
-## align.log there, streamed to this session's console as it runs. The chosen attempt's outputs
-## are then moved to outDTM/outDif/outOutlier/outbins (outOutlier last, since its existence
-## marks the run complete), and with keep_attempt_rasters FALSE the other attempts' rasters are
-## deleted. Three tables go to the align_attempts folder, for the pipeline report:
-##   align_attempts.csv   -- one row per attempt: tiles, iterations used, convergence,
-##                           starting/global/ending RMSE, run time, and the decision taken;
-##   align_iterations.csv -- RMSE and mean difference for every iteration of every attempt;
-##   align_tiles.csv      -- each attempt's tiles: extent, center, and last-iteration shifts,
-##                           points, and standard errors (or insufficient = TRUE).
-## Resumability: an attempt whose outputs and log are complete, with the same tiles, is read
-## back instead of rerun; if outOutlier already exists, nothing runs.
+## Iterations. Each loop (global, then tiles) runs at most `iterations` iterations and stops
+## once the aligned DEM changes by less than `convergence` m: the 99th percentile of the change on
+## steep ground and the predicted remaining change (Align's CONVERGENCE). 8 and 0.005 make the
+## results independent of the iteration count (see Align's CLAUDE.md).
+##
+## Outputs. Align writes to <dirname(outOutlier)>/align_run/ (its scratch log to
+## <scratch_dir>/align_run/), with its console output in align_run/align.log, streamed to this
+## session's console as it runs. On success every output is moved to its final path (by base
+## name: <outDif>_0, <outLod>_gain/_centre/_iqr, <outbins>_fit0.csv, ... go with their base;
+## outOutlier's .flt last, since its existence marks the run complete). The gradient raster
+## LShunter needs is written by Align next to the reference DTM, <refDTM>_grad<radius>m. Tables
+## in align_run/, for the pipeline report:
+##   align_run.csv        -- one row: version, chosen tiles and prior scale, iterations and
+##                           convergence of each loop, starting/ending RMSE, run time;
+##   align_iterations.csv -- every iteration of both loops: in-fence mean and RMSE, the change of
+##                           the aligned DEM (P50/P99/max, all and steep points), its ratio to the
+##                           previous P99 and the predicted remaining change; global shifts;
+##                           tile-node increments and nodes held by their neighbours;
+##   align_select.csv     -- the cross-validation table: grid, tile size, unknowns, prior scale,
+##                           held-out gain (with and without the buffer), held-out RMS and
+##                           block-mean spread, best/chosen;
+##   align_nodes.csv      -- the joint fit's node totals relative to the global solution (mm),
+##                           with each node's map position.
+## Resumability: if outOutlier already exists nothing runs; a finished run in align_run/ made from
+## the same input file is not rerun, only its outputs moved.
 ##
 ## Requires: TWutils, terra, processx.
 
@@ -82,6 +83,8 @@ read_config <- function(path) {
   params
 }
 
+# A keyword with no default (and not required) is left out when not given, so Align's own
+# default applies.
 param_specs <- list(
   refDTM    = list(type = "character", required = TRUE),
   alignDTM  = list(type = "character", required = TRUE),
@@ -90,37 +93,57 @@ param_specs <- list(
   refDSM    = list(type = "character", default = "NOFILE"),
   alignDSM  = list(type = "character", default = "NOFILE"),
 
-  iterations  = list(type = "integer", default = 10),     # maximum iterations per loop
-  convergence = list(type = "numeric", default = 0.001),  # m; stop once RMSE changes by less
+  iterations  = list(type = "integer", default = 8),      # maximum iterations per loop
+  convergence = list(type = "numeric", default = 0.005),  # m; 0 runs every iteration
   k           = list(type = "numeric", default = 1.5),
   dampener    = list(type = "numeric", default = 1),
+  derivatives = list(type = "character", default = "CENTRAL"),  # SIDED or CENTRAL
+  applySlope  = list(type = "character"),                       # YES (Align's default), NO, STABLE
+  weights     = list(type = "character"),                       # NONE (Align's default) or IQR
+  groundMaskRadius   = list(type = "numeric", default = 0),
+  waterGradThreshold = list(type = "numeric"),
+  waterCurvThreshold = list(type = "numeric"),
 
   tileNx  = list(type = "character", default = "auto"),  # "auto" or a number of tiles
   tileNy  = list(type = "character", default = "auto"),
   overlap = list(type = "numeric", default = 0.5),
+  tile_fit        = list(type = "character", default = "JOINT"),  # JOINT or SEPARATE
+  tile_select     = list(type = "character"),  # default AUTO with auto tiles, else NONE
+  cv_block        = list(type = "numeric"),    # m (Align's default 1000)
+  cv_buffer       = list(type = "numeric"),    # m (100)
+  min_tile_size   = list(type = "numeric"),    # m (500)
+  max_tile_size   = list(type = "numeric"),    # m (8000)
+  prior_points    = list(type = "numeric"),
+  prior_fraction  = list(type = "numeric"),
+  prior           = list(type = "character"),  # NEIGHBOURS or GLOBAL
+  min_tile_points = list(type = "integer", default = 100000),  # TILES MIN POINTS
 
   radius   = list(type = "numeric", default = 15),
-  nslope   = list(type = "integer", default = 7),
-  maxSlope = list(type = "numeric", default = 1),
+  nslope   = list(type = "integer", default = 10),
+  maxSlope = list(type = "numeric", default = 1.5),
   nAzimuth = list(type = "integer", default = 8),
 
-  outDTM     = list(type = "character", required = TRUE),
-  outbins    = list(type = "character", required = TRUE),
-  outDif     = list(type = "character", required = TRUE),
-  outOutlier = list(type = "character", required = TRUE),
+  densityLod           = list(type = "character", default = "auto"),  # auto = with both ground rasters
+  localOffsetWindow    = list(type = "numeric"),
+  localOffsetMinPoints = list(type = "integer"),
+
+  outDTM        = list(type = "character", required = TRUE),
+  outbins       = list(type = "character", required = TRUE),
+  outDif        = list(type = "character", required = TRUE),
+  outOutlier    = list(type = "character", required = TRUE),
+  outExceed     = list(type = "character", default = "NOFILE"),
+  outLod        = list(type = "character", default = "NOFILE"),
+  outCenDif     = list(type = "character", default = "NOFILE"),
+  outDenOutlier = list(type = "character", default = "NOFILE"),
+  outCorDif     = list(type = "character", default = "NOFILE"),
+  outDX         = list(type = "character", default = "NOFILE"),
+  outDY         = list(type = "character", default = "NOFILE"),
+  outDZ         = list(type = "character", default = "NOFILE"),
 
   scratch_dir    = list(type = "character", required = TRUE),
   executable_dir = list(type = "character", required = TRUE),
   program_name   = list(type = "character", default = "align"),
-
-  # Tile search
-  tile_size_m          = list(type = "numeric", default = 2000),  # attempt 1's target tile spacing
-  max_attempts         = list(type = "integer", default = 3),
-  tile_growth          = list(type = "numeric", default = 2),     # solved-tile multiplier per attempt
-  min_rmse_reduction   = list(type = "numeric", default = 0.02),  # fraction of the best RMSE
-  min_tile_points      = list(type = "integer", default = 100000),  # Align's TILES MIN POINTS default
-  keep_attempt_rasters = list(type = "logical", default = FALSE),
-  progress_interval_s  = list(type = "numeric", default = 30)
+  progress_interval_s = list(type = "numeric", default = 30)
 )
 
 build_params <- function(raw_params, specs, path) {
@@ -131,7 +154,7 @@ build_params <- function(raw_params, specs, path) {
   out <- list()
   for (nm in names(specs)) {
     spec <- specs[[nm]]
-    if (nm %in% names(raw_params)) {
+    if (nm %in% names(raw_params) && nzchar(raw_params[[nm]])) {
       raw_val <- raw_params[[nm]]
       converted <- switch(spec$type,
         character = as.character(raw_val),
@@ -152,24 +175,64 @@ build_params <- function(raw_params, specs, path) {
   out
 }
 
-p <- build_params(read_config(config_path), param_specs, config_path)
+# An environment, not a list: `$` on a list matches partially, so p$prior would return
+# prior_points when prior isn't set.
+p <- list2env(build_params(read_config(config_path), param_specs, config_path))
+
+is_nofile <- function(x) is.null(x) || !nzchar(x) || toupper(x) == "NOFILE"
+
+## ---- Tiles, density LoD -----------------------------------------------------------------------
 
 auto_tiles <- tolower(p$tileNx) == "auto" || tolower(p$tileNy) == "auto"
-if (!auto_tiles) {
-  fixed_nx <- suppressWarnings(as.integer(p$tileNx))
-  fixed_ny <- suppressWarnings(as.integer(p$tileNy))
-  if (is.na(fixed_nx) || is.na(fixed_ny) || fixed_nx < 1 || fixed_ny < 1) {
+if (auto_tiles) {
+  if (tolower(p$tileNx) != tolower(p$tileNy)) {
+    stop("tileNx and tileNy must both be \"auto\" or both be whole numbers (got ", p$tileNx,
+         ", ", p$tileNy, ").")
+  }
+  tile_nx <- 0L; tile_ny <- 0L
+  if (is.null(p$tile_select)) p$tile_select <- "AUTO"
+  if (!startsWith(toupper(p$tile_select), "AUTO")) {
+    stop("With tileNx/tileNy: auto, tile_select must be AUTO or AUTO REPORT (got ",
+         p$tile_select, ").")
+  }
+} else {
+  tile_nx <- suppressWarnings(as.integer(p$tileNx))
+  tile_ny <- suppressWarnings(as.integer(p$tileNy))
+  if (is.na(tile_nx) || is.na(tile_ny) || tile_nx < 1 || tile_ny < 1) {
     stop("tileNx and tileNy must both be \"auto\" or both be whole numbers of at least 1 ",
          "(got ", p$tileNx, ", ", p$tileNy, ").")
   }
+  if (is.null(p$tile_select)) p$tile_select <- "NONE"
 }
-if (p$max_attempts < 1) stop("max_attempts must be at least 1.")
-if (p$tile_growth <= 1) stop("tile_growth must be greater than 1.")
+p$tile_select <- toupper(p$tile_select)
 
-flt_path  <- function(base) paste0(sub("\\.flt$", "", base, ignore.case = TRUE), ".flt")
-out_bases <- list(outDTM = p$outDTM, outDif = p$outDif, outOutlier = p$outOutlier,
-                  outbins = p$outbins)
+both_grnd <- !is_nofile(p$refGrnd) && !is_nofile(p$alignGrnd)
+density_lod <- switch(tolower(p$densityLod),
+  auto = both_grnd, true = TRUE, yes = TRUE, false = FALSE, no = FALSE,
+  stop("densityLod must be auto, TRUE or FALSE (got ", p$densityLod, ")."))
+lod_keys <- c("outExceed", "outLod", "outCenDif", "outDenOutlier")
+if (!density_lod) {
+  given <- lod_keys[!vapply(mget(lod_keys, envir = p), is_nofile, logical(1))]
+  if (length(given)) {
+    warning(paste(given, collapse = "/"), " ignored: they need the density LoD ",
+            "(densityLod, with both ground-return rasters).")
+    for (nm in given) p[[nm]] <- "NOFILE"
+  }
+}
+
+## ---- Paths ----------------------------------------------------------------------------------
+
+flt_path <- function(base) paste0(sub("\\.flt$", "", base, ignore.case = TRUE), ".flt")
+out_keys <- c("outDTM", "outDif", "outOutlier", "outbins", "outExceed", "outLod", "outCenDif",
+              "outDenOutlier", "outCorDif", "outDX", "outDY", "outDZ")
+out_bases <- mget(out_keys, envir = p)
+out_bases <- out_bases[!vapply(out_bases, is_nofile, logical(1))]
 out_bases <- lapply(out_bases, function(b) sub("\\.(flt|csv)$", "", b, ignore.case = TRUE))
+dup <- duplicated(tolower(basename(unlist(out_bases))))
+if (any(dup)) {
+  stop("Align writes every output into one run folder, so their file names must differ: ",
+       paste(names(out_bases)[dup], collapse = ", "), " repeat an earlier output's name.")
+}
 
 final_outlier <- flt_path(out_bases$outOutlier)
 if (file.exists(final_outlier)) {
@@ -180,296 +243,109 @@ if (file.exists(final_outlier)) {
 executable <- file.path(p$executable_dir, paste0(p$program_name, ".exe"))
 if (!file.exists(executable)) stop("Align executable not found: ", executable)
 for (nm in c("refDTM", "alignDTM")) {
-  if (!file.exists(p[[nm]])) stop(nm, " not found: ", p[[nm]])
+  if (!file.exists(flt_path(p[[nm]]))) stop(nm, " not found: ", p[[nm]])
 }
 
-attempts_dir <- file.path(dirname(out_bases$outOutlier), "align_attempts")
-dir.create(attempts_dir, showWarnings = FALSE, recursive = TRUE)
+run_dir     <- file.path(dirname(out_bases$outOutlier), "align_run")
+run_scratch <- file.path(p$scratch_dir, "align_run")
+run_log     <- file.path(run_dir, "align.log")
+input_copy  <- file.path(run_dir, "input_align.txt")
+run_out     <- lapply(out_bases, function(b) file.path(run_dir, basename(b)))
+run_path    <- function(key) if (is.null(run_out[[key]])) "NOFILE" else run_out[[key]]
+dir.create(run_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(run_scratch, showWarnings = FALSE, recursive = TRUE)
 
-## ---- Tile layout, as Align's getTiles() lays it out ------------------------------------------
+input_file <- TWutils::align_input(
+  p$refDTM, p$alignDTM, p$refGrnd, p$alignGrnd, p$refDSM, p$alignDSM,
+  p$iterations, p$k, p$dampener, run_path("outDTM"),
+  tile_nx, tile_ny, p$overlap, p$radius, p$nslope, p$maxSlope, p$nAzimuth,
+  run_path("outbins"), run_path("outDif"), run_path("outOutlier"), run_scratch,
+  convergence = p$convergence, minPoints = p$min_tile_points,
+  derivatives = p$derivatives, applySlope = p$applySlope, weights = p$weights,
+  groundMaskRadius = p$groundMaskRadius,
+  waterGradThreshold = p$waterGradThreshold, waterCurvThreshold = p$waterCurvThreshold,
+  tileFit = p$tile_fit, tileSelect = p$tile_select,
+  cvBlock = p$cv_block, cvBuffer = p$cv_buffer,
+  minTileSize = p$min_tile_size, maxTileSize = p$max_tile_size,
+  priorPoints = p$prior_points, priorFraction = p$prior_fraction, prior = p$prior,
+  outGradient = TRUE, densityLod = density_lod,
+  outDenOutlier = run_path("outDenOutlier"), outLod = run_path("outLod"),
+  outCenDif = run_path("outCenDif"), outExceed = run_path("outExceed"),
+  outCorDif = run_path("outCorDif"),
+  localOffsetWindow = p$localOffsetWindow, localOffsetMinPoints = p$localOffsetMinPoints,
+  outDX = run_path("outDX"), outDY = run_path("outDY"), outDZ = run_path("outDZ"))
 
-# Fortran NINT: rounds halves away from zero (R's round() rounds them to even).
-nint <- function(x) as.integer(sign(x) * floor(abs(x) + 0.5))
+## ---- Run Align ------------------------------------------------------------------------------
 
-# Same assignments, in the same order, as getTiles() -- with one tile in x or y, later
-# assignments overwrite earlier ones there too.
-tile_layout <- function(ncols, nrows, nx, ny, overlap) {
-  sc <- ec <- mc <- sr <- er <- mr <- matrix(NA_integer_, nx, ny)
-  dcol <- nint(ncols / nx)
-  drow <- nint(nrows / ny)
-  colov <- nint(dcol * overlap)
-  rowov <- nint(drow * overlap)
+# Messages Align echoes, before it reads any data, for each option asked for; one missing means
+# the executable predates the option (Align drops unknown TILES sub-fields without a warning).
+expected_echo <- c(
+  if (p$convergence > 0) c(convergence = "Stop iterating when the aligned DEM changes"),
+  if (p$tile_select %in% c("AUTO", "CV")) c(tile_select = "(SELECT = CV)"),
+  if (p$tile_select %in% c("AUTO REPORT", "REPORT")) c(tile_select = "(SELECT = REPORT)"),
+  if (toupper(p$tile_fit) == "JOINT") c(tile_fit = "(FIT = JOINT)"),
+  if (toupper(p$derivatives) == "CENTRAL") c(derivatives = "x and y derivatives: central differences"),
+  c(outGradient = "The reference gradient will be written next to the reference DEM"),
+  if (density_lod) c(densityLod = "Level of detection from ground-return density"))
 
-  sc[1, 1] <- 1L; sr[1, 1] <- 1L
-  ec[1, 1] <- min(dcol + colov, ncols); er[1, 1] <- min(drow + rowov, nrows)
-  mc[1, 1] <- nint((1 + ec[1, 1]) * 0.5); mr[1, 1] <- nint((1 + er[1, 1]) * 0.5)
-
-  sc[1, ny] <- 1L; ec[1, ny] <- ec[1, 1]
-  sr[1, ny] <- max(nrows - (drow + rowov), 1L); er[1, ny] <- nrows
-  mc[1, ny] <- mc[1, 1]; mr[1, ny] <- nint((sr[1, ny] + er[1, ny]) * 0.5)
-
-  sc[nx, 1] <- max(ncols - (dcol + colov), 1L); ec[nx, 1] <- ncols
-  sr[nx, 1] <- 1L; er[nx, 1] <- er[1, 1]
-  mc[nx, 1] <- nint((sc[nx, 1] + ec[nx, 1]) * 0.5); mr[nx, 1] <- nint((1 + er[nx, 1]) * 0.5)
-
-  sc[nx, ny] <- sc[nx, 1]; ec[nx, ny] <- ncols
-  sr[nx, ny] <- sr[1, ny]; er[nx, ny] <- nrows
-  mc[nx, ny] <- nint((sc[nx, ny] + ec[nx, ny]) * 0.5)
-  mr[nx, ny] <- nint((sr[nx, ny] + er[nx, ny]) * 0.5)
-
-  colov <- nint(dcol * overlap * 0.5)
-  rowov <- nint(drow * overlap * 0.5)
-  inner_cols <- function(i) c(max(dcol * (i - 1) - colov, 1L), min(dcol * i + colov, ncols))
-  inner_rows <- function(j) c(max(drow * (j - 1) - rowov, 1L), min(drow * j + rowov, nrows))
-
-  for (i in seq_len(max(nx - 2, 0)) + 1) {
-    for (j in c(1, ny)) {
-      sc[i, j] <- inner_cols(i)[1]; ec[i, j] <- inner_cols(i)[2]
-      sr[i, j] <- if (j == 1) 1L else sr[1, ny]
-      er[i, j] <- if (j == 1) er[1, 1] else nrows
-      mc[i, j] <- nint((sc[i, j] + ec[i, j]) * 0.5); mr[i, j] <- nint((sr[i, j] + er[i, j]) * 0.5)
-    }
-  }
-  for (j in seq_len(max(ny - 2, 0)) + 1) {
-    for (i in c(1, nx)) {
-      sc[i, j] <- if (i == 1) 1L else sc[nx, 1]
-      ec[i, j] <- if (i == 1) ec[1, 1] else ec[nx, 1]
-      sr[i, j] <- inner_rows(j)[1]; er[i, j] <- inner_rows(j)[2]
-      mc[i, j] <- nint((sc[i, j] + ec[i, j]) * 0.5); mr[i, j] <- nint((sr[i, j] + er[i, j]) * 0.5)
-    }
-  }
-  for (j in seq_len(max(ny - 2, 0)) + 1) {
-    for (i in seq_len(max(nx - 2, 0)) + 1) {
-      sc[i, j] <- inner_cols(i)[1]; ec[i, j] <- inner_cols(i)[2]
-      sr[i, j] <- inner_rows(j)[1]; er[i, j] <- inner_rows(j)[2]
-      mc[i, j] <- nint((sc[i, j] + ec[i, j]) * 0.5); mr[i, j] <- nint((sr[i, j] + er[i, j]) * 0.5)
-    }
-  }
-
-  data.frame(i = as.vector(row(sc)), j = as.vector(col(sc)),
-             startcol = as.vector(sc), endcol = as.vector(ec), midcol = as.vector(mc),
-             startrow = as.vector(sr), endrow = as.vector(er), midrow = as.vector(mr))
-}
-
-## ---- Cells with data, in blocks ---------------------------------------------------------------
-## Cells Align can use: reference DTM, align DTM (when it shares the reference grid -- Align
-## resamples it otherwise), and both ground-return rasters > 0. Summed into blocks of
-## block x block cells so a tile's count is a sum over a small matrix.
-
-ref <- terra::rast(flt_path(p$refDTM))
-dtm_ncols <- terra::ncol(ref)
-dtm_nrows <- terra::nrow(ref)
-cellsize  <- terra::res(ref)[1]
-dtm_ext   <- terra::ext(ref)
-
-valid <- !is.na(ref)
-aln <- terra::rast(flt_path(p$alignDTM))
-if (terra::compareGeom(ref, aln, stopOnError = FALSE)) {
-  valid <- valid & !is.na(aln)
-} else {
-  message("alignDTM is not on the reference DTM's grid -- predicting tiles from the reference ",
-          "DTM alone.")
-}
-for (nm in c("refGrnd", "alignGrnd")) {
-  if (toupper(p[[nm]]) != "NOFILE") {
-    g <- terra::rast(flt_path(p[[nm]]))
-    if (!terra::compareGeom(ref, g, stopOnError = FALSE)) {
-      stop(nm, " is not on the reference DTM's grid: ", p[[nm]])
-    }
-    valid <- valid & !is.na(g) & g > 0
-  }
-}
-
-block <- max(1L, ceiling(max(dtm_ncols, dtm_nrows) / 1500))
-counts <- if (block > 1) terra::aggregate(valid, fact = block, fun = "sum", na.rm = TRUE) else valid
-counts <- terra::as.matrix(counts, wide = TRUE)  # rows north to south, as Align's rows
-counts[is.na(counts)] <- 0
-data_cells <- sum(counts)
-if (data_cells == 0) stop("The reference DTM has no cells with data (after the ground-return masks).")
-
-# Cells with data in each tile (to block resolution), and whether Align should solve it:
-# Align needs MIN POINTS regression points and a quarter of the cells with data; outlier and
-# edge cells drop out of the regression, so include_fraction of the cells with data is assumed
-# to make it in.
-include_fraction <- 0.85
-predict_tiles <- function(nx, ny) {
-  tl <- tile_layout(dtm_ncols, dtm_nrows, nx, ny, p$overlap)
-  bc1 <- (tl$startcol - 1) %/% block + 1; bc2 <- pmin((tl$endcol - 1) %/% block + 1, ncol(counts))
-  br1 <- (tl$startrow - 1) %/% block + 1; br2 <- pmin((tl$endrow - 1) %/% block + 1, nrow(counts))
-  tl$data_cells <- mapply(function(a, b, c, d) sum(counts[c:d, a:b]), bc1, bc2, br1, br2)
-  tl$predicted_ok <- tl$data_cells * include_fraction >= p$min_tile_points
-  tl
-}
-
-# Candidate layouts keep the tile aspect ratio near the DTM's (the short side's count rounded
-# both down and up). Picks the one predicting more than more_than solved tiles whose count is
-# closest to target (fewer tiles on a tie); NULL if none predicts more than more_than.
-width_m  <- dtm_ncols * cellsize
-height_m <- dtm_nrows * cellsize
-choose_layout <- function(target, more_than = -Inf) {
-  max_n <- max(1, ceiling(max(width_m, height_m) / max(cellsize * 100, 50)))
-  ratio <- min(width_m, height_m) / max(width_m, height_m)
-  cand <- do.call(rbind, lapply(seq_len(min(max_n, 60)), function(n) {
-    short <- unique(pmax(1, c(floor(n * ratio), ceiling(n * ratio))))
-    if (width_m >= height_m) cbind(n, short) else cbind(short, n)
-  }))
-  cand <- unique(cand)
-  scored <- do.call(rbind, lapply(seq_len(nrow(cand)), function(r) {
-    tl <- predict_tiles(cand[r, 1], cand[r, 2])
-    data.frame(nx = cand[r, 1], ny = cand[r, 2], solved = sum(tl$predicted_ok))
-  }))
-  scored <- scored[scored$solved > more_than, ]
-  if (nrow(scored) == 0) return(NULL)
-  scored <- scored[order(abs(scored$solved - target), scored$nx * scored$ny), ]
-  scored[1, ]
-}
-
-## ---- Reading Align's log -------------------------------------------------------------------
-
-num_after <- function(line, label) {
-  as.numeric(sub("[Dd]", "E", trimws(sub(paste0(".*", label), "", line))))
-}
-
-parse_align_log <- function(lines) {
+check_echo <- function(lines) {
   lines <- trimws(lines)
-  out <- list(iterations = NULL, tiles = NULL, insufficient = NULL)
-  phase <- "setup"; iter <- NA; zmean <- NA; ti <- NA; tj <- NA; rec <- NULL
-  iter_rows <- list(); tile_rows <- list(); insuff_rows <- list(); global_rows <- list()
-  flush_tile <- function() {
-    if (!is.null(rec)) tile_rows[[length(tile_rows) + 1]] <<- as.data.frame(rec)
-    rec <<- NULL
+  unknown_at <- grep("^WARNING: unrecognized keywords", lines)
+  if (length(unknown_at)) {
+    following <- lines[seq(unknown_at[1] + 1, min(length(lines), unknown_at[1] + 5))]
+    return(paste0("it reports unrecognized keywords (", paste(following, collapse = "; "),
+                  " ...)"))
   }
-  pending_insufficient <- FALSE
-  for (ln in lines) {
-    if (ln == "Global shift") { phase <- "global"; next }
-    if (ln == "Iterating over tiles") { flush_tile(); phase <- "tiles"; next }
-    if (startsWith(ln, "Version:")) out$version <- trimws(sub("Version:", "", ln))
-    if (startsWith(ln, "Stop iterating when RMSE changes")) out$convergence_applied <- TRUE
-    if (startsWith(ln, "In limits RMSE =")) out$starting_rmse <- num_after(ln, "=")
-    if (grepl("^Iteration [0-9]+$", ln)) { iter <- as.integer(sub("Iteration ", "", ln)); next }
-    if (startsWith(ln, "zmean =")) { zmean <- num_after(ln, "="); next }
-    if (startsWith(ln, "RMSE =")) {
-      flush_tile()
-      iter_rows[[length(iter_rows) + 1]] <- data.frame(phase = phase, iteration = iter,
-                                                       zmean = zmean, rmse = num_after(ln, "="))
-      next
-    }
-    if (grepl("^Global shift converged after iteration", ln)) out$global_converged <- TRUE
-    if (grepl("^Global shift not converged", ln)) out$global_converged <- FALSE
-    if (grepl("^Tile shifts converged after iteration", ln)) out$tiles_converged <- TRUE
-    if (grepl("^Tile shifts not converged", ln)) out$tiles_converged <- FALSE
-    if (phase == "global") {
-      if (startsWith(ln, "delta x =")) global_rows[[length(global_rows) + 1]] <- list(dx = num_after(ln, "="))
-      if (startsWith(ln, "delta y =")) global_rows[[length(global_rows)]]$dy <- num_after(ln, "=")
-      if (startsWith(ln, "beta 0 ="))  global_rows[[length(global_rows)]]$beta0 <- num_after(ln, "=")
-    }
-    if (phase == "tiles") {
-      if (startsWith(ln, "X tile =")) {
-        flush_tile(); rec <- list(iteration = iter, i = as.integer(num_after(ln, "=")))
-        next
-      }
-      if (!is.null(rec)) {
-        if (startsWith(ln, "Y tile ="))         rec$j <- as.integer(num_after(ln, "="))
-        if (startsWith(ln, "Points included:")) rec$points <- num_after(ln, ":")
-        if (startsWith(ln, "delta x ="))        rec$dx <- num_after(ln, "=")
-        if (startsWith(ln, "delta y ="))        rec$dy <- num_after(ln, "=")
-        if (startsWith(ln, "beta 0 ="))         rec$beta0 <- num_after(ln, "=")
-        if (startsWith(ln, "SE delta x (m) =")) rec$se_dx <- num_after(ln, "=")
-        if (startsWith(ln, "SE delta y (m) =")) rec$se_dy <- num_after(ln, "=")
-        if (startsWith(ln, "SE beta 0 (m) ="))  rec$se_beta0 <- num_after(ln, "=")
-      }
-      if (ln == "Insufficient points for tile") { flush_tile(); pending_insufficient <- TRUE; ti <- NA; next }
-      if (pending_insufficient && startsWith(ln, "Tile x =")) { ti <- as.integer(num_after(ln, "=")); next }
-      if (pending_insufficient && startsWith(ln, "Tile y =")) {
-        tj <- as.integer(num_after(ln, "="))
-        insuff_rows[[length(insuff_rows) + 1]] <- data.frame(iteration = iter, i = ti, j = tj)
-        pending_insufficient <- FALSE
-        next
-      }
-    }
-    if (startsWith(ln, "Starting RMSE ="))  out$starting_rmse <- num_after(ln, "=")
-    if (startsWith(ln, "Ending RMSE ="))    out$ending_rmse <- num_after(ln, "=")
-    if (startsWith(ln, "Ending mean ="))    out$ending_mean <- num_after(ln, "=")
-    if (startsWith(ln, "Total mean ="))     out$total_mean <- num_after(ln, "=")
-    if (grepl("No tiles had enough points", ln, fixed = TRUE)) out$no_tiles <- TRUE
-  }
-  flush_tile()
-  if (length(iter_rows))   out$iterations   <- do.call(rbind, iter_rows)
-  if (length(tile_rows))   out$tiles        <- do.call(rbind, lapply(tile_rows, function(r) {
-    for (nm in c("j", "points", "dx", "dy", "beta0", "se_dx", "se_dy", "se_beta0")) {
-      if (is.null(r[[nm]])) r[[nm]] <- NA
-    }
-    r[c("iteration", "i", "j", "points", "dx", "dy", "beta0", "se_dx", "se_dy", "se_beta0")]
-  }))
-  if (length(insuff_rows)) out$insufficient <- do.call(rbind, insuff_rows)
-  # Each iteration's shift is applied on top of the last, so the global shift is their sum.
-  out$global_shift <- c(dx = sum(vapply(global_rows, function(r) r$dx %||% 0, 0)),
-                        dy = sum(vapply(global_rows, function(r) r$dy %||% 0, 0)),
-                        beta0 = sum(vapply(global_rows, function(r) r$beta0 %||% 0, 0)))
-  out
+  missing <- names(expected_echo)[!vapply(expected_echo, function(s)
+    any(grepl(s, lines, fixed = TRUE)), logical(1))]
+  if (length(missing)) return(paste0("it didn't acknowledge ", paste(missing, collapse = ", ")))
+  NULL
 }
 
-## ---- One Align attempt ----------------------------------------------------------------------
+# Echoes the log lines worth following while Align runs.
+progress_pattern <- paste0("^(Global shift|Iterating over tiles|Fitting the tile shifts|",
+                           "Iteration [0-9]+$|RMSE =|Change in aligned DEM|Ratio to the previous|",
+                           ".*converged|Cross-validation of the tile count|Selected:|",
+                           "The choice is the finest|Nodes held|Level of detection|",
+                           "Ending RMSE|Starting RMSE|ERROR|Error|WARNING|No tiles)")
 
-attempt_paths <- function(n) {
-  dir <- file.path(attempts_dir, sprintf("attempt_%d", n))
-  list(dir = dir,
-       scratch = file.path(p$scratch_dir, sprintf("align_attempt_%d", n)),
-       log = file.path(dir, "align.log"),
-       out = lapply(out_bases, function(b) file.path(dir, basename(b))))
+finished_log <- function() {
+  file.exists(run_log) && any(grepl("Ending RMSE =", readLines(run_log, warn = FALSE),
+                                    fixed = TRUE))
 }
+same_input <- file.exists(input_copy) &&
+  identical(readLines(input_copy, warn = FALSE), readLines(input_file, warn = FALSE))
+expected_flts <- vapply(run_out[setdiff(names(run_out), "outbins")], flt_path, character(1))
 
-# Echoes the log lines worth following while Align runs: phases, RMSE, convergence, problems.
-progress_pattern <- paste0("^(Global shift$|Iterating over tiles|RMSE =|In limits RMSE|",
-                           "Iteration [0-9]+$|.*converged|Insufficient points|Ending RMSE|",
-                           "Starting RMSE|ERROR|Error|No tiles)")
-
-run_attempt <- function(n, nx, ny) {
-  ap <- attempt_paths(n)
-  dir.create(ap$dir, showWarnings = FALSE, recursive = TRUE)
-  dir.create(ap$scratch, showWarnings = FALSE, recursive = TRUE)
-
-  # A finished attempt with these tiles is read back rather than rerun.
-  input_copy <- file.path(ap$dir, "input_align.txt")
-  if (file.exists(flt_path(ap$out$outOutlier)) && file.exists(ap$log) && file.exists(input_copy)) {
-    tiles_line <- grep("^TILES:", readLines(input_copy, warn = FALSE), value = TRUE)
-    log_lines <- readLines(ap$log, warn = FALSE)
-    if (length(tiles_line) == 1 &&
-        startsWith(tiles_line, sprintf("TILES: X = %d, Y = %d, OVERLAP = %s", nx, ny,
-                                       format(p$overlap))) &&
-        any(grepl("Ending RMSE =", log_lines, fixed = TRUE))) {
-      message("\n==== Align attempt ", n, " (", nx, " x ", ny, " tiles): already complete, ",
-              "reading ", ap$log, " ====")
-      return(list(log = log_lines, elapsed_min = NA_real_, status = 0L))
-    }
-  }
-  unlink(list.files(ap$dir, full.names = TRUE))
-
-  input_file <- TWutils::align_input(p$refDTM, p$alignDTM, p$refGrnd, p$alignGrnd,
-                                     p$refDSM, p$alignDSM,
-                                     p$iterations, p$k, p$dampener, ap$out$outDTM,
-                                     nx, ny, p$overlap, p$radius,
-                                     p$nslope, p$maxSlope, p$nAzimuth,
-                                     ap$out$outbins, ap$out$outDif, ap$out$outOutlier,
-                                     ap$scratch, convergence = p$convergence,
-                                     minPoints = p$min_tile_points)
-
-  message("\n==== Align attempt ", n, ": ", nx, " x ", ny, " tiles, up to ", p$iterations,
-          " iterations, convergence ", p$convergence, " m ====\n  log: ", ap$log)
+elapsed <- NA_real_; status <- 0L
+if (same_input && finished_log() && all(file.exists(expected_flts))) {
+  message("\n==== Align: a finished run with the same input is in ", run_dir,
+          " -- not rerun ====")
+} else {
+  unlink(list.files(run_dir, full.names = TRUE))
+  file.copy(input_file, input_copy, overwrite = TRUE)
+  message("\n==== Align: ",
+          if (auto_tiles) "tiles chosen by cross-validation (SELECT = AUTO)" else
+            paste0(tile_nx, " x ", tile_ny, " tiles"),
+          ", up to ", p$iterations, " iterations per loop, convergence ", p$convergence,
+          " m ====\n  log: ", run_log)
   start_time <- Sys.time()
-  proc <- processx::process$new(executable, input_file, stdout = ap$log, stderr = "2>&1",
+  proc <- processx::process$new(executable, input_file, stdout = run_log, stderr = "2>&1",
                                 cleanup = TRUE)
-  shown <- 0L
+  shown <- 0L; echo_checked <- FALSE
   show_new_lines <- function() {
-    if (!file.exists(ap$log)) return(invisible())
-    lines <- readLines(ap$log, warn = FALSE)
-    # Align echoes its settings before it starts work; an executable older than alignSlope2
-    # 1.0.6 silently ignores CONVERGENCE, so stop it now rather than after a full run.
-    if (p$convergence > 0 && any(startsWith(trimws(lines), "Number of iterations =")) &&
-        !any(startsWith(trimws(lines), "Stop iterating when RMSE changes"))) {
-      proc$kill()
-      stop("Align (", executable, ") ignored CONVERGENCE -- it predates alignSlope2 1.0.6. ",
-           "Rebuild Projects\\align and rerun.")
+    if (!file.exists(run_log)) return(invisible())
+    lines <- readLines(run_log, warn = FALSE)
+    # The settings echo ends before Align reads the elevations.
+    if (!echo_checked && (any(grepl("Reading elevations", lines, fixed = TRUE)) ||
+                          !proc$is_alive())) {
+      echo_checked <<- TRUE
+      problem <- check_echo(lines)
+      if (!is.null(problem)) {
+        proc$kill()
+        stop("Align (", executable, ") is older than this pipeline: ", problem, ". Rebuild ",
+             "Projects\\align from GridUtilities 8a08fa6 or later and rerun. Log: ", run_log)
+      }
     }
     if (length(lines) > shown) {
       new <- trimws(lines[(shown + 1):length(lines)])
@@ -487,166 +363,162 @@ run_attempt <- function(n, nx, ny) {
   show_new_lines()
   status <- proc$get_exit_status()
   elapsed <- as.numeric(difftime(Sys.time(), start_time, units = "mins"))
-  file.copy(input_file, input_copy, overwrite = TRUE)
-  message("Align attempt ", n, " finished in ", round(elapsed, 1), " min, exit status ", status)
-  list(log = readLines(ap$log, warn = FALSE), elapsed_min = elapsed, status = status)
+  message("Align finished in ", round(elapsed, 1), " min, exit status ", status)
+  if (status != 0 || !finished_log()) {
+    stop("Align failed (exit status ", status, "); see ", run_log)
+  }
+  missing <- expected_flts[!file.exists(expected_flts)]
+  if (length(missing)) {
+    stop("Align finished but didn't write ", paste(basename(missing), collapse = ", "),
+         "; see ", run_log)
+  }
 }
 
-## ---- The search ---------------------------------------------------------------------------
+## ---- Read Align's log -------------------------------------------------------------------------
+## Align's console output is wrapped at 80 columns, but each output raster's .log copy isn't, and
+## the copy written last (the longest) holds the whole run up to the final results.
 
-attempt_rows <- list(); iteration_rows <- list(); tile_rows <- list()
-best <- NA_integer_
-# target: solved tiles wanted from the next attempt; must_exceed: a finer layout has to
-# predict more solved tiles than this (the last successful attempt's), or the search stops.
-target <- if (auto_tiles) max(1, round(data_cells * cellsize^2 / p$tile_size_m^2)) else NA
-must_exceed <- -Inf
-stop_reason <- "max_attempts reached"
+logs <- list.files(run_dir, pattern = "\\.log$", full.names = TRUE)
+logs <- setdiff(logs, run_log)
+log_lines <- if (length(logs)) {
+  sizes <- vapply(logs, function(f) length(readLines(f, warn = FALSE)), integer(1))
+  readLines(logs[which.max(sizes)], warn = FALSE)
+} else readLines(run_log, warn = FALSE)
 
-message("Reference DTM: ", dtm_ncols, " x ", dtm_nrows, " cells of ", signif(cellsize, 6),
-        " m; ", signif(data_cells * cellsize^2 / 1e6, 4), " km^2 with data.")
+num <- function(x) suppressWarnings(as.numeric(sub("[Dd]", "E", trimws(x))))
+num_after <- function(line, sep = "=") num(sub(paste0("^.*", sep), "", line))
+nums_in <- function(text) num(regmatches(text, gregexpr("-?[0-9]*\\.?[0-9]+([EeDd][-+]?[0-9]+)?",
+                                                        text))[[1]])
 
-for (n in seq_len(p$max_attempts)) {
+parse_align_log <- function(lines) {
+  lines <- trimws(lines)
+  out <- list()
+  phase <- "setup"; iter <- NA_integer_
+  iters <- list()
+  cur <- function() {
+    key <- paste(phase, iter)
+    if (is.null(iters[[key]])) iters[[key]] <<- list(phase = phase, iteration = iter)
+    key
+  }
+  set <- function(...) { k <- cur(); v <- list(...); iters[[k]][names(v)] <<- v }
+  cv_rows <- list(); node_rows <- list(); in_cv <- FALSE; in_nodes <- FALSE
 
-  # Choose this attempt's tiles.
-  if (n == 1 && !auto_tiles) {
-    layout <- data.frame(nx = fixed_nx, ny = fixed_ny,
-                         solved = sum(predict_tiles(fixed_nx, fixed_ny)$predicted_ok))
-  } else {
-    layout <- choose_layout(target, more_than = must_exceed)
-    if (is.null(layout)) {
-      stop_reason <- paste0("no finer layout is predicted to solve more than ", must_exceed,
-                            " tiles")
-      break
+  for (ln in lines) {
+    # "Version: x" on the console, "Version x" in the log copies
+    if (is.null(out$version) && grepl("^Version:? ", ln)) out$version <- sub("^Version:? +", "", ln)
+    if (is.null(out$compiled) && grepl("^Compiled:? ", ln)) out$compiled <- sub("^Compiled:? +", "", ln)
+    if (ln == "Global shift") { phase <- "global"; iter <- NA; next }
+    if (startsWith(ln, "Cross-validation of the tile count")) { in_cv <- TRUE; next }
+    if (startsWith(ln, "Fitting the tile shifts") || ln == "Iterating over tiles") {
+      phase <- "tiles"; iter <- NA; in_cv <- FALSE
     }
-  }
-  tl <- predict_tiles(layout$nx, layout$ny)
-  message("\nAttempt ", n, ": ", layout$nx, " x ", layout$ny, " tiles, ", layout$solved,
-          " predicted to have enough points",
-          if (!is.na(target)) paste0(" (target ", round(target), ")"))
+    if (startsWith(ln, "Node totals")) { in_nodes <- TRUE; next }
 
-  run <- run_attempt(n, layout$nx, layout$ny)
-  res <- parse_align_log(run$log)
-
-  # Per-tile table: geometry from the layout; points and standard errors from the last tiled
-  # iteration; dx/dy/beta0 (the last iteration's correction, which should be small once
-  # converged); and the total shift at the tile center -- the global shift plus every tiled
-  # iteration's, NA if the tile was ever filled from its neighbors rather than solved.
-  last_iter <- if (!is.null(res$iterations) && any(res$iterations$phase == "tiles")) {
-    max(res$iterations$iteration[res$iterations$phase == "tiles"])
-  } else NA
-  if (!is.null(res$tiles)) {
-    n_tile_iters <- sum(res$iterations$phase == "tiles")
-    totals <- aggregate(cbind(dx, dy, beta0) ~ i + j, data = res$tiles, FUN = sum)
-    solved_iters <- aggregate(iteration ~ i + j, data = res$tiles, FUN = length)
-    totals <- merge(totals, solved_iters, by = c("i", "j"))
-    always <- totals$iteration == n_tile_iters
-    totals$dx_total    <- ifelse(always, res$global_shift[["dx"]] + totals$dx, NA)
-    totals$dy_total    <- ifelse(always, res$global_shift[["dy"]] + totals$dy, NA)
-    totals$beta0_total <- ifelse(always, res$global_shift[["beta0"]] + totals$beta0, NA)
-    totals <- totals[c("i", "j", "dx_total", "dy_total", "beta0_total")]
-  }
-  tiles_out <- tl
-  tiles_out$x_min <- dtm_ext$xmin + (tl$startcol - 1) * cellsize
-  tiles_out$x_max <- dtm_ext$xmin + tl$endcol * cellsize
-  tiles_out$y_max <- dtm_ext$ymax - (tl$startrow - 1) * cellsize
-  tiles_out$y_min <- dtm_ext$ymax - tl$endrow * cellsize
-  tiles_out$x_center <- dtm_ext$xmin + (tl$midcol - 0.5) * cellsize
-  tiles_out$y_center <- dtm_ext$ymax - (tl$midrow - 0.5) * cellsize
-  if (!is.null(res$tiles) && !is.na(last_iter)) {
-    solved <- res$tiles[res$tiles$iteration == last_iter, c("i", "j", "points", "dx", "dy",
-                                                            "beta0", "se_dx", "se_dy",
-                                                            "se_beta0")]
-    tiles_out <- merge(tiles_out, solved, by = c("i", "j"), all.x = TRUE)
-    tiles_out <- merge(tiles_out, totals, by = c("i", "j"), all.x = TRUE)
-  }
-  tiles_out$global_dx <- res$global_shift[["dx"]]
-  tiles_out$global_dy <- res$global_shift[["dy"]]
-  tiles_out$global_beta0 <- res$global_shift[["beta0"]]
-  insufficient_ij <- if (!is.null(res$insufficient) && !is.na(last_iter)) {
-    res$insufficient[res$insufficient$iteration == last_iter, c("i", "j")]
-  } else data.frame(i = integer(0), j = integer(0))
-  tiles_out$insufficient <- paste(tiles_out$i, tiles_out$j) %in%
-    paste(insufficient_ij$i, insufficient_ij$j)
-  tiles_out$attempt <- n
-  tile_rows[[n]] <- tiles_out
-
-  if (!is.null(res$iterations)) iteration_rows[[n]] <- cbind(attempt = n, res$iterations)
-
-  global_rmse <- if (!is.null(res$iterations) && any(res$iterations$phase == "global")) {
-    tail(res$iterations$rmse[res$iterations$phase == "global"], 1)
-  } else NA_real_
-  ok <- run$status == 0 && !is.null(res$ending_rmse) && is.finite(res$ending_rmse)
-
-  row <- data.frame(
-    attempt = n, tileNx = layout$nx, tileNy = layout$ny, tiles = layout$nx * layout$ny,
-    tiles_predicted_ok = layout$solved, tiles_insufficient = nrow(insufficient_ij),
-    global_iterations = sum(res$iterations$phase == "global"),
-    global_converged = res$global_converged %||% NA,
-    tile_iterations = sum(res$iterations$phase == "tiles"),
-    tile_converged = res$tiles_converged %||% NA,
-    starting_rmse = res$starting_rmse %||% NA, global_rmse = global_rmse,
-    ending_rmse = if (ok) res$ending_rmse else NA, ending_mean = res$ending_mean %||% NA,
-    rmse_reduction = NA_real_, elapsed_min = run$elapsed_min, exit_status = run$status,
-    selected = FALSE, decision = "", log = attempt_paths(n)$log)
-
-  if (!ok) {
-    row$decision <- if (isTRUE(res$no_tiles)) "failed: no tile had enough points" else "failed"
-    attempt_rows[[n]] <- row
-    # Too many tiles for the data and nothing better yet: try a coarser layout.
-    if (is.na(best) && isTRUE(res$no_tiles) && n < p$max_attempts && layout$nx * layout$ny > 1) {
-      target <- max(1, floor(layout$solved / p$tile_growth))
-      next
+    if (in_cv) {
+      m <- regmatches(ln, regexec(paste0(
+        "^([0-9]+) x +([0-9]+) +([0-9.]+) +([0-9]+) +([0-9.]+) +(-?[0-9.]+) \\+- *([0-9.]+)",
+        "(?: +(-?[0-9.]+) \\+- *([0-9.]+))? +([0-9.]+) +([0-9.]+)(.*)$"), ln, perl = TRUE))[[1]]
+      if (length(m)) {
+        cv_rows[[length(cv_rows) + 1]] <- data.frame(
+          tiles_x = as.integer(m[2]), tiles_y = as.integer(m[3]), tile_size_m = num(m[4]),
+          unknowns = as.integer(m[5]), prior_scale = num(m[6]),
+          gain_mm2 = num(m[7]), gain_se = num(m[8]),
+          gain_no_buffer_mm2 = num(m[9]), gain_no_buffer_se = num(m[10]),
+          heldout_rms_mm = num(m[11]), block_mean_spread_mm = num(m[12]),
+          best = grepl("<- best", m[13], fixed = TRUE),
+          chosen = grepl("<- chosen", m[13], fixed = TRUE))
+        next
+      }
+      if (startsWith(ln, "Folds:")) out$cv_folds <- ln
+      if (startsWith(ln, "Training cells per fold:")) out$cv_training <- ln
+      if (startsWith(ln, "The choice is the finest grid tried")) out$finest_chosen <- TRUE
+      if (startsWith(ln, "Selected: tiles")) {
+        v <- nums_in(sub("Selected: tiles", "", ln))
+        out$tiles_x <- as.integer(v[1]); out$tiles_y <- as.integer(v[2]); out$prior_scale <- v[3]
+      }
+      if (startsWith(ln, "No candidate could be fitted")) out$select_failed <- TRUE
     }
-    stop_reason <- paste0("attempt ", n, " failed")
-    break
+
+    if (in_nodes) {
+      if (grepl("^i +j +points", ln)) next
+      v <- nums_in(ln)
+      if (length(v) == 8 && grepl("^[0-9]", ln)) {
+        node_rows[[length(node_rows) + 1]] <- data.frame(
+          i = as.integer(v[1]), j = as.integer(v[2]), points_k = v[3], x_mm = v[4],
+          y_mm = v[5], z_mm = v[6], theta1_mm = v[7], theta2_mm = v[8])
+        next
+      }
+      in_nodes <- FALSE
+    }
+
+    if (startsWith(ln, "Tiles X =")) out$tiles_x <- as.integer(num_after(ln))
+    if (startsWith(ln, "Tiles Y =")) out$tiles_y <- as.integer(num_after(ln))
+    if (startsWith(ln, "In limits RMSE =") && phase == "setup") out$starting_rmse <- num_after(ln)
+    if (grepl("^Iteration [0-9]+$", ln)) { iter <- as.integer(sub("Iteration ", "", ln)); next }
+    if (phase %in% c("global", "tiles") && !is.na(iter)) {
+      if (startsWith(ln, "zmean =")) set(zmean = num_after(ln))
+      if (startsWith(ln, "RMSE =")) set(rmse = num_after(ln))
+      if (startsWith(ln, "Points included")) set(points = num_after(ln, "[:=]"))
+      if (startsWith(ln, "Change in aligned DEM")) {
+        # "... max: all  p50 p99 max;  g >= 0.5  p50 p99 max"
+        parts <- strsplit(sub("^.*max: *all", "", ln), "g >= 0.5", fixed = TRUE)[[1]]
+        a <- nums_in(parts[1]); s <- if (length(parts) > 1) nums_in(parts[2]) else rep(NA, 3)
+        set(change_p50 = a[1], change_p99 = a[2], change_max = a[3],
+            steep_change_p50 = s[1], steep_change_p99 = s[2], steep_change_max = s[3])
+      }
+      if (startsWith(ln, "Ratio to the previous P99")) {
+        v <- nums_in(sub("^.*P99 =", "", ln))
+        set(p99_ratio = v[1], predicted_remaining = v[length(v)])
+      }
+      if (phase == "global") {
+        if (startsWith(ln, "delta x =")) set(delta_x = num_after(ln))
+        if (startsWith(ln, "delta y =")) set(delta_y = num_after(ln))
+        if (startsWith(ln, "beta 0 ="))  set(beta0 = num_after(ln))
+        if (startsWith(ln, "beta 1 ="))  set(beta1 = num_after(ln))
+        if (startsWith(ln, "beta 2 ="))  set(beta2 = num_after(ln))
+      } else {
+        if (startsWith(ln, "Nodes held by their neighbours")) set(nodes_held = num_after(ln))
+        if (startsWith(ln, "Node increments, RMS")) {
+          v <- nums_in(sub("^.*=", "", ln))
+          set(inc_rms_x_mm = v[1], inc_rms_y_mm = v[2], inc_rms_z_mm = v[3])
+        }
+        if (startsWith(ln, "Node increments, max")) {
+          v <- nums_in(sub("^.*=", "", ln))
+          set(inc_max_x_mm = v[1], inc_max_y_mm = v[2], inc_max_z_mm = v[3])
+        }
+      }
+    }
+    m <- regmatches(ln, regexec("^(Global shift|Tile shifts) (converged after iteration|not converged, iterations =) *([0-9]+)", ln))[[1]]
+    if (length(m)) {
+      loop <- if (m[2] == "Global shift") "global" else "tiles"
+      out[[paste0(loop, "_converged")]] <- startsWith(m[3], "converged")
+      out[[paste0(loop, "_iterations")]] <- as.integer(m[4])
+    }
+    if (startsWith(ln, "Starting RMSE =")) out$starting_rmse <- num_after(ln)
+    if (startsWith(ln, "Ending RMSE ="))   out$ending_rmse <- num_after(ln)
+    if (startsWith(ln, "Starting mean =")) out$starting_mean <- num_after(ln)
+    if (startsWith(ln, "Ending mean ="))   out$ending_mean <- num_after(ln)
   }
 
-  if (is.na(best)) {
-    row$decision <- "first successful attempt"
-    best <- n
-  } else {
-    best_rmse <- attempt_rows[[best]]$ending_rmse
-    row$rmse_reduction <- (best_rmse - row$ending_rmse) / best_rmse
-    if (row$rmse_reduction >= p$min_rmse_reduction) {
-      row$decision <- sprintf("kept: RMSE %.1f%% below attempt %d", 100 * row$rmse_reduction, best)
-      best <- n
-    } else {
-      row$decision <- sprintf("not kept: RMSE %.1f%% below attempt %d, less than %.1f%%",
-                              100 * row$rmse_reduction, best, 100 * p$min_rmse_reduction)
-      attempt_rows[[n]] <- row
-      stop_reason <- "a finer layout no longer reduced RMSE enough"
-      break
-    }
+  all_cols <- unique(unlist(lapply(iters, names)))
+  if (length(iters)) {
+    out$iterations <- do.call(rbind, lapply(iters, function(r) {
+      r[setdiff(all_cols, names(r))] <- NA
+      as.data.frame(r[all_cols])
+    }))
+    rownames(out$iterations) <- NULL
   }
-  attempt_rows[[n]] <- row
-  must_exceed <- layout$solved
-  target <- max(layout$solved, 1) * p$tile_growth
+  if (length(cv_rows)) out$select <- do.call(rbind, cv_rows)
+  if (length(node_rows)) out$nodes <- do.call(rbind, node_rows)
+  out
 }
 
-attempts <- do.call(rbind, attempt_rows)
-if (is.na(best)) {
-  write.csv(attempts, file.path(attempts_dir, "align_attempts.csv"), row.names = FALSE)
-  stop("No Align attempt succeeded (", stop_reason, "); see the logs in ", attempts_dir)
-}
-attempts$selected <- attempts$attempt == best
-message("\nTile search stopped: ", stop_reason, ". Using attempt ", best, " (",
-        attempts$tileNx[best], " x ", attempts$tileNy[best], " tiles, ending RMSE ",
-        signif(attempts$ending_rmse[best], 4), " m).")
+res <- parse_align_log(log_lines)
 
-write.csv(attempts, file.path(attempts_dir, "align_attempts.csv"), row.names = FALSE)
-write.csv(do.call(rbind, iteration_rows), file.path(attempts_dir, "align_iterations.csv"),
-          row.names = FALSE)
-all_cols <- unique(unlist(lapply(tile_rows, names)))
-write.csv(do.call(rbind, lapply(tile_rows, function(t) {
-  t[setdiff(all_cols, names(t))] <- NA
-  t[all_cols]
-})), file.path(attempts_dir, "align_tiles.csv"), row.names = FALSE)
-
-## ---- Move the chosen attempt's outputs into place -------------------------------------------
-## Each file in the attempt folder goes to the output whose base name it starts with (longest match
-## first, so "elev_dif.flt" goes with outDif "elev_dif" rather than outDTM "elev") -- including
-## Align's extra outputs named from a base, such as <outOutlier>DSM (the canopy-based outlier
-## raster) and <outDif>_0 (the unaligned DoD); outOutlier's .flt moves last.
+## ---- Move the outputs into place ------------------------------------------------------------
+## Each file in the run folder goes to the output whose base name it starts with (longest match
+## first, so "elev_dif.flt" goes with outDif "elev_dif" rather than outDTM "elev"); outOutlier's
+## .flt moves last.
 
 move_file <- function(from, to) {
   if (file.exists(to)) unlink(to)
@@ -656,29 +528,93 @@ move_file <- function(from, to) {
   }
 }
 
-chosen <- attempt_paths(best)
-files <- setdiff(list.files(chosen$dir), c("align.log", "input_align.txt"))
-bases <- vapply(chosen$out, basename, character(1))
+run_tables <- c("align_run.csv", "align_iterations.csv", "align_select.csv", "align_nodes.csv")
+files <- setdiff(list.files(run_dir), c("align.log", "input_align.txt", run_tables))
+bases <- vapply(run_out, basename, character(1))
 bases <- bases[order(-nchar(bases))]
 moves <- list()
 for (f in files) {
-  hit <- names(bases)[vapply(bases, function(b) startsWith(f, b), logical(1))]
-  if (length(hit)) {
-    moves[[f]] <- file.path(dirname(out_bases[[hit[1]]]), f)
-  }
+  hit <- names(bases)[vapply(bases, function(b) startsWith(tolower(f), tolower(b)), logical(1))]
+  if (length(hit)) moves[[f]] <- file.path(dirname(out_bases[[hit[1]]]), f)
 }
-outlier_flt <- basename(flt_path(chosen$out$outOutlier))
+outlier_flt <- basename(flt_path(run_out$outOutlier))
 for (f in c(setdiff(names(moves), outlier_flt), intersect(names(moves), outlier_flt))) {
   dir.create(dirname(moves[[f]]), showWarnings = FALSE, recursive = TRUE)
-  move_file(file.path(chosen$dir, f), moves[[f]])
+  move_file(file.path(run_dir, f), moves[[f]])
 }
-message("Moved attempt ", best, "'s outputs to outDTM/outDif/outOutlier/outbins.")
+message("Moved Align's outputs to their final paths (", length(moves), " files).")
 
-if (!isTRUE(p$keep_attempt_rasters)) {
-  for (n in setdiff(attempts$attempt, best)) {
-    rasters <- list.files(attempt_paths(n)$dir, pattern = "\\.(flt|hdr|prj)$", full.names = TRUE)
-    unlink(rasters)
+## ---- Tables for the report --------------------------------------------------------------------
+
+iters <- res$iterations
+n_phase <- function(ph) if (is.null(iters)) 0L else sum(iters$phase == ph)
+final_nodes_held <- if (!is.null(iters) && "nodes_held" %in% names(iters) &&
+                        any(iters$phase == "tiles")) {
+  tail(iters$nodes_held[iters$phase == "tiles"], 1)
+} else NA
+
+run_row <- data.frame(
+  version = res$version %||% NA, compiled = res$compiled %||% NA,
+  tile_select = p$tile_select, tile_fit = toupper(p$tile_fit),
+  tiles_x = res$tiles_x %||% NA, tiles_y = res$tiles_y %||% NA,
+  prior_scale = res$prior_scale %||% NA, finest_chosen = isTRUE(res$finest_chosen),
+  nodes_held = final_nodes_held,
+  global_iterations = res$global_iterations %||% n_phase("global"),
+  global_converged = res$global_converged %||% NA,
+  tile_iterations = res$tiles_iterations %||% n_phase("tiles"),
+  tile_converged = res$tiles_converged %||% NA,
+  convergence_m = p$convergence, max_iterations = p$iterations,
+  starting_rmse = res$starting_rmse %||% NA, ending_rmse = res$ending_rmse %||% NA,
+  starting_mean = res$starting_mean %||% NA, ending_mean = res$ending_mean %||% NA,
+  density_lod = density_lod, elapsed_min = elapsed, exit_status = status,
+  gradient_raster = flt_path(TWutils::align_gradient_raster(p$refDTM, p$radius)),
+  log = run_log)
+write.csv(run_row, file.path(run_dir, "align_run.csv"), row.names = FALSE)
+if (!is.null(iters)) write.csv(iters, file.path(run_dir, "align_iterations.csv"), row.names = FALSE)
+if (!is.null(res[["select"]])) {
+  write.csv(res[["select"]], file.path(run_dir, "align_select.csv"), row.names = FALSE)
+}
+
+# Node positions: the joint fit's nodes are the tiles' midpoints (getTiles() in align_fit.f90),
+# placed as raster points are -- (col, row) at xllcorner + (col-1)*cellsize,
+# yllcorner + (nrows-row)*cellsize.
+nint <- function(x) as.integer(sign(x) * floor(abs(x) + 0.5))  # Fortran NINT
+tile_midpoints <- function(ncols, nrows, nx, ny, overlap) {
+  dcol <- nint(ncols / nx); drow <- nint(nrows / ny)
+  edge_end_c <- min(dcol + nint(dcol * overlap), ncols)
+  edge_end_r <- min(drow + nint(drow * overlap), nrows)
+  edge_start_c <- max(ncols - (dcol + nint(dcol * overlap)), 1L)
+  edge_start_r <- max(nrows - (drow + nint(drow * overlap)), 1L)
+  half_c <- nint(dcol * overlap * 0.5); half_r <- nint(drow * overlap * 0.5)
+  span <- function(k, n, d, half, end1, startn, len) {
+    if (k == 1) c(1L, end1) else if (k == n) c(startn, len)
+    else c(max(d * (k - 1) - half, 1L), min(d * k + half, len))
   }
+  grid <- expand.grid(i = seq_len(nx), j = seq_len(ny))
+  grid$midcol <- vapply(grid$i, function(i) {
+    s <- span(i, nx, dcol, half_c, edge_end_c, edge_start_c, ncols); nint(sum(s) * 0.5)
+  }, integer(1))
+  grid$midrow <- vapply(grid$j, function(j) {
+    s <- span(j, ny, drow, half_r, edge_end_r, edge_start_r, nrows); nint(sum(s) * 0.5)
+  }, integer(1))
+  grid
 }
 
-message("Attempt summaries: ", attempts_dir)
+if (!is.null(res$nodes) && !is.null(res$tiles_x)) {
+  ref <- terra::rast(flt_path(p$refDTM))
+  cs <- terra::res(ref)[1]
+  e <- terra::ext(ref)
+  overlap_used <- p$overlap
+  mid <- tile_midpoints(terra::ncol(ref), terra::nrow(ref), res$tiles_x, res$tiles_y, overlap_used)
+  mid$x <- e$xmin + (mid$midcol - 1) * cs
+  mid$y <- e$ymin + (terra::nrow(ref) - mid$midrow) * cs
+  nodes <- merge(res$nodes, mid[c("i", "j", "x", "y")], by = c("i", "j"), all.x = TRUE)
+  nodes <- nodes[order(nodes$j, nodes$i), ]
+  write.csv(nodes, file.path(run_dir, "align_nodes.csv"), row.names = FALSE)
+}
+
+message("\nAlign: ", res$tiles_x %||% "?", " x ", res$tiles_y %||% "?", " tiles",
+        if (!is.null(res$prior_scale)) paste0(", prior x ", res$prior_scale),
+        if (isTRUE(res$finest_chosen)) " (the finest grid tried -- consider a smaller min_tile_size)",
+        "; ending RMSE ", signif(res$ending_rmse %||% NA, 4), " m.")
+message("Run tables: ", run_dir)

@@ -99,7 +99,7 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   single tile — clipped, unit-converted, reprojected into `output_dtm` — or `existing_dtm` to use
   an already-mosaicked `.flt` as-is, which must already be in meters and `target_crs`; optional
   `[ref_dsm]`/`[align_dsm]` sections work the same way with `output_dsm`/`input_dsm`/`existing_dsm`
-  and default to no DSM), then calls `TWutils::align()` directly. The reference DTM is built first;
+  and default to no DSM), then runs Align through `align_supervisor.R`. The reference DTM is built first;
   the align DTM and both DSMs are then built in a background R session (`future`, logging to
   `<output>_mosaic_dtm.log`) while the ground returns are counted, and Align waits for them — a
   counting failure waits for them too before stopping. Each `ground_returns.R` run gets
@@ -109,20 +109,21 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   pipeline stops if a count raster is older than the reference DTM. Each sub-run is its own `Rscript`
   subprocess and is skipped if its output already exists — apart from that count-raster age check,
   existence is the only check, so outputs must be deleted by hand after changing the polygon or
-  other parameters. With `[align]` `tileNx: auto`/`tileNy: auto` (the template's default), Stage 3
-  runs **align_supervisor.R** instead of calling `TWutils::align()` once.
-- **align_supervisor.R** — runs Align up to `max_attempts` times, choosing the tiles for each:
-  it reproduces Align's `getTiles()` layout over the reference DTM grid and counts cells with data
-  per tile to predict which tiles reach `min_tile_points` (Align's `TILES … MIN POINTS`), so the
-  first layout follows the study area's size *and shape*; each later attempt aims for
-  `tile_growth`× the solved tiles, and is kept only if its ending RMSE is `min_rmse_reduction`
-  below the best so far. Iterations stop early inside Align via its `CONVERGENCE` keyword
-  (alignSlope2 1.0.6+; the supervisor kills an older exe within seconds). It runs the exe itself
-  via `processx` (input file from `TWutils::align_input()`), streaming `align.log` per attempt,
-  then moves the chosen attempt's outputs to `outDTM`/`outDif`/`outOutlier`/`outbins` (outOutlier
-  last) and writes `align_attempts.csv`/`align_iterations.csv`/`align_tiles.csv` to
-  `<outOutlier folder>/align_attempts/` — tile `dx_total`/`dy_total` sum the global and every
-  tiled iteration's shift, since each iteration's shift applies on top of the last.
+  other parameters. Stage 3 always runs **align_supervisor.R**; `[align]` is passed to it as is.
+- **align_supervisor.R** — runs Align once (needs GridUtilities 8a08fa6+). With `tileNx`/`tileNy:
+  auto` (default) Align itself chooses the tile count and prior by block cross-validation
+  (`TILES FIT = JOINT, SELECT = AUTO`; `min_tile_size`, `max_tile_size`, `cv_block`, `cv_buffer`);
+  defaults follow Align's CLAUDE.md: `iterations` 8 with `convergence` 0.005 (change of the aligned
+  DEM), `derivatives` CENTRAL, `nslope` 10 / `maxSlope` 1.5, `densityLod` auto (with both
+  ground-return rasters), and always `OUTPUT GRADIENT RASTER` (`<refDTM>_grad<radius>m`, which
+  LShunter needs). A few seconds in it checks Align's settings echo — unrecognized keywords, or an
+  option not acknowledged (Align drops unknown `TILES` sub-fields silently) — and kills an old exe.
+  It runs the exe via `processx` (input file from `TWutils::align_input()`) into
+  `<outOutlier folder>/align_run/`, streaming `align.log`, then moves every output to its final
+  path by base name (`_0`, `_gain`/`_centre`/`_iqr`, `_fit0.csv`, ... with their base; outOutlier
+  last) and writes `align_run.csv`, `align_iterations.csv`, `align_select.csv` (the CV table) and
+  `align_nodes.csv` (joint-fit node totals, mm, with map positions) there. It parses the longest
+  `<output>.log` copy, because Align's console output wraps at 80 columns.
 - **run_landslide_pipelines.R** — driver for the whole method: runs `run_align_pipeline.R` and
   `ril_pipeline.R` concurrently (processx, logs in `<report_dir>/logs/`), then
   `lshunter_lsstats_pipeline.R`, checking first that LShunter's outlier raster is `[align]

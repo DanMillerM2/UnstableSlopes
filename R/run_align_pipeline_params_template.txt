@@ -26,8 +26,8 @@
 #                             meters and in target_crs; it is not clipped to clip_polygon).
 # [ref_dsm] and [align_dsm] are optional and work the same way for digital surface models, with
 # output_dsm/input_dsm/existing_dsm in place of output_dtm/input_dtm/existing_dtm; leave a
-# section out (or set existing_dsm: NOFILE) for no DSM. [align] holds align_dtms.R /
-# TWutils::align() parameters (see param_specs in align_dtms.R) -- do NOT set refDTM/alignDTM,
+# section out (or set existing_dsm: NOFILE) for no DSM. [align] holds align_supervisor.R's
+# parameters (see param_specs in align_supervisor.R) -- do NOT set refDTM/alignDTM,
 # refDSM/alignDSM, or refGrnd/alignGrnd there; they are always taken from the sections above.
 #
 # Every output is skipped if it already exists. After changing clip_polygon (or anything else),
@@ -108,12 +108,16 @@ existing_dsm: NOFILE
 # existing_dsm: c:\work\data\site1\dsm_2023.flt
 
 [align]
+# align_supervisor.R's keywords (see param_specs there and align_supervisor_params_template.txt
+# for every one); the values shown are its defaults unless marked otherwise. Needs Align at
+# GridUtilities 8a08fa6 or later -- an older executable is stopped a few seconds into the run.
 
-# Maximum number of times to repeat the alignment calculation (in each of Align's global and
-# tiled loops), and the RMSE change (m) below which Align stops iterating early; convergence 0
-# runs every iteration. convergence needs alignSlope2 1.0.6 or later.
-iterations: 10
-convergence: 0.001
+# Maximum iterations in each of Align's global and tiled loops, and the change of the aligned
+# DEM (m: the 99th percentile on steep ground, and the predicted remaining change) below which a
+# loop stops; convergence 0 runs every iteration. 8 and 0.005 make the results independent of
+# the iteration count.
+iterations: 8
+convergence: 0.005
 
 # Tukey-fence multiplier used to identify and exclude outliers (e.g. landslide sites) from the
 # alignment calculation; k <= 0 filters more points as outliers.
@@ -125,31 +129,40 @@ dampener: 1.0
 # Output path (no extension) for the aligned DTM.
 outDTM: c:\work\data\site1\elev_2023aligned
 
-# Number of tiles in x (east-west) and y (north-south), and the fractional overlap between them.
-# "auto" hands Align to align_supervisor.R, which picks the tiles from the study area's size
-# and shape, then tries finer tilings while each lowers the ending RMSE by at least
-# min_rmse_reduction, up to max_attempts Align runs in all, and keeps the best (see its
-# header). Numbers run Align once with exactly those tiles.
+# x and y derivatives: CENTRAL differences (recommended) or SIDED (Align's default).
+derivatives: CENTRAL
+
+# Tiles in x (east-west) and y (north-south). "auto": Align chooses the tile count and prior
+# strength by block cross-validation (TILES FIT = JOINT, SELECT = AUTO), over square tiles from
+# max_tile_size down to min_tile_size. Numbers use exactly those tiles (with tile_select NONE,
+# or REPORT/CV to cross-validate around them).
 tileNx: auto
 tileNy: auto
 overlap: 0.5
+# Cross-validation (Align's defaults shown). min_tile_size is a judgement, not a fit: a shift
+# field finer than the scale of real change (a large slow landslide, widespread deposition) can
+# absorb it. The log says when the choice is the finest grid tried.
+# min_tile_size: 500           # m
+# max_tile_size: 8000          # m
+# cv_block: 1000               # m, held-out blocks
+# cv_buffer: 100               # m, left out of training around a held-out block
+# min_tile_points: 100000      # TILES MIN POINTS: below this a node is held by its neighbours
+# prior_points, prior_fraction, prior (NEIGHBOURS/GLOBAL): the tile prior (Align's default
+# PRIOR FRACTION 0.3 towards the neighbours, scaled by the cross-validation)
 
-# Tile search (tileNx/tileNy: auto only; the values shown are the defaults):
-# tile_size_m: 2000            # first attempt's target tile spacing (m)
-# max_attempts: 3              # Align runs at most
-# tile_growth: 2               # each attempt aims for this many times the solved tiles
-# min_rmse_reduction: 0.02     # a finer attempt must lower the ending RMSE by this fraction
-# min_tile_points: 100000      # Align's TILES MIN POINTS: regression points to solve a tile
-# keep_attempt_rasters: FALSE  # keep the rasters of attempts not chosen
-# progress_interval_s: 30      # how often Align's progress is echoed
-
-# Radius (m) for calculating local slope and aspect.
+# Radius (m) for slope and aspect: about the width of a shallow-landslide scar.
 radius: 15
 
 # Number of slope bins, maximum slope gradient to include in bins, and number of aspect bins.
-nslope: 7
-maxSlope: 1.0
+nslope: 10
+maxSlope: 1.5
 nAzimuth: 8
+
+# Level of detection from ground-return density: auto (with both ground-return rasters), TRUE or
+# FALSE. outExceed, outLod and outCenDif need it; LShunter reads all three (and the IQR raster
+# <outLod>_iqr), and the gradient raster Align writes next to the reference DTM,
+# <ref DTM>_grad<radius>m.
+densityLod: auto
 
 # Output paths (no extension) for the per-bin csv summary, the difference raster, and the
 # outlier-flagged raster. outOutlier's .flt output is also what run_align_pipeline.R checks for
@@ -157,6 +170,12 @@ nAzimuth: 8
 outbins: c:\work\data\site1\outbins
 outDif: c:\work\data\site1\dif
 outOutlier: c:\work\data\site1\outlier_tiled
+# Density LoD outputs: signed significance S = -log10(p) (LShunter's recommended input), the
+# loss limit (also writes <outLod>_gain, _centre and _iqr), and dz minus the expected dz (for
+# patch depths and volumes). Optional: outDenOutlier, outCorDif, outDX/outDY/outDZ.
+outExceed: c:\work\data\site1\exceed
+outLod: c:\work\data\site1\lod
+outCenDif: c:\work\data\site1\cendif
 
 # Scratch folder for Align's intermediate files, and the folder containing the Align executable.
 scratch_dir: c:\work\scratch
