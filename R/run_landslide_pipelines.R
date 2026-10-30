@@ -9,7 +9,12 @@
 ##
 ## Links checked before anything runs (each pipeline only knows its own files, so a mismatch
 ## would silently use some other, stale raster):
-##   - LShunter's outlier raster must be [align] outOutlier in the align pipeline config;
+##   - LShunter's input raster must be Align's: its exceedance raster [align] outExceed, or its
+##     outlier raster outOutlier (or outDenOutlier);
+##   - LShunter's gradient must be the one Align writes, <reference DTM>_grad<radius>m;
+##   - LShunter's optional patch-table inputs, when used, must be Align's (cen_dif = outCenDif,
+##     iqr = <outLod>_iqr, noise_corr = <outbins>_densityLodCorr.csv) and the seed-density
+##     rasters the two LAZ sets' count rasters;
 ##   - LSstats's landform raster is reported, and a warning given if it isn't RIL's output
 ##     raster (LSstats may use a landform raster that extends RIL's classes, so this isn't an
 ##     error).
@@ -88,7 +93,24 @@ read_fortran_keyword <- function(input_file, keyword) {
   vals
 }
 
-is_set <- function(x) !is.null(x) && nzchar(x) && toupper(x) != "NOFILE"
+# One sub-field of a keyword (e.g. GRADIENT: FILE = ...), or with field NULL its first value;
+# NA when the keyword is absent, which is fine for an optional input.
+read_fortran_field <- function(input_file, keyword, field = NULL) {
+  pattern <- paste0("^", gsub(" ", "\\\\s+", keyword), "$")
+  lines <- readLines(input_file, warn = FALSE)
+  keywords <- vapply(seq_along(lines), function(i) TWutils::get_keyword(lines, i), character(1))
+  matches <- which(!is.na(keywords) & grepl(pattern, keywords, ignore.case = TRUE))
+  if (length(matches) == 0) return(NA_character_)
+  if (length(matches) > 1) {
+    stop("Expected at most one '", keyword, ":' line in ", input_file, ", found ", length(matches), ".")
+  }
+  args <- TWutils::parse_args(sub("\\s+#.*$", "", TWutils::get_args(lines, matches)))
+  if (is.null(field)) return(args$Value[[1]])
+  hit <- which(toupper(args$Parameter) == field)
+  if (length(hit)) args$Value[[hit[1]]] else NA_character_
+}
+
+is_set <- function(x) !is.null(x) && !is.na(x) && nzchar(x) && toupper(x) != "NOFILE"
 raster_key <- function(path) {
   tolower(normalizePath(sub("\\.(flt|tif)$", "", path, ignore.case = TRUE), winslash = "/",
                         mustWork = FALSE))
@@ -128,12 +150,31 @@ ril_dem    <- read_fortran_keyword(ril_cfg$ril_input_file, "DEM")
 ls_cfg <- read_keyword_file(cfg$lshunter_lsstats_config)
 lshunter_p <- read_keyword_file(ls_cfg$lshunter_params)
 lsstats_p  <- read_keyword_file(ls_cfg$lsstats_params)
+# LShunter's inputs that Align writes: the raster it hunts on (exceedance or outlier), the
+# gradient, and the optional patch-table inputs. In mode 1 they come from its input file.
 if (is_set(lshunter_p$input_file)) {
-  ls_outlier <- read_fortran_keyword(lshunter_p$input_file, "OUTLIER")
-  ls_patch   <- read_fortran_keyword(lshunter_p$input_file, "OUTPUT PATCH RASTER")
+  ls_in <- lshunter_p$input_file
+  ls_exceedance <- read_fortran_field(ls_in, "EXCEEDANCE RASTER")
+  ls_outlier    <- read_fortran_field(ls_in, "OUTLIER")
+  ls_gradient   <- read_fortran_field(ls_in, "GRADIENT", "FILE")
+  ls_cendif     <- read_fortran_field(ls_in, "CENTERED DIFFERENCE RASTER")
+  ls_iqr        <- read_fortran_field(ls_in, "IQR RASTER")
+  ls_corr       <- read_fortran_field(ls_in, "NOISE CORRELATION")
+  ls_seed_ref   <- read_fortran_field(ls_in, "SEED DENSITY", "REFERENCE")
+  ls_seed_align <- read_fortran_field(ls_in, "SEED DENSITY", "ALIGN")
+  ls_table      <- read_fortran_field(ls_in, "OUTPUT PATCH TABLE")
+  ls_patch      <- read_fortran_keyword(ls_in, "OUTPUT PATCH RASTER")
 } else {
-  ls_outlier <- lshunter_p$outlier
-  ls_patch   <- lshunter_p$out_patch
+  ls_exceedance <- lshunter_p$exceedance
+  ls_outlier    <- lshunter_p$outlier
+  ls_gradient   <- lshunter_p$gradient
+  ls_cendif     <- lshunter_p$cen_dif
+  ls_iqr        <- lshunter_p$iqr
+  ls_corr       <- lshunter_p$noise_corr
+  ls_seed_ref   <- lshunter_p$seed_den_ref
+  ls_seed_align <- lshunter_p$seed_den_align
+  ls_table      <- lshunter_p$out_table
+  ls_patch      <- lshunter_p$out_patch
 }
 if (is_set(lsstats_p$input_file)) {
   landform_raster <- read_fortran_keyword(lsstats_p$input_file, "LANDFORM RASTER")
@@ -152,11 +193,57 @@ if (is_set(lsstats_p$input_file)) {
   lsstats_rasters <- trimws(strsplit(lsstats_p$rasters, ",", fixed = TRUE)[[1]])
 }
 
-if (!is_set(ls_outlier) || raster_key(ls_outlier) != raster_key(al$outOutlier)) {
-  stop("LShunter's outlier raster is not the align pipeline's outOutlier, so LShunter would not ",
-       "use this run's alignment:\n  LShunter outlier: ", ls_outlier,
-       "\n  [align] outOutlier: ", al$outOutlier)
+# Stops unless LShunter's input `ls_path` is the align pipeline's output `al_path` (each
+# extension-free); label names them in the message.
+check_link <- function(ls_path, al_path, label) {
+  if (!is_set(al_path) || raster_key(ls_path) != raster_key(al_path)) {
+    stop("LShunter's ", label, " is not the align pipeline's, so LShunter would not use this ",
+         "run's alignment:\n  LShunter: ", ls_path,
+         "\n  align:    ", if (is_set(al_path)) al_path else "(not set in [align])", call. = FALSE)
+  }
 }
+if (is_set(ls_exceedance)) {
+  check_link(ls_exceedance, al$outExceed, "exceedance raster ([align] outExceed)")
+  ls_input <- ls_exceedance
+} else if (is_set(ls_outlier)) {
+  # Align's fence outlier raster, or its density-LoD outlier raster.
+  if (is_set(al$outDenOutlier) && raster_key(ls_outlier) == raster_key(al$outDenOutlier)) {
+    check_link(ls_outlier, al$outDenOutlier, "outlier raster")
+  } else {
+    check_link(ls_outlier, al$outOutlier, "outlier raster ([align] outOutlier)")
+  }
+  ls_input <- ls_outlier
+} else {
+  stop("LShunter has neither an exceedance nor an outlier raster: ", ls_cfg$lshunter_params)
+}
+
+# The gradient must be the one Align writes, so patches use Align's slope and length scale.
+align_radius <- if (is_set(al$radius)) as.numeric(al$radius) else 15
+align_gradient <- TWutils::align_gradient_raster(section_raster(align_cfg$ref_dtm, "dtm"),
+                                                 align_radius)
+if (!is_set(ls_gradient)) stop("LShunter has no gradient raster: ", ls_cfg$lshunter_params)
+check_link(ls_gradient, align_gradient,
+           paste0("gradient raster (Align writes <reference DTM>_grad<radius>m, radius ",
+                  align_radius, ")"))
+
+# Optional patch-table inputs, each checked only when LShunter uses it.
+al_bins <- sub("\\.csv$", "", al$outbins, ignore.case = TRUE)
+if (is_set(ls_cendif)) check_link(ls_cendif, al$outCenDif, "centred difference raster ([align] outCenDif)")
+if (is_set(ls_iqr)) {
+  check_link(ls_iqr, if (is_set(al$outLod)) paste0(sub("\\.flt$", "", al$outLod, ignore.case = TRUE), "_iqr"),
+             "IQR raster (<[align] outLod>_iqr)")
+}
+if (is_set(ls_corr) && tolower(normalizePath(ls_corr, winslash = "/", mustWork = FALSE)) !=
+    tolower(normalizePath(paste0(al_bins, "_densityLodCorr.csv"), winslash = "/", mustWork = FALSE))) {
+  stop("LShunter's noise correlation is not the align pipeline's correlogram:\n  LShunter: ",
+       ls_corr, "\n  align:    ", al_bins, "_densityLodCorr.csv", call. = FALSE)
+}
+grnd_path <- function(set) {
+  if (is.null(set) || !is_set(set$output_dir)) NA_character_ else
+    file.path(set$output_dir, "ground_count_ref_grid.flt")
+}
+if (is_set(ls_seed_ref))   check_link(ls_seed_ref, grnd_path(align_cfg$ref_set), "seed density reference raster ([ref_set] count raster)")
+if (is_set(ls_seed_align)) check_link(ls_seed_align, grnd_path(align_cfg$align_set), "seed density align raster ([align_set] count raster)")
 if (raster_key(landform_raster) != raster_key(ril_raster)) {
   warning("LSstats's landform raster is not RIL's output raster -- the report describes the ",
           "one LSstats uses:\n  LSstats landform raster: ", landform_raster,
@@ -252,6 +339,8 @@ manifest <- list(
   ril_dem            = ril_dem,
   ril_raster         = flt_path(ril_raster),
   patch_raster       = flt_path(ls_patch),
+  lshunter_input     = flt_path(ls_input),
+  lshunter_table     = if (is_set(ls_table)) paste0(sub("\\.csv$", "", ls_table, ignore.case = TRUE), ".csv") else "NOFILE",
   landform_raster    = flt_path(landform_raster),
   lsstats_csv        = sub("\\.csv$", "", lsstats_csv, ignore.case = TRUE),
   lsstats_rasters    = paste(lsstats_rasters, collapse = "; "),

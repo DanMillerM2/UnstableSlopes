@@ -126,8 +126,10 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `<output>.log` copy, because Align's console output wraps at 80 columns.
 - **run_landslide_pipelines.R** — driver for the whole method: runs `run_align_pipeline.R` and
   `ril_pipeline.R` concurrently (processx, logs in `<report_dir>/logs/`), then
-  `lshunter_lsstats_pipeline.R`, checking first that LShunter's outlier raster is `[align]
-  outOutlier`; writes `pipeline_manifest.txt` and renders **PipelineReport.qmd** (repo root,
+  `lshunter_lsstats_pipeline.R`, checking first that LShunter's inputs are this run's Align
+  outputs: the exceedance (`outExceed`) or outlier (`outOutlier`/`outDenOutlier`) raster, the
+  gradient `<ref DTM>_grad<radius>m`, and when used `cen_dif`/`iqr`/`noise_corr` and the
+  seed-density count rasters; writes `pipeline_manifest.txt` and renders **PipelineReport.qmd** (repo root,
   `embed-resources: true`) to `<report_dir>/<study_name>_report.html`, including
   `narrative.md` as its Interpretation section. The report reads only the manifest's outputs, so
   a rerun (every pipeline skipping) just re-renders. `.claude/skills/landslide-pipelines/` is the
@@ -161,8 +163,12 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
 - **RIL.R** — runs `TWutils::RIL()` (Fortran program RIL, see `..\ChannelUtilities\RIL\RIL.f90`) to
   trace the channel network from a DEM and classify valley floor / hollow / inner-gorge landforms.
 - **LShunter.R** — runs `TWutils::LShunter()` (Fortran program LShunter, see
-  `..\LandslideUtilities\LShunter.f90`) to find candidate landslide patches from Align's outlier
-  raster plus gradient and flow-accumulation rasters, in two rounds of paired thresholds. Supports
+  `..\LandslideUtilities\LShunter.f90`) to find candidate landslide patches from Align's exceedance
+  raster (recommended, S thresholds such as −4/−2) or outlier raster, plus Align's gradient raster
+  (required) and a flow-accumulation raster, in two rounds of paired thresholds. LShunter 1.1's
+  options are keywords too: patch table (`cen_dif`, `iqr` + `noise_corr`, `landform`,
+  `dist_channel`, `out_table`, `min_patch_significance`), `null_*` simulation, `seed_den_*` and
+  `sign_flip`; with `out_table` set, the run counts as done only once the table exists. Supports
   both `LShunter()` modes like RIL.R (mode 1: existing input file via `input_file`). Note
   `LShunter()`'s current wrapper signature takes named, capitalized arguments (`Outlier`, `Accum`,
   `OutPatch`, `ScratchDir`, `Executable_dir`, plus `...` to `LShunterInput()`); MappingLandslides.qmd's

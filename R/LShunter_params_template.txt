@@ -21,8 +21,8 @@ input_file: NOFILE
 # Raster created by Align -- exactly one of: exceedance (OUTPUT EXCEEDANCE PROBABILITY RASTER;
 # recommended, thresholds in S = -log10(p)) or outlier (OUTPUT OUTLIER RASTER) -- and flow
 # accumulation raster (.flt) created by bldgrds.
-exceedance: NOFILE
-outlier: c:\work\data\postmortem\outlier_2006_2023
+exceedance: c:\work\data\postmortem\exceed_2006_2023
+outlier: NOFILE
 accum: c:\work\data\postmortem\accum_2006
 
 # Output patch raster (.flt), given without extension.
@@ -35,9 +35,10 @@ executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x64\release
 
 # --- Two-round thresholds: a strict 1st round finds patch cores, a looser 2nd round grows them ---
 # Maximum value for a patch: outlier (k) values with outlier; with exceedance, S values such as
-# threshold1: -4 and threshold2: -2 (p <= 0.01% and p <= 1%).
-threshold1: -5.0
-threshold2: -1.5
+# threshold1: -4 and threshold2: -2 (p <= 0.01% and p <= 1%). With outlier, e.g. -5.0 and -1.5
+# (the defaults).
+threshold1: -4
+threshold2: -2
 # Minimum gradient for a patch, as tan(slope).
 min1: 0.2
 min2: 0.1
@@ -58,6 +59,28 @@ gradient_units: SIN
 # required when road_shapefile is given. ---
 road_shapefile: NOFILE
 road_buffer: NA
+
+# --- Optional (LShunter 1.1): patch table, significance and controls, from Align's density-LoD
+# outputs. NOFILE/NA leaves each out. cen_dif is Align's outCenDif; iqr is <outLod>_iqr;
+# noise_corr is <outbins>_densityLodCorr.csv (iqr and noise_corr go together). ---
+cen_dif: c:\work\data\postmortem\cendif_2006_2023
+iqr: c:\work\data\postmortem\lod_2006_2023_iqr
+noise_corr: c:\work\data\postmortem\outbins_densityLodCorr.csv
+noise_cover: NOFILE            # ALL (LShunter's default), OPEN or VEGETATED
+landform: NOFILE               # RIL landform raster, reported per patch
+dist_channel: NOFILE           # distance-to-channel raster (m), reported per patch
+out_table: c:\work\data\postmortem\patch_2006_2023_table.csv
+min_patch_significance: NA     # drop patches with -volume/SD(volume) below this z
+null_realizations: NA          # NULL SIMULATION realizations (needs noise_corr)
+null_tile: NA                  # FFT tile in points (power of 2, >= 512)
+null_seed: NA
+# SEED DENSITY: seeds only where both surveys have at least seed_den_min ground returns/m2; the
+# count rasters are Align's refGrnd/alignGrnd (each LAZ set's ground_count_ref_grid.flt).
+seed_den_ref: NOFILE
+seed_den_align: NOFILE
+seed_den_min: NA
+seed_den_window: NA
+sign_flip: FALSE               # also run on the negated input: the gain patches, a false-alarm control
 
 # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
 overwrite: TRUE

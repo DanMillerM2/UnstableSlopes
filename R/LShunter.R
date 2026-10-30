@@ -174,6 +174,41 @@ param_specs <- list(
   road_shapefile = list(type = "character", default = "NOFILE"),
   road_buffer    = list(type = "numeric", default = NA_real_, allow_na = TRUE),
 
+  # --- Optional (LShunter 1.1): patch table, patch significance and controls. All from Align's
+  # density-LoD outputs; leave at NOFILE/NA to leave each out. ---
+  # Align's centred difference raster (OUTPUT CENTERED DIFFERENCE RASTER): patch depths and
+  # volumes; needed by out_table and min_patch_significance.
+  cen_dif = list(type = "character", default = "NOFILE"),
+  # Align's IQR raster (<OUTPUT LOD RASTER>_iqr) and noise correlogram
+  # (<BINS OUTPUT>_densityLodCorr.csv), together: each patch's volume uncertainty. noise_cover:
+  # ALL (LShunter's default), OPEN or VEGETATED.
+  iqr         = list(type = "character", default = "NOFILE"),
+  noise_corr  = list(type = "character", default = "NOFILE"),
+  noise_cover = list(type = "character", default = "NOFILE"),
+  # RIL landform raster and distance-to-channel raster (m), reported per patch in the table.
+  landform     = list(type = "character", default = "NOFILE"),
+  dist_channel = list(type = "character", default = "NOFILE"),
+  # Output patch table (.csv): area, centroid, depth and volume, and with iqr/noise_corr the
+  # volume SD and significance.
+  out_table = list(type = "character", default = "NOFILE"),
+  # Drop patches whose -volume/SD(volume) is below this z value (needs cen_dif, iqr, noise_corr).
+  min_patch_significance = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  # NULL SIMULATION: realizations of simulated correlated noise run through the same rules (needs
+  # noise_corr); null_tile is the FFT tile in points (a power of 2, at least 512).
+  null_realizations = list(type = "integer", default = NA_integer_, allow_na = TRUE),
+  null_tile         = list(type = "integer", default = NA_integer_, allow_na = TRUE),
+  null_seed         = list(type = "integer", default = NA_integer_, allow_na = TRUE),
+  # SEED DENSITY: seed patches only where both surveys' local ground-return density is at least
+  # seed_den_min returns/m2 -- the two count rasters Align uses (ground_count_ref_grid.flt of each
+  # LAZ set); seed_den_window is the window half-width in points.
+  seed_den_ref    = list(type = "character", default = "NOFILE"),
+  seed_den_align  = list(type = "character", default = "NOFILE"),
+  seed_den_min    = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  seed_den_window = list(type = "integer", default = NA_integer_, allow_na = TRUE),
+  # SIGN FLIP CONTROL: also run the same rules on the negated input -- the gain patches, a control
+  # for false alarms.
+  sign_flip = list(type = "logical", default = FALSE),
+
   # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
   overwrite = list(type = "logical", default = TRUE)
 )
@@ -262,12 +297,17 @@ if (use_existing_input_file) {
   # pipeline can be restarted without redoing an LShunter run that already completed (same
   # resumability convention used elsewhere in this repo, e.g. RIL.R's out_RIL skip).
   out_patch_flt <- if (grepl("\\.flt$", out_patch, ignore.case = TRUE)) out_patch else paste0(out_patch, ".flt")
+  # With a patch table asked for, the run is complete only once that is written too.
+  out_table_csv <- if (is_nofile_text(out_table)) NULL else
+    paste0(sub("\\.csv$", "", out_table, ignore.case = TRUE), ".csv")
 
-  if (!file.exists(out_patch_flt)) {
+  if (!file.exists(out_patch_flt) || (!is.null(out_table_csv) && !file.exists(out_table_csv))) {
 
     # TWutils::LShunter()/LShunterInput() check that exactly one of Outlier and Exceedance is
-    # given, that Gradient is, and that road_buffer comes with Roads; LShunterInput() wants NULL
-    # (not a sentinel) for road_buffer when it isn't applicable, so translate the "not given" NA.
+    # given, that Gradient is, that road_buffer comes with Roads, and that the optional patch
+    # table and control inputs come with what they need; LShunterInput() wants NULL (not a
+    # sentinel) for an optional number or choice that isn't given, so translate NA/NOFILE.
+    na_null <- function(x) if (is.na(x)) NULL else x
     TWutils::LShunter(Outlier = outlier,
                       Exceedance = exceedance,
                       Gradient = gradient,
@@ -283,7 +323,23 @@ if (use_existing_input_file) {
                       maxAccum2 = max_accum2,
                       MinSize = min_size,
                       Roads = road_shapefile,
-                      road_buffer = if (is.na(road_buffer)) NULL else road_buffer,
+                      road_buffer = na_null(road_buffer),
+                      CenDif = cen_dif,
+                      IQR = iqr,
+                      NoiseCorr = noise_corr,
+                      NoiseCover = if (is_nofile_text(noise_cover)) NULL else noise_cover,
+                      Landform = landform,
+                      DistChannel = dist_channel,
+                      OutTable = out_table,
+                      MinPatchSignificance = na_null(min_patch_significance),
+                      NullRealizations = na_null(null_realizations),
+                      NullTile = na_null(null_tile),
+                      NullSeed = na_null(null_seed),
+                      SeedDenRef = seed_den_ref,
+                      SeedDenAlign = seed_den_align,
+                      SeedDenMin = na_null(seed_den_min),
+                      SeedDenWindow = na_null(seed_den_window),
+                      SignFlip = sign_flip,
                       overwrite = overwrite,
                       Executable_dir = executable_dir)
 
