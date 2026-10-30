@@ -1,0 +1,114 @@
+# Site file for run_site.R: every input for one study area and one pair of lidar surveys.
+#
+#   Rscript R/run_site.R site.txt                  write the configs, then run everything
+#   Rscript R/run_site.R site.txt --configs-only   write and check the configs only
+#
+# "keyword: value" lines; order doesn't matter; "#" starts a comment; only the first colon on a
+# line separates keyword from value, so "c:\..." and "EPSG:2856" are safe. Keywords left out
+# (or commented out) take the defaults noted. run_site.R writes each pipeline's config into
+# <site_dir>\<site_run_name>\configs\ and derives every link between the programs; all outputs go
+# to <site_dir>\<site_run_name>\, tagged <ref_label>_<align_label>. Every output that already
+# exists is reused, so after changing a parameter delete the outputs it affects.
+
+# ---- Site ------------------------------------------------------------------------------------
+site_name: Site 1, 2017-2023          # report title (default: <site_dir name>, <ref>-<align>)
+site_dir: c:\work\data\site1
+site_run_name: run_17_23              # run folder under site_dir
+site_polygon: c:\work\data\site1\study_area.shp   # any CRS; NOFILE = every tile, unmasked
+site_crs: EPSG:2856                   # CRS of every raster produced (default EPSG:2856)
+scratch_dir: c:\work\scratch
+# report_dir: c:\work\data\site1\run_17_23\report     # default <run folder>\report
+# narrative_md:                       # default <report_dir>\narrative.md
+# render_report: TRUE
+# progress_interval_s: 30
+
+# ---- Surveys: reference (older) and align (newer) -------------------------------------------
+# <survey>_dtm and _dsm name the mosaics (no extension). Build each from a tile folder
+# (_dtm_tile_dir) or one raster file (_dtm_input), clipped to site_polygon, converted to meters
+# and reprojected to site_crs; with neither, the named .flt must already exist and is used as it
+# is. The DSMs are optional (both or neither). Optional: <survey>_z_units (auto, m, ft, ftUS),
+# <survey>_file_pattern, <survey>_clip_buffer_cells (see mosaic_dtm.R).
+ref_label: 2017                       # used in output names
+ref_laz_dir: c:\work\data\site1\NP_2017\laz
+ref_ground_dir: c:\work\data\site1\NP_2017\grnd_den   # ground_count_ref_grid.flt goes here
+ref_dtm_tile_dir: c:\work\data\site1\NP_2017\dtm_tiles
+ref_dtm: c:\work\data\site1\elev_2017
+# ref_dsm_tile_dir: c:\work\data\site1\NP_2017\dsm_tiles
+# ref_dsm: c:\work\data\site1\dsm_2017
+ref_z_units: auto
+
+align_label: 2023
+align_laz_dir: c:\work\data\site1\cascades_north_wali_2023\laz
+align_ground_dir: c:\work\data\site1\cascades_north_wali_2023\grnd_den
+align_dtm_tile_dir: c:\work\data\site1\cascades_north_wali_2023\dtm_tiles
+align_dtm: c:\work\data\site1\elev_2023
+# align_dsm_input: c:\work\data\site1\cascades_north_wali_2023\dsm_2023.tif
+# align_dsm: c:\work\data\site1\dsm_2023
+align_z_units: auto
+
+# ---- Ground-return counts: any ground_returns.R keyword, prefixed ground_ ---------------------
+ground_n_workers: 6
+ground_batch_size_tiles: 50
+# ground_stream_chunk_size: 100000
+
+# ---- Align: any align_supervisor.R setting, prefixed align_ -----------------------------------
+# Defaults: tiles and prior chosen by cross-validation (tileNx auto, SELECT = AUTO, square tiles
+# from max_tile_size 8000 down to min_tile_size 500 m), iterations 8, convergence 0.005 m,
+# derivatives CENTRAL, k 1.5, radius 15, nslope 10, maxSlope 1.5, density LoD. Outputs
+# (in the run folder): elev_<align>aligned, dif_<tag> (and _0), outlier_<tag>, exceed_<tag>,
+# lod_<tag> (_gain, _centre, _iqr), cendif_<tag>, outbins_<tag>_*.csv; the gradient raster
+# <ref_dtm>_grad<radius>m goes next to the reference DTM.
+align_executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release
+# align_min_tile_size: 500            # m; a judgement: finer fields can absorb real change
+# align_cv_block: 1000                # m
+# align_cv_buffer: 100                # m
+# align_iterations: 8
+# align_convergence: 0.005
+# align_outCorDif: TRUE               # also difcor_<tag>; likewise outDenOutlier, outDX/DY/DZ
+
+# ---- RIL chain: its existing Fortran input files (the method's parameters live in them) --------
+# All three must name the same DEM. Copy them from a previous site and change the DEM, scratch and
+# output paths. LShunter and LSstats read the RIL input's OUTPUT RIL RASTER.
+ril_bldgrds_input: c:\work\data\site1\input_bldgrds_enforce.txt
+ril_valleyfloor_input: c:\work\data\site1\input_valleyfloor.txt
+ril_input: c:\work\data\site1\input_RIL.txt
+ril_bldgrds_executable_dir: c:\work\sandbox\gridutilities\projects\bldgrds\x64\release
+ril_valleyfloor_executable_dir: c:\work\sandbox\channelutilities\projects\valleyfloor\x64\release
+ril_executable_dir: c:\work\sandbox\channelutilities\projects\ril\x64\release
+
+# ---- LShunter -------------------------------------------------------------------------------------
+# Filled in by run_site.R: Align's exceedance raster, gradient, centred difference, IQR raster
+# and correlogram, RIL's landform raster, and the patch raster and table names
+# (patch_<tag>, patch_<tag>_table.csv). With lshunter_seed_den_min, the seed-density rasters are
+# the two ground-return count rasters.
+lshunter_threshold1: -4               # S = -log10(p) for seeds (default -4)
+lshunter_threshold2: -2               # S for growth (default -2)
+lshunter_min1: 0.2                    # minimum gradient, tan(slope)
+lshunter_min2: 0.1
+lshunter_accum: c:\work\data\site1\accum_2017      # flow accumulation (bldgrds)
+lshunter_max_accum1: 1000
+lshunter_max_accum2: 1000
+lshunter_min_size: 10                 # m2
+# lshunter_road_shapefile: c:\work\data\site1\roads
+# lshunter_road_buffer: 25            # m, required with a road shapefile
+# lshunter_dist_channel: c:\work\data\site1\distanceTo
+# lshunter_noise_cover: ALL           # ALL, OPEN or VEGETATED
+# lshunter_min_patch_significance: 2
+# lshunter_null_realizations: 10
+# lshunter_null_tile: 4096
+# lshunter_null_seed: 12345
+# lshunter_seed_den_min: 1            # returns/m2 in both surveys
+# lshunter_seed_den_window: 2
+lshunter_sign_flip: TRUE
+lshunter_executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x64\release
+
+# ---- LSstats ----------------------------------------------------------------------------------------
+# Filled in by run_site.R: LShunter's patch raster and patch table (volumes), RIL's landforms,
+# out_csv lsstats_<tag>. In lsstats_rasters, @cendif, @exceed, @dif, @dif0, @outlier, @lod,
+# @gradient and @aligned stand for this run's Align outputs.
+lsstats_rasters: @gradient, @cendif, @exceed
+# Distance to the floodplain edge: an existing raster, or computed out to lsstats_radius (m,
+# default 1000) and saved as lsstats_out_distance_raster (default <run folder>\distance_floodplain).
+# lsstats_distance_raster: c:\work\data\site1\distanceTo
+lsstats_radius: 1000
+lsstats_executable_dir: c:\work\sandbox\landslideutilities\projects\LSstats\x64\release

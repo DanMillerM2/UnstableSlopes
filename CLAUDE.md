@@ -124,6 +124,16 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   last) and writes `align_run.csv`, `align_iterations.csv`, `align_select.csv` (the CV table) and
   `align_nodes.csv` (joint-fit node totals, mm, with map positions) there. It parses the longest
   `<output>.log` copy, because Align's console output wraps at 80 columns.
+- **run_site.R** — front end for one site: reads a single flat `keyword: value` site file
+  (`R/site_template.txt`; prefixes `site_`, `ref_`/`align_` survey keys, `ground_`, `align_`
+  Align settings, `ril_`, `lshunter_`, `lsstats_`; unknown keywords stop it), writes the six
+  configs below into `<site_dir>\<site_run_name>\configs\` and runs `run_landslide_pipelines.R`
+  (`--configs-only` writes and checks them). It derives every link: Align's outputs are
+  `<run folder>\elev_<align>aligned`, `dif_/outlier_/exceed_/lod_/cendif_/outbins_<ref>_<align>`;
+  LShunter gets Align's exceedance, gradient, cendif, IQR and correlogram and RIL's landforms
+  (`OUTPUT RIL RASTER` of `ril_input`), writing `patch_<tag>` and `patch_<tag>_table.csv`; LSstats
+  gets the patch raster and table; `@cendif`, `@exceed`, ... in `lsstats_rasters` stand for Align
+  outputs. The configs are regenerated every run; edit the site file, not them.
 - **run_landslide_pipelines.R** — driver for the whole method: runs `run_align_pipeline.R` and
   `ril_pipeline.R` concurrently (processx, logs in `<report_dir>/logs/`), then
   `lshunter_lsstats_pipeline.R`, checking first that LShunter's inputs are this run's Align

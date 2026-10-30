@@ -14,10 +14,14 @@ This repo chains three pipelines and a report:
 | 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv` |
 | Report | `PipelineReport.qmd` (repo root, gitignored -- see section 6) | one self-contained html file |
 
-`R/run_landslide_pipelines.R` runs 1 and 2 side by side, then 3, then renders the report. **Run
-that script; don't reimplement its steps.** Every pipeline skips outputs that already exist, so
-rerunning it is how you resume after a failure and how you re-render after editing the
-narrative.
+**Everything for a site goes in one site file** (`keyword: value` lines; template
+`R/site_template.txt`). `R/run_site.R <site file>` writes each pipeline's config into
+`<site_dir>\<site_run_name>\configs\`, deriving every link between the programs (Align's
+output names, LShunter's inputs from Align and RIL, LSstats's from LShunter), then runs
+`R/run_landslide_pipelines.R`, which runs 1 and 2 side by side, then 3, then renders the report.
+**Run `run_site.R`; don't write the pipeline configs by hand or reimplement their steps.** Every
+pipeline skips outputs that already exist, so rerunning it is how you resume after a failure and
+how you re-render after editing the narrative.
 
 Align makes its own choices; you don't search for them. With `tileNx: auto` it chooses the tile
 count and prior strength by block cross-validation (`TILES FIT = JOINT, SELECT = AUTO`: square
@@ -32,21 +36,25 @@ behind the defaults.
 
 ## 1. Collect the inputs
 
-Ask for anything not already given, in one message:
+If the user gives a site file, use it: check it with `--configs-only` (section 3) and go on. If
+there's a site file from a previous run of this site, start from that. Otherwise ask for anything
+not already given, in one message:
 
-- **Study name**, and an **output folder** for this site.
+- **Study name**, a **site folder**, and a **run name** (the outputs' folder under it).
 - **Study-area polygon** (any CRS) and the **target CRS** (default EPSG:2856).
-- For each of the reference (older) and align (newer) lidar: the **DTM tile folder** (or one DTM
-  file), the **LAZ tile folder**, and optionally the **DSM tile folder** (or file). Without both
-  LAZ sets there is no density LoD and no exceedance raster; without both DSMs, no canopy terms.
+- For each of the reference (older) and align (newer) lidar: a **label** (e.g. the year), the
+  **DTM tile folder** (or one DTM file), the **LAZ tile folder**, and optionally the **DSM tile
+  folder** (or file). Both LAZ sets are required (they give the density LoD and the exceedance
+  raster); without both DSMs there are no canopy terms.
 - The **complete DTM for RIL** (ESRI GridFloat `.flt`, named `<prefix>_<ID>.flt` -- the programs
   derive their data ID from the text after the first `_`).
 - **RIL-chain input files** to use as templates: the bldgrds (enforce), ValleyFloor, and RIL
   Fortran input files from a previous site. `ril_pipeline.R` runs in mode 1 only, so these carry
   the method's parameters; you will copy them and change only the paths.
-- **LShunter and LSstats parameters**: their `*_params.txt` files from a previous site, or the
-  values (S thresholds, flow-accumulation raster, rasters to summarize, landform raster). The
-  gradient is always Align's; don't ask for one.
+- **LShunter and LSstats settings**: S thresholds, minimum gradients and size, the
+  flow-accumulation raster, optional road layer and distance-to-channel raster, the null
+  simulation and sign-flip control, and the rasters LSstats summarizes. Don't ask for the
+  gradient, landform, exceedance or patch inputs: `run_site.R` fills those in.
 - The **executable folders** (`Projects\<Name>\x64\release\` under the sibling repos), if they
   differ from the templates' defaults.
 
@@ -60,6 +68,9 @@ quarto --version
 ```
 
 - If TWutils fails the check, reinstall it from `..\TWutils` (`R CMD INSTALL`; current `main`).
+- If `quarto` isn't found, the report can't render. RStudio has a copy that isn't on the PATH
+  (`C:\Program Files\RStudio\resources\app\bin\quarto\bin`); ask the user to add it to the PATH
+  (or install Quarto), or set `render_report: FALSE` in the site file until then.
 - **Align** must be built from GridUtilities `align_clean` 8a08fa6 or later (`Projects\align`,
   Release|x64). An older `align.exe` is caught a few seconds into the run -- the supervisor stops
   with "Align ... is older than this pipeline" and names what it didn't recognize. **LShunter**
@@ -70,69 +81,59 @@ quarto --version
 - **Memory**: Align holds whole DEMs in memory (about 48 GB on a 370 M-cell site). Run one site at
   a time, and don't start other Align jobs while it runs.
 
-## 3. Write the configs
+## 3. Write the site file
 
-Put everything for the site in its output folder. Start each file from the repo template and
-change only what the user's inputs require; keep the templates' comments.
+1. **RIL-chain input files.** For a new site, copy the three template input files into the site
+   folder, and in each change the `DEM:` (bldgrds: `DEM FILE:` too) line to the complete DTM,
+   `SCRATCH DIRECTORY:` to the scratch folder, and every output path (e.g. `OUTPUT RIL RASTER:`)
+   to the site folder. All three must name the same DEM. The method's parameters stay as they are.
+2. **Site file.** Copy `R/site_template.txt` (or the site's previous file) to
+   `<site_dir>\<site name>_<ref label>_<align label>.txt` and fill it in; keep its comments.
+   Keywords are prefixed by what they configure: `site_`, `ref_`/`align_` for the surveys,
+   `ground_` (ground_returns.R), `align_` (any `align_supervisor.R` setting), `ril_`,
+   `lshunter_` and `lsstats_`. Leave out anything at its default: Align's defaults (`tileNx`
+   auto, 8 iterations, convergence 0.005, `CENTRAL`, 10 slope bins to 1.5, density LoD) are the
+   recommended setup, and LShunter's S thresholds default to -4 / -2. In `lsstats_rasters`,
+   `@cendif`, `@exceed`, `@dif`, `@dif0`, `@outlier`, `@lod`, `@gradient` and `@aligned` stand for
+   this run's Align outputs -- prefer `@cendif` and `@exceed` over older difference rasters.
+3. **Check it** without running anything:
 
-1. **Align** -- copy `R/run_align_pipeline_params_template.txt`. Fill `[study_area]`, `[ref_set]`/
-   `[align_set]` (LAZ `input_dir`, `output_dir`), `[ref_dtm]`/`[align_dtm]` (`tile_dir` +
-   `output_dtm`, or `input_dtm` + `output_dtm`), `[ref_dsm]`/`[align_dsm]` if DSMs were given,
-   and the `[align]` outputs: `outDTM`, `outbins`, `outDif`, `outOutlier`, and with both LAZ sets
-   `outExceed`, `outLod`, `outCenDif`. Every output's file name must differ (Align writes them all
-   into one run folder first). Keep the template's settings (`tileNx: auto`, `iterations: 8`,
-   `convergence: 0.005`, `derivatives: CENTRAL`, `nslope: 10`, `maxSlope: 1.5`, `densityLod:
-   auto`) unless the user says otherwise.
-2. **RIL** -- copy the three template input files, and in each change the `DEM:` (bldgrds:
-   `DEM FILE:` too) line to the complete DTM, `SCRATCH DIRECTORY:` to the site's scratch folder,
-   and every output path (e.g. `OUTPUT RIL RASTER:`) to the output folder. All three must name
-   the same DEM. Then copy `R/ril_pipeline_params_template.txt` and point it at them.
-3. **LShunter/LSstats** -- start from the user's params files (or `R/LShunter_params_template.txt`
-   / `R/LSstats_params_template.txt`). The driver stops unless LShunter's inputs are this run's
-   Align outputs, so set them from the `[align]` section:
-   - `exceedance` = `outExceed` (recommended; thresholds in S = -log10 p, e.g. `threshold1: -4`,
-     `threshold2: -2`), or `outlier` = `outOutlier` with k thresholds (e.g. -5 / -1.5);
-   - `gradient` = `<ref DTM>_grad<radius>m` (`TWutils::align_gradient_raster(refDTM, radius)`
-     gives the path; radius 15 unless `[align]` sets it), `gradient_units: SIN`;
-   - for the patch table: `cen_dif` = `outCenDif`, `iqr` = `<outLod>_iqr`, `noise_corr` =
-     `<outbins>_densityLodCorr.csv`, and an `out_table`; `sign_flip: TRUE` gives the gain patches
-     as a false-alarm control. `null_realizations` (simulated noise) and `seed_den_*` (the two LAZ
-     sets' `ground_count_ref_grid.flt`) are optional -- use them if the previous site did.
-   - LSstats `polygon_raster` must equal LShunter `out_patch`. With an LShunter `out_table`, set
-     LSstats `patch_table` to it: every per-polygon csv then gets Volume, SD_Volume and Z_Volume
-     (the driver stops if they differ, and LSstats stops if the table doesn't match the patches).
-   Then copy `R/lshunter_lsstats_pipeline_params_template.txt`.
-4. **Driver** -- copy `R/run_landslide_pipelines_params_template.txt` and set `study_name` and
-   the three config paths.
+   ```
+   Rscript R/run_site.R <site file> --configs-only
+   ```
 
-Show the user the `[align]` section, LShunter's inputs and thresholds, and the paths you changed
-before running.
+   It stops on an unknown keyword, a missing input or executable, or an unknown `@` token, and
+   notes when the RIL chain uses a different DEM from the reference DTM. Then show the user the
+   site file and the generated `configs\align_pipeline.txt` `[align]` section and
+   `configs\lshunter_params.txt`.
 
 ## 4. Run and monitor
 
-Start the driver in the background (Align alone takes about 25 min on a 370 M-cell site; the
+Start it in the background (Align alone takes about 25 min on a 370 M-cell site; the
 ground-return counts and mosaics can take hours):
 
 ```
-Rscript R/run_landslide_pipelines.R <site folder>\landslide_pipelines.txt
+Rscript R/run_site.R <site file>
 ```
 
-Logs go to `<report_dir>\logs\` (`align_pipeline.log`, `ril_pipeline.log`,
-`lshunter_lsstats_pipeline.log`); Align's own console output is in
-`<outOutlier folder>\align_run\align.log`. Don't poll in a tight loop -- wait for the completion
+Every output goes to the run folder `<site_dir>\<site_run_name>\` (the report to its `report\`
+unless `report_dir` is set). Logs go to `<report_dir>\logs\` (`align_pipeline.log`,
+`ril_pipeline.log`, `lshunter_lsstats_pipeline.log`); Align's own console output is in
+`<run folder>\align_run\align.log`. Don't poll in a tight loop -- wait for the completion
 notification, checking the logs at long intervals. Give the user one line at each Align milestone:
 the global loop converged (iterations, RMSE), the tiles chosen (`Selected: tiles nx x ny, prior
 scaled by s`, and whether it says the choice is the finest grid tried), the tile loop converged.
 
 On failure, read the end of the failing log and report the cause. Rerunning resumes from what
-exists. **Ask before deleting any output** -- after a parameter change, the outputs it affects
-must be deleted for the change to take effect (each pipeline's header says which; for Align,
-deleting the outlier raster `.flt` reruns it).
+exists. To change a setting, edit the site file (never the generated configs: `run_site.R`
+rewrites them on every run). **Ask before deleting any output** -- after a parameter change, the
+outputs it affects must be deleted for the change to take effect (each pipeline's header says
+which; for Align, deleting the outlier raster `.flt` reruns it).
 
 ## 5. Write the interpretation and render
 
-When the driver finishes, read these, then write `<report_dir>\narrative.md` (Markdown, no title
--- the report supplies the heading):
+When the run finishes, read these (all in the run folder), then write `<report_dir>\narrative.md`
+(Markdown, no title -- the report supplies the heading):
 
 - `align_run\align_run.csv` (tiles, prior scale, `finest_chosen`, iterations and convergence of
   each loop, starting/ending RMSE), `align_iterations.csv` (per iteration: RMSE, change of the
@@ -141,9 +142,10 @@ When the driver finishes, read these, then write `<report_dir>\narrative.md` (Ma
   `align_nodes.csv` (node shifts in mm relative to the global solution, with x/y);
 - `<outbins>_fitFinal.csv` and `_finalCoef.csv` (the fence), `<outbins>_densityLod.csv` (density
   LoD bins and fits) and `_densityLodCorr.csv` (noise correlogram, SDz);
-- LShunter's patch table and `_null.csv`, and its log in `<report_dir>\logs\` (candidate counts,
-  sign-flip and simulated false-discovery counts);
-- the LSstats csv files.
+- LShunter's patch table `patch_<tag>_table.csv` and `_null.csv`, and its log in
+  `<report_dir>\logs\` (candidate counts, sign-flip and simulated false-discovery counts);
+- the LSstats csv files `lsstats_<tag>_<i>.csv` (with each polygon's Volume, SD_Volume and
+  Z_Volume) and `_landforms_<i>.csv`.
 
 Cover, briefly:
 
@@ -158,8 +160,9 @@ Cover, briefly:
   gain patches the sign-flip control found (false-alarm level), and which landforms hold them;
 - caveats a reader needs (e.g. LSstats used a landform raster other than RIL's output).
 
-Every number must come from those files -- quote, don't estimate. Then rerun the driver: it skips
-every pipeline and re-renders the report, which includes the narrative.
+Every number must come from those files -- quote, don't estimate. Then rerun
+`Rscript R/run_site.R <site file>`: it skips every pipeline and re-renders the report, which
+includes the narrative.
 
 Give the user the report path (`<report_dir>\<study_name>_report.html`). It is self-contained
 and can be emailed as is; offer to publish it as a private claude.ai page if they want a link.
