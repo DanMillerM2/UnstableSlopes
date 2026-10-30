@@ -18,7 +18,9 @@
 ## LSstats reads (polygon_raster, or LANDSLIDE POLYGON RASTER in a mode-1 input file). Neither
 ## program knows about the other, so a mismatch would silently summarize some other, stale patch
 ## raster -- this driver reads both paths back out of the two parameter (or input) files before
-## running anything, and stops if they don't name the same raster.
+## running anything, and stops if they don't name the same raster. Likewise, when LSstats reads
+## LShunter's patch table for polygon volumes (patch_table, or LSHUNTER PATCH TABLE), it must be
+## LShunter's out_table (OUTPUT PATCH TABLE).
 ##
 ## Resumability: each stage is skipped if its final output already exists -- the patch raster
 ## (.flt) for LShunter, and the last raster's <out_csv>_landforms_<n>.csv for LSstats (the last
@@ -230,6 +232,27 @@ if (raster_key(out_patch) != raster_key(polygon_raster)) {
        "file, so LSstats would not summarize the patches this pipeline's LShunter run produces:\n",
        "  LShunter output patch raster:     ", out_patch, "\n",
        "  LSstats landslide polygon raster: ", polygon_raster)
+}
+
+# LSstats's patch table (volumes) must be the one this LShunter run writes. Optional in both.
+optional_value <- function(stage_params, mode1_file, key, keyword) {
+  if (is_mode1(stage_params)) {
+    v <- read_keyword(mode1_file, keyword)
+    if (length(v)) v[1] else "NOFILE"
+  } else if (is.null(stage_params[[key]])) "NOFILE" else stage_params[[key]]
+}
+lsstats_table <- optional_value(lsstats_params, if (is_mode1(lsstats_params)) lsstats_input_file,
+                                "patch_table", "LSHUNTER PATCH TABLE")
+if (!is_nofile_text(lsstats_table)) {
+  lshunter_table <- optional_value(lshunter_params,
+                                   if (is_mode1(lshunter_params)) lshunter_input_file,
+                                   "out_table", "OUTPUT PATCH TABLE")
+  csv_key <- function(p) tolower(normalizePath(paste0(sub("\\.csv$", "", p, ignore.case = TRUE), ".csv"),
+                                               winslash = "/", mustWork = FALSE))
+  if (is_nofile_text(lshunter_table) || csv_key(lsstats_table) != csv_key(lshunter_table)) {
+    stop("LSstats's patch_table is not LShunter's out_table, so its volumes would describe other ",
+         "patches:\n  LSstats patch_table: ", lsstats_table, "\n  LShunter out_table:  ", lshunter_table)
+  }
 }
 
 out_patch_flt <- paste0(sub("\\.flt$", "", out_patch, ignore.case = TRUE), ".flt")

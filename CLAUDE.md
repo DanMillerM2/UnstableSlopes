@@ -177,7 +177,11 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `..\LandslideUtilities\LSstats.f90`) to summarize a comma-separated list of rasters over
   LShunter's landslide polygons and RIL's landform classes (`<out_csv>_<i>.csv` /
   `<out_csv>_landforms_<i>.csv` per raster). Supports both modes like LShunter.R; distance to the
-  floodplain edge comes from `distance_raster` or is computed out to `radius`.
+  floodplain edge comes from `distance_raster` or is computed out to `radius`. With `patch_table`
+  (LShunter's `out_table`; LSstats 1.1.0+) each per-polygon csv also has Volume, SD_Volume and
+  Z_Volume; LSstats stops if the table's labels or point counts don't match the patch raster.
+  `TWutils::LSstats()` also checks that every csv was written, because a Fortran runtime error
+  (`forrtl: severe`) still exits with code 0.
 - **lshunter_lsstats_pipeline.R** — driver: runs `LShunter.R` then `LSstats.R` as `Rscript`
   subprocesses, each handed its own unmodified parameter file (so either stage may be mode 1 or
   2). Stops unless LShunter's output patch raster is LSstats's polygon raster; skips a stage whose

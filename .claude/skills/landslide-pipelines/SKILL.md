@@ -55,16 +55,17 @@ Ask for anything not already given, in one message:
 Run these and fix anything that fails before writing configs:
 
 ```
-Rscript -e "a <- names(formals(TWutils::align_input)); stopifnot(all(c('tileSelect','minTileSize','outGradient','densityLod','outExceed','outCenDif') %in% a)); l <- names(formals(TWutils::LShunterInput)); stopifnot(all(c('Exceedance','Gradient','OutTable','SignFlip') %in% l)); stopifnot(exists('align_gradient_raster', asNamespace('TWutils'))); for (p in c('terra','sf','processx','ggplot2','knitr')) stopifnot(requireNamespace(p, quietly = TRUE))"
+Rscript -e "a <- names(formals(TWutils::align_input)); stopifnot(all(c('tileSelect','minTileSize','outGradient','densityLod','outExceed','outCenDif') %in% a)); l <- names(formals(TWutils::LShunterInput)); stopifnot(all(c('Exceedance','Gradient','OutTable','SignFlip') %in% l)); stopifnot(exists('align_gradient_raster', asNamespace('TWutils')), 'patch_table' %in% names(formals(TWutils::LSstats_input))); for (p in c('terra','sf','processx','ggplot2','knitr')) stopifnot(requireNamespace(p, quietly = TRUE))"
 quarto --version
 ```
 
-- If TWutils fails the check, reinstall it from `..\TWutils` (`R CMD INSTALL`; b03d27b or later).
+- If TWutils fails the check, reinstall it from `..\TWutils` (`R CMD INSTALL`; current `main`).
 - **Align** must be built from GridUtilities `align_clean` 8a08fa6 or later (`Projects\align`,
   Release|x64). An older `align.exe` is caught a few seconds into the run -- the supervisor stops
   with "Align ... is older than this pipeline" and names what it didn't recognize. **LShunter**
   must be 1.1.0 or later (LandslideUtilities `LShunter_update` e37b98c; its log's first lines show
-  the version). The fix for either is to rebuild in Visual Studio. Tell the user; don't try to
+  the version), and so must **LSstats** (patch volumes; earlier versions crash on a raster path
+  containing "DoD"). The fix for any of them is to rebuild in Visual Studio. Tell the user; don't try to
   work around it.
 - **Memory**: Align holds whole DEMs in memory (about 48 GB on a 370 M-cell site). Run one site at
   a time, and don't start other Align jobs while it runs.
@@ -97,9 +98,9 @@ change only what the user's inputs require; keep the templates' comments.
      `<outbins>_densityLodCorr.csv`, and an `out_table`; `sign_flip: TRUE` gives the gain patches
      as a false-alarm control. `null_realizations` (simulated noise) and `seed_den_*` (the two LAZ
      sets' `ground_count_ref_grid.flt`) are optional -- use them if the previous site did.
-   - LSstats `polygon_raster` must equal LShunter `out_patch`. **Don't put "DoD" in the file name
-     of any raster LSstats summarizes**: a name containing "DoD" makes LSstats add a Volume column
-     and then crash on a too-long record while still exiting 0 (a known LSstats bug).
+   - LSstats `polygon_raster` must equal LShunter `out_patch`. With an LShunter `out_table`, set
+     LSstats `patch_table` to it: every per-polygon csv then gets Volume, SD_Volume and Z_Volume
+     (the driver stops if they differ, and LSstats stops if the table doesn't match the patches).
    Then copy `R/lshunter_lsstats_pipeline_params_template.txt`.
 4. **Driver** -- copy `R/run_landslide_pipelines_params_template.txt` and set `study_name` and
    the three config paths.

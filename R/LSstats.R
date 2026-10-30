@@ -153,7 +153,13 @@ param_specs <- list(
   # are ignored when distance_raster is supplied.
   distance_raster     = list(type = "character", default = "NOFILE"),
   radius              = list(type = "numeric", default = NA_real_, allow_na = TRUE),
-  out_distance_raster = list(type = "character", default = "NOFILE")
+  out_distance_raster = list(type = "character", default = "NOFILE"),
+
+  # Optional: LShunter's patch table (its out_table), from the LShunter run that wrote
+  # polygon_raster. Adds each polygon's Volume, SD_Volume and Z_Volume after Area in the
+  # per-polygon csv files (LSstats 1.1.0 or later); LSstats stops if the table's labels or point
+  # counts don't match the polygon raster.
+  patch_table = list(type = "character", default = "NOFILE")
 )
 
 # Applies param_specs on top of the raw (character) values read_param_file() returned: converts
@@ -269,6 +275,7 @@ if (use_existing_input_file) {
                      distance_raster = distance_raster,
                      radius = if (is.na(radius)) -9999 else radius,
                      out_distance_raster = out_distance_raster,
+                     patch_table = patch_table,
                      executable_dir = executable_dir)
 
     message("LSstats finished. Output csv files written to: ", out_csv_base, "_<i>.csv and ",

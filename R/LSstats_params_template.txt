@@ -38,6 +38,11 @@ distance_raster: NOFILE
 radius: 500
 out_distance_raster: c:\work\data\postmortem\distFP_2006
 
+# Optional: LShunter's patch table (its out_table), from the run that wrote polygon_raster. Adds
+# each polygon's Volume, SD_Volume and Z_Volume (m3, from Align's centred difference raster and
+# noise model) after Area in every <out_csv>_<i>.csv. NOFILE leaves them out. Needs LSstats 1.1.0.
+patch_table: c:\work\data\postmortem\patch_2006_2023_table.csv
+
 # Scratch directory (must already exist; LSstats's input file is written here) and the folder
 # containing LSstats.exe.
 scratch_dir: c:\work\scratch
