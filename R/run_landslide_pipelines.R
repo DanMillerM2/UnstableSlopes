@@ -5,7 +5,7 @@
 ## renders PipelineReport.qmd (repo root) to one self-contained html file summarizing the run.
 ## Each pipeline is its own `Rscript <script> <config>` subprocess, handed its own config file
 ## unmodified, with its console output in <report_dir>/logs/<pipeline>.log; the align and RIL
-## logs are echoed here as they grow, so Align's tile search can be followed from this console.
+## logs are echoed here as they grow, so Align's progress can be followed from this console.
 ##
 ## Links checked before anything runs (each pipeline only knows its own files, so a mismatch
 ## would silently use some other, stale raster):

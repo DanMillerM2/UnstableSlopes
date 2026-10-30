@@ -13,8 +13,8 @@
 # Name for the report title and file name.
 study_name: Site 1, 2017-2023
 
-# Each pipeline's own config. LShunter's outlier raster must be [align] outOutlier in the align
-# config (checked before anything runs).
+# Each pipeline's own config. LShunter's inputs (exceedance or outlier raster, gradient, and the
+# patch-table inputs) must be this run's Align outputs (checked before anything runs).
 align_pipeline_config: c:\work\data\site1\run_align_pipeline.txt
 ril_pipeline_config: c:\work\data\site1\ril_pipeline.txt
 lshunter_lsstats_config: c:\work\data\site1\lshunter_lsstats_pipeline.txt
