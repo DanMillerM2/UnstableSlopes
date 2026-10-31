@@ -16,6 +16,12 @@ site_dir: c:\work\data\site1
 site_run_name: run_17_23              # run folder under site_dir
 site_polygon: c:\work\data\site1\study_area.shp   # any CRS; NOFILE = every tile, unmasked
 site_crs: EPSG:2856                   # CRS of every raster produced (default EPSG:2856)
+# Lakes (any vector format; _layer for a geodatabase, _where an SQL condition picking features),
+# left out of Align (WATER MASK). Not rivers: they move between surveys (found from the surveys'
+# water returns instead, ground_extra_counts below).
+# site_water_polygons: c:\work\data\site1\300940_EDH_ECYFinal.gdb
+# site_water_layer: Polygons
+# site_water_where: FCode = 39000      # Lake/pond (46000 is Stream/river)
 scratch_dir: c:\work\scratch
 # report_dir: c:\work\data\site1\run_17_23\report     # default <run folder>\report
 # narrative_md:                       # default <report_dir>\narrative.md
@@ -50,6 +56,7 @@ align_z_units: auto
 ground_n_workers: 6
 ground_batch_size_tiles: 50
 # ground_stream_chunk_size: 100000
+ground_extra_counts: water=9          # also count water returns, left out of Align (WATER POINTS)
 
 # ---- Align: any align_supervisor.R setting, prefixed align_ -----------------------------------
 # Defaults: tiles and prior chosen by cross-validation (tileNx auto, SELECT = AUTO, square tiles
@@ -65,6 +72,12 @@ align_executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release
 # align_iterations: 8
 # align_convergence: 0.005
 # align_outCorDif: TRUE               # also difcor_<tag>; likewise outDenOutlier, outDX/DY/DZ
+# Gaps in ground-return coverage (missing or snow-covered tiles) left out of Align:
+align_coverageMin: 0.02               # ground returns/m2 in each survey, per block
+align_coverageBlock: 50               # m
+# align_outWaterMask: TRUE            # watermask_<tag>: why cells were left out (1-4)
+# align_waterMinDensity: 0.1          # water returns/m2 (WATER POINTS); align_waterWindow: 1
+# align_waterMaskBuffer: 2            # m around the water polygons
 
 # ---- RIL chain: its existing Fortran input files (the method's parameters live in them) --------
 # All three must name the same DEM. Copy them from a previous site and change the DEM, scratch and

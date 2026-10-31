@@ -53,3 +53,8 @@ clip_polygon: NOFILE
 # ground_count_ref_grid.flt instead of the density raster (target_pixel_size_m is then unused).
 # NOFILE = build the density raster on its own target_pixel_size_m grid.
 template_raster: NOFILE
+
+# Other LAS classes counted per template cell with the ground points (needs template_raster), as
+# name=class pairs: "water=9" writes water_count_ref_grid.flt, which Align's WATER POINTS uses
+# (run_align_pipeline.R passes it on); "water=9, snow=21" also counts snow. NONE = ground only.
+extra_counts: NONE

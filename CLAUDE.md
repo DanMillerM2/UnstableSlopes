@@ -110,13 +110,24 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   subprocess and is skipped if its output already exists — apart from that count-raster age check,
   existence is the only check, so outputs must be deleted by hand after changing the polygon or
   other parameters. Stage 3 always runs **align_supervisor.R**; `[align]` is passed to it as is.
+  Water: `[study_area]` `water_polygons` (with `water_layer`, and `water_where`, an SQL condition
+  such as `FCode = 39000`) is rasterized onto the reference DTM grid as
+  `water_mask_ref_grid.flt` in the run folder (rebuilt when its source changes) and becomes
+  Align's `waterMask` — lakes only: rivers move between surveys, so river polygons match neither
+  survey's channel; and `extra_counts: water=9` in `[defaults]` makes each set's
+  `water_count_ref_grid.flt` Align's `refWater`/`alignWater` (WATER POINTS), which is how rivers
+  are found.
 - **align_supervisor.R** — runs Align once (needs GridUtilities 8a08fa6+). With `tileNx`/`tileNy:
   auto` (default) Align itself chooses the tile count and prior by block cross-validation
   (`TILES FIT = JOINT, SELECT = AUTO`; `min_tile_size`, `max_tile_size`, `cv_block`, `cv_buffer`);
   defaults follow Align's CLAUDE.md: `iterations` 8 with `convergence` 0.005 (change of the aligned
   DEM), `derivatives` CENTRAL, `nslope` 10 / `maxSlope` 1.5, `densityLod` auto (with both
   ground-return rasters), and always `OUTPUT GRADIENT RASTER` (`<refDTM>_grad<radius>m`, which
-  LShunter needs). A few seconds in it checks Align's settings echo — unrecognized keywords, or an
+  LShunter needs). Align 1.1.0+ also takes `waterMask`/`waterMaskBuffer`, `refWater`/`alignWater`
+  (`waterMinDensity`, `waterWindow`), `openWaterMinArea`, `coverageMin`/`coverageBlock` (blocks
+  where a survey has almost no ground returns: missing or snow-covered tiles) and `outWaterMask`
+  (why each cell was left out); all left-out cells are nodata in every output. A few seconds in it
+  checks Align's settings echo — unrecognized keywords, or an
   option not acknowledged (Align drops unknown `TILES` sub-fields silently) — and kills an old exe.
   It runs the exe via `processx` (input file from `TWutils::align_input()`) into
   `<outOutlier folder>/align_run/`, streaming `align.log`, then moves every output to its final
@@ -164,7 +175,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   tiles' LAS headers), points are read straight from each tile — one `exec()` per tile, ground
   filtered at read time, no merged LAZ unless `export_ground_points_gpkg` needs one — projected into
   the template's CRS, and tallied per template cell in a lasR `callback()`; the output is the point
-  count per template cell, `ground_count_ref_grid.flt`, instead of the density raster. It's masked
+  count per template cell, `ground_count_ref_grid.flt`, instead of the density raster;
+  `extra_counts` (e.g. `water=9, snow=21`) counts other LAS classes in the same pass, as
+  `<name>_count_ref_grid.flt`. It's masked
   with the polygon built exactly as `mosaic_dtm.R` builds it (terra `aggregate()` + `project()`, not
   sf), so it keeps the same boundary cells as the DTM, and — like the per-batch `.tif`s — it's
   written under a `_partial` name and renamed into place when complete.

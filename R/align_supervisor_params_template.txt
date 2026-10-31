@@ -37,8 +37,19 @@ dampener: 1.0
 
 # x and y derivatives: CENTRAL or SIDED. Optional: applySlope (YES, NO, STABLE), weights (NONE,
 # IQR), groundMaskRadius (m), waterGradThreshold and waterCurvThreshold (both, to mask open
-# water).
+# water; openWaterMinArea, m2, drops smaller flat areas).
 derivatives: CENTRAL
+
+# Water and gaps in coverage, left out of everything (Align 1.1.0+). waterMask: a raster whose
+# nonzero cells are water (run_align_pipeline.R makes it from [study_area] water_polygons), widened
+# by waterMaskBuffer (m). refWater/alignWater: the surveys' water-return count rasters
+# (ground_returns.R extra_counts: water=9), with waterMinDensity (returns/m2, default 0.1) and
+# waterWindow (half-width, points, default 1). coverageMin (ground returns/m2, default 0.02) and
+# coverageBlock (m, default 50): blocks where either survey has almost no ground returns.
+# outWaterMask: a raster of why each cell was left out (1 water mask, 2 water points, 3 flat
+# water, 4 no coverage).
+coverageMin: 0.02
+coverageBlock: 50
 
 # "auto" (Align chooses the tiles and prior by cross-validation, TILES SELECT = AUTO), or
 # numbers of tiles in x and y.

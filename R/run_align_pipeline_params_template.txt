@@ -40,6 +40,14 @@
 clip_polygon: c:\work\data\site1\study_area.shp
 # CRS of every raster the pipeline produces.
 target_crs: EPSG:2856
+# Optional lakes (any vector format; water_layer names the layer of a geodatabase, water_where is
+# an SQL condition picking features), rasterized onto the reference DTM's grid and left out of
+# Align as its WATER MASK. Lakes only: rivers move between surveys, so their polygons match
+# neither survey; Align finds them from the surveys' water returns (extra_counts below).
+# water_polygons: c:\work\data\site1\300940_EDH_ECYFinal.gdb
+# water_layer: Polygons
+# water_where: FCode = 39000
+
 
 [defaults]
 # Ground points are counted per reference DTM cell (ground_returns.R's template_raster is always
@@ -52,6 +60,8 @@ export_ground_points_gpkg: FALSE
 fill_empty_cells_with_zero: FALSE
 cleanup_intermediate_files: TRUE
 stream_chunk_size: 100000
+# Also count the lidar water returns (LAS class 9), left out of Align as WATER POINTS.
+extra_counts: water=9
 
 [ref_set]
 input_dir: c:\work\data\site1\NP_2017\laz

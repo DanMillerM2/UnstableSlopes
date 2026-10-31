@@ -73,7 +73,8 @@ get <- function(key, default = NULL) if (is_set(s[[key]])) s[[key]] else default
 survey_keys <- c("label", "laz_dir", "ground_dir", "dtm", "dtm_tile_dir", "dtm_input", "dsm",
                  "dsm_tile_dir", "dsm_input", "z_units", "file_pattern", "clip_buffer_cells")
 site_keys <- c("site_name", "site_dir", "site_run_name", "site_polygon", "site_crs", "scratch_dir",
-               "report_dir", "narrative_md", "render_report", "progress_interval_s")
+               "report_dir", "narrative_md", "render_report", "progress_interval_s",
+               "site_water_polygons", "site_water_layer", "site_water_where")
 align_settings <- c("iterations", "convergence", "k", "dampener", "derivatives", "applySlope",
                     "weights", "groundMaskRadius", "waterGradThreshold", "waterCurvThreshold",
                     "tileNx", "tileNy", "overlap", "tile_fit", "tile_select", "cv_block",
@@ -81,8 +82,11 @@ align_settings <- c("iterations", "convergence", "k", "dampener", "derivatives",
                     "prior_fraction", "prior", "min_tile_points", "radius", "nslope", "maxSlope",
                     "nAzimuth", "densityLod", "localOffsetWindow", "localOffsetMinPoints",
                     "executable_dir", "program_name", "progress_interval_s",
+                    # water and gaps in coverage (Align 1.1.0+)
+                    "openWaterMinArea", "waterMaskBuffer", "waterMinDensity", "waterWindow",
+                    "coverageMin", "coverageBlock",
                     # optional extra outputs, TRUE to write them into the run folder
-                    "outCorDif", "outDenOutlier", "outDX", "outDY", "outDZ")
+                    "outCorDif", "outDenOutlier", "outDX", "outDY", "outDZ", "outWaterMask")
 ril_keys <- c("ril_bldgrds_input", "ril_valleyfloor_input", "ril_input",
               "ril_bldgrds_executable_dir", "ril_valleyfloor_executable_dir", "ril_executable_dir")
 lshunter_settings <- c("threshold1", "threshold2", "min1", "min2", "accum", "max_accum1",
@@ -119,6 +123,8 @@ need <- function(ok, msg) if (!ok) problems <<- c(problems, msg)
 
 need(dir.exists(get("scratch_dir")), paste0("scratch_dir not found: ", get("scratch_dir")))
 if (is_set(s$site_polygon)) need(file.exists(s$site_polygon), paste0("site_polygon not found: ", s$site_polygon))
+if (is_set(s$site_water_polygons)) need(file.exists(s$site_water_polygons),
+                                        paste0("site_water_polygons not found: ", s$site_water_polygons))
 for (sv in c("ref", "align")) {
   need(dir.exists(get(paste0(sv, "_laz_dir"))),
        paste0(sv, "_laz_dir not found: ", get(paste0(sv, "_laz_dir"))))
@@ -164,7 +170,7 @@ align_out <- list(
   outLod     = in_run(paste0("lod_", tag)),
   outCenDif  = in_run(paste0("cendif_", tag)))
 extra_out <- c(outCorDif = "difcor_", outDenOutlier = "denoutlier_", outDX = "dx_", outDY = "dy_",
-               outDZ = "dz_")
+               outDZ = "dz_", outWaterMask = "watermask_")
 for (k in names(extra_out)) {
   v <- get(paste0("align_", k))
   if (!is.null(v) && isTRUE(as.logical(v))) align_out[[k]] <- in_run(paste0(extra_out[[k]], tag))
@@ -237,7 +243,9 @@ for (k in setdiff(align_settings, names(extra_out))) {
 align_section <- c(align_section, align_out, list(scratch_dir = s$scratch_dir))
 
 align_cfg <- write_lines(c(
-  section("study_area", list(clip_polygon = get("site_polygon", "NOFILE"), target_crs = get("site_crs", "EPSG:2856"))),
+  section("study_area", list(clip_polygon = get("site_polygon", "NOFILE"), target_crs = get("site_crs", "EPSG:2856"),
+                             water_polygons = get("site_water_polygons"), water_layer = get("site_water_layer"),
+                             water_where = get("site_water_where"))),
   section("defaults", ground),
   section("ref_set", list(input_dir = s$ref_laz_dir, output_dir = s$ref_ground_dir)),
   section("align_set", list(input_dir = s$align_laz_dir, output_dir = s$align_ground_dir)),

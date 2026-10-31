@@ -30,7 +30,8 @@
 ## before any points are counted, each ground point is projected into the template's CRS and
 ## counted in the template cell containing it, and the result is the ground-point COUNT per
 ## template cell, written as ground_count_ref_grid.flt (ESRI GridFloat) instead of the density
-## raster. See "Count points on the template grid" below.
+## raster. See "Count points on the template grid" below. extra_counts (e.g. "water=9") counts
+## other LAS classes in the same pass, as <name>_count_ref_grid.flt beside it.
 ##
 ## Requires: lasR, terra, sf, future, future.apply, and lidR (only when clip_polygon or
 ## template_raster is set -- it reads LAS headers only)
@@ -222,7 +223,14 @@ param_specs <- list(
   # if the template carries no CRS), and the output is that count raster,
   # ground_count_ref_grid.flt, instead of the reprojected density raster; target_pixel_size_m is
   # then unused. NOFILE builds the density raster on its own target_pixel_size_m grid as usual.
-  template_raster = list(type = "character", default = "NOFILE")
+  template_raster = list(type = "character", default = "NOFILE"),
+
+  # Other LAS classes to count per template cell alongside the ground points (needs
+  # template_raster), as name=class pairs, e.g. "water=9" or "water=9, snow=21" (several classes
+  # for one name joined by "+", e.g. "water=9+41"). Each is written as <name>_count_ref_grid.flt
+  # next to ground_count_ref_grid.flt; Align's WATER POINTS reads the water counts. NONE counts
+  # ground only.
+  extra_counts = list(type = "character", default = "NONE")
 )
 
 # Applies param_specs on top of the raw (character) values read_param_file() returned: converts
@@ -307,6 +315,29 @@ if (use_template) {
     stop("template_raster must be in a projected CRS: ", template_raster)
   }
 }
+
+# extra_counts: named lists of LAS classes counted alongside ground, e.g. list(water = 9L)
+parse_extra_counts <- function(spec) {
+  if (!nzchar(trimws(spec)) || toupper(trimws(spec)) == "NONE") return(list())
+  parts <- trimws(strsplit(spec, ",", fixed = TRUE)[[1]])
+  parts <- parts[nzchar(parts)]
+  out <- list()
+  for (p in parts) {
+    kv <- trimws(strsplit(p, "=", fixed = TRUE)[[1]])
+    cls <- suppressWarnings(as.integer(strsplit(kv[2], "+", fixed = TRUE)[[1]]))
+    if (length(kv) != 2 || !grepl("^[A-Za-z][A-Za-z0-9_]*$", kv[1]) || anyNA(cls) || kv[1] == "ground") {
+      stop("extra_counts must be name=class pairs such as \"water=9, snow=21\" (got \"", p, "\").")
+    }
+    out[[kv[1]]] <- cls
+  }
+  out
+}
+extra_classes <- parse_extra_counts(extra_counts)
+if (length(extra_classes) && !use_template) {
+  stop("extra_counts needs template_raster: the extra counts are written on the template grid.")
+}
+extra_count_flt_paths <- vapply(names(extra_classes), function(nm)
+  file.path(output_dir, paste0(nm, "_count_ref_grid.flt")), character(1))
 
 ## ---- Discover and batch LAZ tiles --------------------------------------------------------
 ## Lists every input tile once, then splits that list into batch_size_tiles-sized groups.
@@ -567,9 +598,15 @@ rasterize_batch_count <- function(merged_path, native_res, count_tif_path) {
 # batch's tiles (read file by file) or its merged LAZ (read in chunks). Returns count_tif_path,
 # or NA if the batch lies entirely outside the template. Skips the work if count_tif_path
 # already exists, so an interrupted run can resume without recounting batches that finished.
+# With extra_counts, the other classes are counted in the same pass over the tiles (or, when the
+# ground points come from the merged ground-only LAZ, in a second pass over the batch's tiles,
+# extra_tiles) and written next to it as <name>_count_ref_grid.tif.
 count_batch_on_template <- function(las_source, native_crs, hull, template_path, template_crs,
-                                    count_tif_path, from_merged) {
-  if (file.exists(count_tif_path)) {
+                                    count_tif_path, from_merged, extra_tiles = las_source) {
+  extra_tifs <- vapply(names(extra_classes), function(nm)
+    sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"), count_tif_path, fixed = TRUE),
+    character(1))
+  if (file.exists(count_tif_path) && all(file.exists(extra_tifs))) {
     message("Template-grid count raster already exists, skipping: ", count_tif_path)
     return(count_tif_path)
   }
@@ -592,19 +629,27 @@ count_batch_on_template <- function(las_source, native_crs, hull, template_path,
   }
   window <- crop(rast(template), batch_ext, snap = "out")  # rast(template): geometry only, no cell values read
 
-  counts      <- integer(ncell(window))
+  # One count vector per output: ground (class 2) and each extra_counts name
+  groups      <- c(list(ground = 2L), extra_classes)
+  counts      <- lapply(groups, function(g) integer(ncell(window)))
   same_crs    <- st_crs(native_crs) == st_crs(template_crs)
   native_wkt  <- native_crs$wkt
   n_counted   <- 0
   n_outside   <- 0
 
-  count_chunk <- function(data) {
+  # counted: the groups a pass counts. A pass that reads ground only (keep_ground(), or the merged
+  # ground-only LAZ) has no Classification to look at; a pass over several classes does.
+  make_counter <- function(counted) function(data) {
     if (nrow(data) == 0) return(0L)  # lasR can call back with an empty chunk near tile edges
     xy <- cbind(data$X, data$Y)
     if (!same_crs) xy <- sf_project(native_wkt, template_crs, xy)
     cells <- cellFromXY(window, xy)
     inside <- !is.na(cells)
-    counts    <<- counts + tabulate(cells[inside], nbins = length(counts))
+    for (g in counted) {
+      keep <- if (length(counted) == 1 && identical(g, "ground")) inside else
+        inside & data$Classification %in% groups[[g]]
+      counts[[g]] <<- counts[[g]] + tabulate(cells[keep], nbins = ncell(window))
+    }
     n_counted <<- n_counted + sum(inside)
     n_outside <<- n_outside + sum(!inside)
     0L  # return nothing of size, so exec()'s combined result stays tiny
@@ -612,30 +657,47 @@ count_batch_on_template <- function(las_source, native_crs, hull, template_path,
 
   # drop_buffer = TRUE: a chunked read can hand the callback a chunk's buffer points too, which
   # are also another chunk's own points -- counting them would count them twice.
-  cb <- callback(count_chunk, expose = "xy", drop_buffer = TRUE, no_las_update = TRUE)
+  counter_cb <- function(counted) callback(make_counter(counted),
+                                           expose = if (length(counted) > 1 || !identical(counted, "ground")) "xyc" else "xy",
+                                           drop_buffer = TRUE, no_las_update = TRUE)
+  # One exec() per tile, NOT one over all the batch's tiles: given several files, lasR treats
+  # them as one seamless point cloud and processes each file's bounding box as a chunk, reading
+  # every file's points inside it -- so wherever tiles' bounding boxes overlap (e.g. quarter-
+  # quad tiles, whose boxes overlap at their skewed corners), those points would be read, and
+  # counted, once per overlapping tile. Read alone, each tile yields exactly its own points.
+  extra_cls <- unlist(extra_classes, use.names = FALSE)
   if (from_merged) {
-    exec(reader() + cb, on = las_source, with = list(chunk = stream_chunk_size))
+    exec(reader() + counter_cb("ground"), on = las_source, with = list(chunk = stream_chunk_size))
+    if (length(extra_classes)) {
+      cb <- counter_cb(names(extra_classes))
+      for (f in extra_tiles) exec(reader(filter = keep_class(extra_cls)) + cb, on = f)
+    }
+  } else if (length(extra_classes)) {
+    cb <- counter_cb(names(groups))
+    for (f in las_source) exec(reader(filter = keep_class(c(2L, extra_cls))) + cb, on = f)
   } else {
-    # One exec() per tile, NOT one over all the batch's tiles: given several files, lasR treats
-    # them as one seamless point cloud and processes each file's bounding box as a chunk, reading
-    # every file's points inside it -- so wherever tiles' bounding boxes overlap (e.g. quarter-
-    # quad tiles, whose boxes overlap at their skewed corners), those points would be read, and
-    # counted, once per overlapping tile. Read alone, each tile yields exactly its own points.
+    cb <- counter_cb("ground")
     for (f in las_source) exec(reader(filter = keep_ground()) + cb, on = f)
   }
 
-  values(window) <- counts
-  names(window)  <- "ground_point_count"
-  # Written under a temporary name and renamed when complete: the skip at the top of this
-  # function trusts any count_tif_path that exists, so an interrupted write must not leave one.
-  partial_tif <- sub("[.]tif$", "_partial.tif", count_tif_path, ignore.case = TRUE)
-  invisible(writeRaster(window, partial_tif, datatype = "INT4S", overwrite = TRUE))
-  invisible(gc())  # release terra's handle on the file before renaming it (Windows)
-  if (!file.rename(partial_tif, count_tif_path)) {
-    stop("Could not rename ", partial_tif, " to ", count_tif_path)
+  # Each written under a temporary name and renamed when complete: the skip at the top of this
+  # function trusts any count raster that exists, so an interrupted write must not leave one. The
+  # ground raster goes last.
+  out_tifs <- c(extra_tifs, ground = count_tif_path)
+  for (g in names(out_tifs)) {
+    values(window) <- counts[[g]]
+    names(window)  <- paste0(g, "_point_count")
+    partial_tif <- sub("[.]tif$", "_partial.tif", out_tifs[[g]], ignore.case = TRUE)
+    invisible(writeRaster(window, partial_tif, datatype = "INT4S", overwrite = TRUE))
+    invisible(gc())  # release terra's handle on the file before renaming it (Windows)
+    if (!file.rename(partial_tif, out_tifs[[g]])) {
+      stop("Could not rename ", partial_tif, " to ", out_tifs[[g]])
+    }
   }
   message("Batch template-grid ground count raster written to: ", count_tif_path, " (",
           n_counted, " points counted",
+          if (length(extra_classes)) paste0("; also ", paste(names(extra_classes), collapse = ", "),
+                                            " counts"),
           if (n_outside > 0) paste0(", ", n_outside, " outside template_raster's extent"), ")")
   count_tif_path
 }
@@ -682,7 +744,8 @@ process_one_batch <- function(b) {
   if (use_template) {
     count_path_written <- count_batch_on_template(
       if (needs_merged) merged_path else tile_batches[[b]], crs_info$crs, crs_info$hull,
-      template_raster, template_crs, count_path, from_merged = needs_merged)
+      template_raster, template_crs, count_path, from_merged = needs_merged,
+      extra_tiles = tile_batches[[b]])
   } else {
     rasterize_batch_count(merged_path, crs_info$res, count_path)  # writes count_path; the SpatRaster this returns is discarded here -- see note above
     count_path_written <- count_path
@@ -737,70 +800,83 @@ if (use_template) {
   ## overlap, and each point was counted in exactly one batch. The sum is then extended/cropped to
   ## the template's full extent, so the output matches the template cell for cell.
 
-  batch_count_rasts <- lapply(Filter(Negate(is.na),
-                                     vapply(batch_results, function(r) r$count_path_written,
-                                            character(1))),
-                              rast)
   template <- rast(template_raster)
   crs(template) <- template_crs
-  if (length(batch_count_rasts) == 0) {
+  batch_ground_tifs <- Filter(Negate(is.na), vapply(batch_results, function(r) r$count_path_written,
+                                                    character(1)))
+  if (length(batch_ground_tifs) == 0) {
     stop("No batch overlaps template_raster -- check that the LAS/LAZ tiles and ",
          template_raster, " cover the same area.")
   }
-  count_rast <- if (length(batch_count_rasts) == 1) {
-    batch_count_rasts[[1]]
-  } else {
-    mosaic(sprc(batch_count_rasts), fun = "sum")
-  }
-  crs(count_rast) <- template_crs
-  count_rast <- extend(crop(count_rast, template, snap = "near"), template)
-  if (!compareGeom(count_rast, template, stopOnError = FALSE)) {
-    stop("Internal error: combined count raster does not match template_raster's grid.")
-  }
-  names(count_rast) <- "ground_point_count"
 
-  # Cells with no ground points: 0 from the per-batch counts (or NA outside every batch's
-  # window) -- made uniformly NA, or uniformly 0 with fill_empty_cells_with_zero.
-  count_rast <- if (fill_empty_cells_with_zero) subst(count_rast, NA, 0) else
-    classify(count_rast, cbind(0, NA))
-  if (use_clip) {
-    count_rast <- mask(count_rast, project(clip_vect, template_crs))
-  }
-
-  n_with_pts <- global(count_rast > 0, fun = "sum", na.rm = TRUE)[1, 1]
-  message(sprintf("%.0f of %.0f template cells (%.1f%%) have ground points.",
-                  n_with_pts, ncell(count_rast), 100 * n_with_pts / ncell(count_rast)))
-
-  # Written as an ESRI GridFloat (.flt with an ESRI-keyword .hdr) for the Fortran grid reader,
-  # same as mosaic_dtm.R's output (see the note there on why GDAL's own BIL-style .hdr is
-  # rewritten rather than converted with TWutils' convert_hdr()) -- and, as there, under a
-  # "_partial" name renamed into place only once complete, so an interrupted run never leaves a
-  # truncated ground_count_ref_grid.flt that run_align_pipeline.R would skip as finished.
-  out_base     <- sub("[.]flt$", "", ref_grid_count_flt_path, ignore.case = TRUE)
-  partial_base <- paste0(out_base, "_partial")
-  raster_exts  <- c(".flt", ".hdr", ".prj", ".stx", ".flt.aux.xml")  # every file of one GridFloat raster
-  unlink(paste0(c(out_base, partial_base), rep(raster_exts, each = 2)))  # stale sidecars / leftovers
-
-  count_rast <- writeRaster(count_rast, paste0(partial_base, ".flt"), filetype = "EHdr",
-                            datatype = "FLT4S", NAflag = -9999, gdal = "BYTEORDER=LSB",
-                            overwrite = TRUE)
-  count_ext <- ext(count_rast)
-  writeLines(sprintf("%-14s %s",
-                     c("ncols", "nrows", "xllcorner", "yllcorner", "cellsize", "NODATA_value",
-                       "byteorder"),
-                     c(ncol(count_rast), nrow(count_rast), sprintf("%.6f", xmin(count_ext)),
-                       sprintf("%.6f", ymin(count_ext)), sprintf("%.12f", res(count_rast)[1]),
-                       "-9999", "LSBFIRST")),
-             paste0(partial_base, ".hdr"))
-
-  rm(count_rast); invisible(gc())  # release terra's handle on the partial file before renaming it
-  for (e in c(setdiff(raster_exts, ".flt"), ".flt")) {  # the .flt last: it marks the output complete
-    if (!file.exists(paste0(partial_base, e))) next
-    if (!file.rename(paste0(partial_base, e), paste0(out_base, e))) {
-      stop("Could not rename ", partial_base, e, " to ", out_base, e)
+  # Sums one count's batch windows onto the template grid and writes it as out_flt. kind names
+  # the points ("ground", or an extra_counts name).
+  write_template_counts <- function(batch_tifs, out_flt, kind) {
+    batch_count_rasts <- lapply(batch_tifs, rast)
+    count_rast <- if (length(batch_count_rasts) == 1) {
+      batch_count_rasts[[1]]
+    } else {
+      mosaic(sprc(batch_count_rasts), fun = "sum")
     }
+    crs(count_rast) <- template_crs
+    count_rast <- extend(crop(count_rast, template, snap = "near"), template)
+    if (!compareGeom(count_rast, template, stopOnError = FALSE)) {
+      stop("Internal error: combined count raster does not match template_raster's grid.")
+    }
+    names(count_rast) <- paste0(kind, "_point_count")
+
+    # Cells with no points: 0 from the per-batch counts (or NA outside every batch's window) --
+    # made uniformly NA, or uniformly 0 with fill_empty_cells_with_zero.
+    count_rast <- if (fill_empty_cells_with_zero) subst(count_rast, NA, 0) else
+      classify(count_rast, cbind(0, NA))
+    if (use_clip) {
+      count_rast <- mask(count_rast, project(clip_vect, template_crs))
+    }
+
+    n_with_pts <- global(count_rast > 0, fun = "sum", na.rm = TRUE)[1, 1]
+    if (is.na(n_with_pts)) n_with_pts <- 0  # every cell NA: no points of this kind at all
+    message(sprintf("%.0f of %.0f template cells (%.1f%%) have %s points.",
+                    n_with_pts, ncell(count_rast), 100 * n_with_pts / ncell(count_rast), kind))
+
+    # Written as an ESRI GridFloat (.flt with an ESRI-keyword .hdr) for the Fortran grid reader,
+    # same as mosaic_dtm.R's output (see the note there on why GDAL's own BIL-style .hdr is
+    # rewritten rather than converted with TWutils' convert_hdr()) -- and, as there, under a
+    # "_partial" name renamed into place only once complete, so an interrupted run never leaves a
+    # truncated count raster that run_align_pipeline.R would skip as finished.
+    out_base     <- sub("[.]flt$", "", out_flt, ignore.case = TRUE)
+    partial_base <- paste0(out_base, "_partial")
+    raster_exts  <- c(".flt", ".hdr", ".prj", ".stx", ".flt.aux.xml")  # every file of one GridFloat raster
+    unlink(paste0(c(out_base, partial_base), rep(raster_exts, each = 2)))  # stale sidecars / leftovers
+
+    count_rast <- writeRaster(count_rast, paste0(partial_base, ".flt"), filetype = "EHdr",
+                              datatype = "FLT4S", NAflag = -9999, gdal = "BYTEORDER=LSB",
+                              overwrite = TRUE)
+    count_ext <- ext(count_rast)
+    writeLines(sprintf("%-14s %s",
+                       c("ncols", "nrows", "xllcorner", "yllcorner", "cellsize", "NODATA_value",
+                         "byteorder"),
+                       c(ncol(count_rast), nrow(count_rast), sprintf("%.6f", xmin(count_ext)),
+                         sprintf("%.6f", ymin(count_ext)), sprintf("%.12f", res(count_rast)[1]),
+                         "-9999", "LSBFIRST")),
+               paste0(partial_base, ".hdr"))
+
+    rm(count_rast); invisible(gc())  # release terra's handle on the partial file before renaming it
+    for (e in c(setdiff(raster_exts, ".flt"), ".flt")) {  # the .flt last: it marks the output complete
+      if (!file.exists(paste0(partial_base, e))) next
+      if (!file.rename(paste0(partial_base, e), paste0(out_base, e))) {
+        stop("Could not rename ", partial_base, e, " to ", out_base, e)
+      }
+    }
+    message(tools::toTitleCase(kind), "-point count per template cell written to: ", out_flt)
   }
-  message("Ground-point count per template cell written to: ", ref_grid_count_flt_path)
+
+  # The extra counts first: the ground count raster, written last, marks the run complete.
+  for (nm in names(extra_classes)) {
+    write_template_counts(sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"),
+                              batch_ground_tifs, fixed = TRUE),
+                          extra_count_flt_paths[[nm]], nm)
+  }
+  write_template_counts(batch_ground_tifs, ref_grid_count_flt_path, "ground")
   final_rast <- rast(ref_grid_count_flt_path)
 
 } else {
@@ -915,7 +991,9 @@ if (cleanup_intermediate_files) {
   # any ".lax" so nothing gets left behind regardless of naming.
   lax_paths <- list.files(output_dir, pattern = "\\.lax$", full.names = TRUE, ignore.case = TRUE)
 
-  intermediate_paths <- c(batch_merged_paths, batch_count_paths, lax_paths,
+  batch_extra_paths <- unlist(lapply(names(extra_classes), function(nm)
+    sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"), batch_count_paths, fixed = TRUE)))
+  intermediate_paths <- c(batch_merged_paths, batch_count_paths, batch_extra_paths, lax_paths,
                           if (export_ground_points_gpkg) batch_gpkg_paths else character(0))
   intermediate_paths <- intermediate_paths[file.exists(intermediate_paths)]  # only try to delete files that actually exist
 

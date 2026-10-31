@@ -103,6 +103,17 @@ param_specs <- list(
   groundMaskRadius   = list(type = "numeric", default = 0),
   waterGradThreshold = list(type = "numeric"),
   waterCurvThreshold = list(type = "numeric"),
+  openWaterMinArea   = list(type = "numeric"),  # m2 (Align 1.1.0+)
+  # Water and gaps in coverage left out of everything (Align 1.1.0+): an external water raster,
+  # the surveys' water-return (class 9) count rasters, and blocks without ground returns
+  waterMask       = list(type = "character", default = "NOFILE"),
+  waterMaskBuffer = list(type = "numeric"),     # m
+  refWater        = list(type = "character", default = "NOFILE"),
+  alignWater      = list(type = "character", default = "NOFILE"),
+  waterMinDensity = list(type = "numeric"),     # water returns/m2 (Align's default 0.1)
+  waterWindow     = list(type = "integer"),     # half-width, points (1)
+  coverageMin     = list(type = "numeric"),     # ground returns/m2 (0.02)
+  coverageBlock   = list(type = "numeric"),     # m (50)
 
   tileNx  = list(type = "character", default = "auto"),  # "auto" or a number of tiles
   tileNy  = list(type = "character", default = "auto"),
@@ -139,6 +150,7 @@ param_specs <- list(
   outDX         = list(type = "character", default = "NOFILE"),
   outDY         = list(type = "character", default = "NOFILE"),
   outDZ         = list(type = "character", default = "NOFILE"),
+  outWaterMask  = list(type = "character", default = "NOFILE"),  # why cells were left out
 
   scratch_dir    = list(type = "character", required = TRUE),
   executable_dir = list(type = "character", required = TRUE),
@@ -224,7 +236,7 @@ if (!density_lod) {
 
 flt_path <- function(base) paste0(sub("\\.flt$", "", base, ignore.case = TRUE), ".flt")
 out_keys <- c("outDTM", "outDif", "outOutlier", "outbins", "outExceed", "outLod", "outCenDif",
-              "outDenOutlier", "outCorDif", "outDX", "outDY", "outDZ")
+              "outDenOutlier", "outCorDif", "outDX", "outDY", "outDZ", "outWaterMask")
 out_bases <- mget(out_keys, envir = p)
 out_bases <- out_bases[!vapply(out_bases, is_nofile, logical(1))]
 out_bases <- lapply(out_bases, function(b) sub("\\.(flt|csv)$", "", b, ignore.case = TRUE))
@@ -264,6 +276,12 @@ input_file <- TWutils::align_input(
   derivatives = p$derivatives, applySlope = p$applySlope, weights = p$weights,
   groundMaskRadius = p$groundMaskRadius,
   waterGradThreshold = p$waterGradThreshold, waterCurvThreshold = p$waterCurvThreshold,
+  openWaterMinArea = p$openWaterMinArea,
+  waterMask = p$waterMask, waterMaskBuffer = p$waterMaskBuffer,
+  refWater = p$refWater, alignWater = p$alignWater,
+  waterMinDensity = p$waterMinDensity, waterWindow = p$waterWindow,
+  coverageMin = p$coverageMin, coverageBlock = p$coverageBlock,
+  outWaterMask = run_path("outWaterMask"),
   tileFit = p$tile_fit, tileSelect = p$tile_select,
   cvBlock = p$cv_block, cvBuffer = p$cv_buffer,
   minTileSize = p$min_tile_size, maxTileSize = p$max_tile_size,
@@ -286,7 +304,14 @@ expected_echo <- c(
   if (toupper(p$tile_fit) == "JOINT") c(tile_fit = "(FIT = JOINT)"),
   if (toupper(p$derivatives) == "CENTRAL") c(derivatives = "x and y derivatives: central differences"),
   c(outGradient = "The reference gradient will be written next to the reference DEM"),
-  if (density_lod) c(densityLod = "Level of detection from ground-return density"))
+  if (density_lod) c(densityLod = "Level of detection from ground-return density"),
+  if (!is.null(p$openWaterMinArea)) c(openWaterMinArea = "Minimum connected flat area"),
+  if (!is_nofile(p$waterMask)) c(waterMask = "Water mask raster will be left out"),
+  if (!is_nofile(p$refWater) || !is_nofile(p$alignWater))
+    c(waterPoints = "Water from lidar water points will be left out"),
+  if (!is.null(p$coverageMin) || !is.null(p$coverageBlock))
+    c(coverage = "Blocks without ground-return coverage will be left out"),
+  if (!is_nofile(p$outWaterMask)) c(outWaterMask = "Water mask raster will be output"))
 
 check_echo <- function(lines) {
   lines <- trimws(lines)

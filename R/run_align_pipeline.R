@@ -73,7 +73,14 @@
 ##   [study_area] -- optional; clip_polygon (polygon file, any CRS; default NOFILE = no clipping)
 ##                   and target_crs (default EPSG:2856). Passed to every ground_returns.R and
 ##                   mosaic_dtm.R run, so they are set only here; the same keywords in any other
-##                   section are ignored (with a warning).
+##                   section are ignored (with a warning). Also water_polygons (with water_layer
+##                   for a multi-layer source such as a geodatabase, and water_where, an SQL
+##                   condition that picks features): lakes, rasterized onto the reference DTM's
+##                   grid as water_mask_ref_grid.flt in the run folder and given to Align as its
+##                   WATER MASK. Not rivers: they move between surveys, so their polygons match
+##                   neither survey's channel. extra_counts: water=9 in [defaults]
+##                   (or a set) also counts the surveys' water returns, given to Align as WATER
+##                   POINTS.
 ##   [defaults]   -- optional; ground_returns.R parameters shared by both [ref_set] and
 ##                   [align_set] below, unless a set repeats the same keyword to override it.
 ##   [ref_set]    -- ground_returns.R parameters (input_dir, output_dir, ...) for the reference
@@ -218,7 +225,19 @@ if (toupper(study_area$clip_polygon) == "NOFILE") {
   stop("clip_polygon not found: ", study_area$clip_polygon)
 }
 if (is.null(study_area$target_crs)) study_area$target_crs <- "EPSG:2856"
-unknown_study_keys <- setdiff(names(study_area), c("clip_polygon", "target_crs"))
+# Optional water polygons (any vector format sf reads, any CRS; water_layer names the layer of a
+# multi-layer source such as a geodatabase; water_where, an SQL condition, picks features, e.g.
+# "FCode = 39000"), rasterized onto the reference DTM's grid for Align's WATER MASK (see "Water
+# mask" below). Lakes only: rivers move between surveys, so river polygons match neither survey's
+# channel -- Align finds rivers from the surveys' own water returns (WATER POINTS) instead.
+water_polygons <- if (is.null(study_area$water_polygons)) "NOFILE" else study_area$water_polygons
+water_layer    <- study_area$water_layer
+water_where    <- study_area$water_where
+if (toupper(water_polygons) != "NOFILE" && !file.exists(water_polygons)) {
+  stop("water_polygons not found: ", water_polygons)
+}
+unknown_study_keys <- setdiff(names(study_area), c("clip_polygon", "target_crs", "water_polygons",
+                                                   "water_layer", "water_where"))
 if (length(unknown_study_keys) > 0) {
   warning("Ignoring unrecognized parameter(s) in [study_area] of ", pipeline_config_path, ": ",
           paste(unknown_study_keys, collapse = ", "))
@@ -380,10 +399,11 @@ align_dsm <- resolve_raster_section(align_dsm, "align_dsm", "dsm", optional = TR
 
 derived_align_keys <- intersect(names(align_section),
                                 c("refGrnd", "alignGrnd", "refDTM", "alignDTM", "refDSM",
-                                  "alignDSM"))
+                                  "alignDSM", "refWater", "alignWater", "waterMask"))
 if (length(derived_align_keys) > 0) {
   warning(paste(derived_align_keys, collapse = "/"), " in [align] ignored -- refGrnd/alignGrnd ",
-          "are always Stage 2's ground-point count rasters (on the reference DTM grid), and ",
+          "(and refWater/alignWater) are always Stage 2's count rasters (on the reference DTM ",
+          "grid), waterMask is [study_area]'s water_polygons on that grid, and ",
           "refDTM/alignDTM/refDSM/alignDSM come from ",
           "[ref_dtm]/[align_dtm]/[ref_dsm]/[align_dsm].")
   align_section[derived_align_keys] <- NULL
@@ -408,6 +428,21 @@ align_params$refDTM    <- ref_dtm$path
 align_params$alignDTM  <- align_dtm$path
 align_params$refDSM    <- ref_dsm$path    # NOFILE when there's no [ref_dsm]
 align_params$alignDSM  <- align_dsm$path  # NOFILE when there's no [align_dsm]
+
+# Water-return counts: a set whose ground_returns.R run counts "water" (extra_counts, e.g.
+# water=9) writes water_count_ref_grid.flt beside its ground counts, and Align's WATER POINTS
+# reads it.
+counts_water <- function(set_params) {
+  ec <- modifyList(ground_returns_defaults, set_params)$extra_counts
+  !is.null(ec) && any(grepl("^\\s*water\\s*=", strsplit(ec, ",", fixed = TRUE)[[1]]))
+}
+water_count_path <- function(set_params) file.path(set_params$output_dir, "water_count_ref_grid.flt")
+if (counts_water(ref_set))   align_params$refWater   <- water_count_path(ref_set)
+if (counts_water(align_set)) align_params$alignWater <- water_count_path(align_set)
+# [study_area]'s water polygons, rasterized onto the reference DTM's grid in the run folder
+water_mask_flt <- if (toupper(water_polygons) == "NOFILE") NULL else
+  file.path(dirname(align_params$outOutlier), "water_mask_ref_grid.flt")
+if (!is.null(water_mask_flt)) align_params$waterMask <- water_mask_flt
 
 refGrnd    <- align_params$refGrnd
 alignGrnd  <- align_params$alignGrnd
@@ -442,10 +477,10 @@ if (file.exists(outOutlier_path)) {
   # session's -- needed for the background mosaics (see Stage 1), whose output would otherwise
   # be lost.
   run_script_step <- function(script, label, param_path, expected_output, log_file = NULL) {
-    if (file.exists(expected_output)) {
+    if (all(file.exists(expected_output))) {
       message("\n==== ", label, ": output already exists, skipping ", basename(script), ": ",
-              expected_output, " ====")
-      return(expected_output)
+              paste(expected_output, collapse = ", "), " ====")
+      return(expected_output[1])
     }
 
     message("\n==== ", label, " (", basename(script), ") ====",
@@ -471,11 +506,11 @@ if (file.exists(outOutlier_path)) {
 
     message(label, " finished in ", format(unclass(elapsed), digits = 4), " ", units(elapsed))
 
-    if (!file.exists(expected_output)) {
+    if (!all(file.exists(expected_output))) {
       stop(basename(script), " reported success for ", label, " but expected output is missing: ",
-           expected_output)
+           paste(expected_output[!file.exists(expected_output)], collapse = ", "))
     }
-    expected_output
+    expected_output[1]
   }
 
   ## ---- Stage 1: mosaic_dtm.R for each DTM/DSM built from tiles or one input file --------------
@@ -560,16 +595,80 @@ if (file.exists(outOutlier_path)) {
   }
 
   # Runs ground_returns.R for one named set and returns the path to the count raster it produces.
+  # With water counts asked for, the set counts as done only once the water raster exists too.
   run_ground_returns_for_set <- function(label, set_params, defaults, expected_count_flt) {
-    if (file.exists(expected_count_flt) &&
-        file.mtime(expected_count_flt) < file.mtime(ref_dtm_flt)) {
-      stop(label, " ground-point count raster (", expected_count_flt, ") is older than the ",
-           "reference DTM (", ref_dtm_flt, "), so it may have been counted on a different grid. ",
-           "Delete it and rerun this pipeline to recount.")
+    expected <- c(expected_count_flt, if (counts_water(set_params)) water_count_path(set_params))
+    for (f in expected[file.exists(expected)]) {
+      if (file.mtime(f) < file.mtime(ref_dtm_flt)) {
+        stop(label, " count raster (", f, ") is older than the reference DTM (", ref_dtm_flt,
+             "), so it may have been counted on a different grid. Delete it and rerun this ",
+             "pipeline to recount.")
+      }
     }
     param_path <- write_ground_returns_param_file(set_params, defaults,
                                                   file.path(param_dir, paste0("params_", label, ".txt")))
-    run_script_step(ground_returns_script, label, param_path, expected_count_flt)
+    run_script_step(ground_returns_script, label, param_path, expected)
+  }
+
+  ## ---- Water mask: [study_area]'s water polygons on the reference DTM's grid -----------------
+  ## Rasterized with terra (cells whose centre falls in a polygon), masked to the DTM's data, and
+  ## written as an ESRI GridFloat (1 water, 0 not) for Align's WATER MASK. Rebuilt when older than
+  ## the reference DTM or the polygon file.
+  if (!is.null(water_mask_flt)) {
+    # The source (file, layer, condition) is recorded beside the mask, so changing any of them
+    # rebuilds it, as a newer DTM or polygon file does
+    source_txt <- sub("\\.flt$", "_source.txt", water_mask_flt, ignore.case = TRUE)
+    water_source <- paste(c(normalizePath(water_polygons, winslash = "/"), water_layer %||% "",
+                            water_where %||% ""), collapse = " | ")
+    stale <- !file.exists(water_mask_flt) || !file.exists(source_txt) ||
+      !identical(readLines(source_txt, warn = FALSE), water_source) ||
+      file.mtime(water_mask_flt) < max(file.mtime(c(ref_dtm_flt, water_polygons)))
+    if (stale) {
+      message("\n==== Water mask: rasterizing ", water_polygons,
+              if (!is.null(water_layer)) paste0(" (layer ", water_layer, ")"),
+              if (!is.null(water_where)) paste0(" where ", water_where), " ====")
+      template <- terra::rast(ref_dtm_flt)
+      if (terra::crs(template) == "") terra::crs(template) <- study_area_params$target_crs
+      layer <- if (is.null(water_layer)) sf::st_layers(water_polygons)$name[1] else water_layer
+      polys <- if (is.null(water_where)) sf::st_read(water_polygons, layer, quiet = TRUE) else
+        sf::st_read(water_polygons, query = paste0("SELECT * FROM \"", layer, "\" WHERE ", water_where),
+                    quiet = TRUE)
+      if (nrow(polys) == 0) stop("No water polygons in ", water_polygons, " (layer ", layer, ")",
+                                 if (!is.null(water_where)) paste0(" where ", water_where), ".")
+      polys <- sf::st_zm(sf::st_make_valid(sf::st_transform(polys, terra::crs(template))))
+      wm <- terra::rasterize(terra::vect(polys), template, field = 1, background = 0)
+      wm <- terra::mask(wm, template)
+      n_water <- terra::global(wm == 1, "sum", na.rm = TRUE)[1, 1]
+      # Written under a "_partial" name and renamed into place, the .flt last, as ground_returns.R
+      # and mosaic_dtm.R do, so an interrupted write never leaves a file that looks finished
+      dir.create(dirname(water_mask_flt), showWarnings = FALSE, recursive = TRUE)
+      out_base     <- sub("\\.flt$", "", water_mask_flt, ignore.case = TRUE)
+      partial_base <- paste0(out_base, "_partial")
+      raster_exts  <- c(".flt", ".hdr", ".prj", ".stx", ".flt.aux.xml")
+      unlink(paste0(c(out_base, partial_base), rep(raster_exts, each = 2)))
+      wm <- terra::writeRaster(wm, paste0(partial_base, ".flt"), filetype = "EHdr",
+                               datatype = "FLT4S", NAflag = -9999, gdal = "BYTEORDER=LSB",
+                               overwrite = TRUE)
+      e <- terra::ext(wm)
+      writeLines(sprintf("%-14s %s",  # ESRI GridFloat header for the Fortran grid reader (see mosaic_dtm.R)
+                         c("ncols", "nrows", "xllcorner", "yllcorner", "cellsize", "NODATA_value",
+                           "byteorder"),
+                         c(terra::ncol(wm), terra::nrow(wm), sprintf("%.6f", terra::xmin(e)),
+                           sprintf("%.6f", terra::ymin(e)), sprintf("%.12f", terra::res(wm)[1]),
+                           "-9999", "LSBFIRST")),
+                 paste0(partial_base, ".hdr"))
+      rm(wm); invisible(gc())
+      for (x in c(setdiff(raster_exts, ".flt"), ".flt")) {
+        if (file.exists(paste0(partial_base, x)) && !file.rename(paste0(partial_base, x), paste0(out_base, x))) {
+          stop("Could not rename ", partial_base, x, " to ", out_base, x)
+        }
+      }
+      writeLines(water_source, source_txt)
+      message("Water mask written to ", water_mask_flt, ": ",
+              round(n_water * prod(terra::res(template)) / 1e6, 3), " km2 of water")
+    } else {
+      message("\n==== Water mask: already up to date, ", water_mask_flt, " ====")
+    }
   }
 
   # If counting fails, wait for the background mosaics to finish before stopping: stopping now
