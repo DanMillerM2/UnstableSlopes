@@ -21,9 +21,10 @@ alignDTM: c:\work\data\site1\elev_2023.flt
 refGrnd: c:\work\data\site1\NP_2017\grnd_den\ground_count_ref_grid.flt
 alignGrnd: c:\work\data\site1\cascades_north_wali_2023\grnd_den\ground_count_ref_grid.flt
 
-# Optional reference/align DSMs; NOFILE if not used.
-refDSM: NOFILE
-alignDSM: NOFILE
+# Reference/align DSMs, required (Align uses canopy height for its canopy classes, stable ground
+# and the level of detection).
+refDSM: c:\work\data\site1\dsm_2017
+alignDSM: c:\work\data\site1\dsm_2023
 
 # Maximum iterations in each of Align's global and tiled loops, and the change of the aligned
 # DEM (m: 99th percentile on steep ground, and the predicted remaining change) below which a
@@ -44,12 +45,12 @@ derivatives: CENTRAL
 # nonzero cells are water (run_align_pipeline.R makes it from [study_area] water_polygons), widened
 # by waterMaskBuffer (m). refWater/alignWater: the surveys' water-return count rasters
 # (ground_returns.R extra_counts: water=9), with waterMinDensity (returns/m2, default 0.1) and
-# waterWindow (half-width, points, default 1). coverageMin (ground returns/m2, default 0.02) and
-# coverageBlock (m, default 50): blocks where either survey has almost no ground returns.
-# outWaterMask: a raster of why each cell was left out (1 water mask, 2 water points, 3 flat
-# water, 4 no coverage).
-coverageMin: 0.02
-coverageBlock: 50
+# waterWindow (half-width, points, default 1). Blocks where either survey has almost no ground
+# returns (missing or snow-covered tiles) are left out by default with both ground rasters:
+# coverage: FALSE keeps them; coverageMin (ground returns/m2, default 0.02) and coverageBlock (m,
+# default 50) change the rule. outWaterMask: a raster of why each cell was left out (1 water mask,
+# 2 water points, 3 flat water, 4 no coverage).
+# coverage: TRUE
 
 # "auto" (Align chooses the tiles and prior by cross-validation, TILES SELECT = AUTO), or
 # numbers of tiles in x and y.

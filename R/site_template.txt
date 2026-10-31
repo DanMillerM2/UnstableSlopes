@@ -32,15 +32,15 @@ scratch_dir: c:\work\scratch
 # <survey>_dtm and _dsm name the mosaics (no extension). Build each from a tile folder
 # (_dtm_tile_dir) or one raster file (_dtm_input), clipped to site_polygon, converted to meters
 # and reprojected to site_crs; with neither, the named .flt must already exist and is used as it
-# is. The DSMs are optional (both or neither). Optional: <survey>_z_units (auto, m, ft, ftUS),
+# is. Both DTMs and both DSMs are required. Optional: <survey>_z_units (auto, m, ft, ftUS),
 # <survey>_file_pattern, <survey>_clip_buffer_cells (see mosaic_dtm.R).
 ref_label: 2017                       # used in output names
 ref_laz_dir: c:\work\data\site1\NP_2017\laz
 ref_ground_dir: c:\work\data\site1\NP_2017\grnd_den   # ground_count_ref_grid.flt goes here
 ref_dtm_tile_dir: c:\work\data\site1\NP_2017\dtm_tiles
 ref_dtm: c:\work\data\site1\elev_2017
-# ref_dsm_tile_dir: c:\work\data\site1\NP_2017\dsm_tiles
-# ref_dsm: c:\work\data\site1\dsm_2017
+ref_dsm_tile_dir: c:\work\data\site1\NP_2017\dsm_tiles
+ref_dsm: c:\work\data\site1\dsm_2017
 ref_z_units: auto
 
 align_label: 2023
@@ -48,8 +48,8 @@ align_laz_dir: c:\work\data\site1\cascades_north_wali_2023\laz
 align_ground_dir: c:\work\data\site1\cascades_north_wali_2023\grnd_den
 align_dtm_tile_dir: c:\work\data\site1\cascades_north_wali_2023\dtm_tiles
 align_dtm: c:\work\data\site1\elev_2023
-# align_dsm_input: c:\work\data\site1\cascades_north_wali_2023\dsm_2023.tif
-# align_dsm: c:\work\data\site1\dsm_2023
+align_dsm_input: c:\work\data\site1\cascades_north_wali_2023\dsm_2023.tif
+align_dsm: c:\work\data\site1\dsm_2023
 align_z_units: auto
 
 # ---- Ground-return counts: any ground_returns.R keyword, prefixed ground_ ---------------------
@@ -72,9 +72,10 @@ align_executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release
 # align_iterations: 8
 # align_convergence: 0.005
 # align_outCorDif: TRUE               # also difcor_<tag>; likewise outDenOutlier, outDX/DY/DZ
-# Gaps in ground-return coverage (missing or snow-covered tiles) left out of Align:
-align_coverageMin: 0.02               # ground returns/m2 in each survey, per block
-align_coverageBlock: 50               # m
+# Gaps in ground-return coverage (missing or snow-covered tiles) are left out of Align by default
+# (blocks of 50 m with < 0.02 ground returns/m2 in either survey); align_coverage: FALSE keeps them.
+# align_coverageMin: 0.02             # ground returns/m2 in each survey, per block
+# align_coverageBlock: 50             # m
 # align_outWaterMask: TRUE            # watermask_<tag>: why cells were left out (1-4)
 # align_waterMinDensity: 0.1          # water returns/m2 (WATER POINTS); align_waterWindow: 1
 # align_waterMaskBuffer: 2            # m around the water polygons
@@ -93,9 +94,9 @@ ril_executable_dir: c:\work\sandbox\channelutilities\projects\ril\x64\release
 # Filled in by run_site.R: Align's exceedance raster, gradient, centred difference, IQR raster
 # and correlogram, RIL's landform raster, and the patch raster and table names
 # (patch_<tag>, patch_<tag>_table.csv). With lshunter_seed_den_min, the seed-density rasters are
-# the two ground-return count rasters. With ref_dsm and align_dsm, the patch table also gives each
-# patch's mean canopy height in both surveys and its change (LShunter 1.2.0+), from the two DSMs
-# and DTMs (the align survey's original DTM, not Align's shifted one).
+# the two ground-return count rasters. The patch table also gives each patch's mean canopy height
+# in both surveys and its change (LShunter 1.2.0+), from the two DSMs and DTMs (the align survey's
+# original DTM, not Align's shifted one).
 lshunter_threshold1: -4               # S = -log10(p) for seeds (default -4)
 lshunter_threshold2: -2               # S for growth (default -2)
 lshunter_min1: 0.2                    # minimum gradient, tan(slope)

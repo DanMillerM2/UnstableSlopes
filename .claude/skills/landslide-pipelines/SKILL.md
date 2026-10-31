@@ -43,9 +43,9 @@ not already given, in one message:
 - **Study name**, a **site folder**, and a **run name** (the outputs' folder under it).
 - **Study-area polygon** (any CRS) and the **target CRS** (default EPSG:2856).
 - For each of the reference (older) and align (newer) lidar: a **label** (e.g. the year), the
-  **DTM tile folder** (or one DTM file), the **LAZ tile folder**, and optionally the **DSM tile
-  folder** (or file). Both LAZ sets are required (they give the density LoD and the exceedance
-  raster); without both DSMs there are no canopy terms.
+  **DTM tile folder** (or one DTM file), the **LAZ tile folder**, and the **DSM tile folder** (or
+  file). Both LAZ sets are required (they give the density LoD and the exceedance raster), and so
+  are both DSMs (Align uses canopy height for its canopy classes, stable ground and the LoD).
 - The **complete DTM for RIL** (ESRI GridFloat `.flt`, named `<prefix>_<ID>.flt` -- the programs
   derive their data ID from the text after the first `_`).
 - **RIL-chain input files** to use as templates: the bldgrds (enforce), ValleyFloor, and RIL

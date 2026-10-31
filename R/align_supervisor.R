@@ -90,8 +90,8 @@ param_specs <- list(
   alignDTM  = list(type = "character", required = TRUE),
   refGrnd   = list(type = "character", default = "NOFILE"),
   alignGrnd = list(type = "character", default = "NOFILE"),
-  refDSM    = list(type = "character", default = "NOFILE"),
-  alignDSM  = list(type = "character", default = "NOFILE"),
+  refDSM    = list(type = "character", required = TRUE),  # both DSMs required (Align 1.1.0+)
+  alignDSM  = list(type = "character", required = TRUE),
 
   iterations  = list(type = "integer", default = 8),      # maximum iterations per loop
   convergence = list(type = "numeric", default = 0.005),  # m; 0 runs every iteration
@@ -112,6 +112,7 @@ param_specs <- list(
   alignWater      = list(type = "character", default = "NOFILE"),
   waterMinDensity = list(type = "numeric"),     # water returns/m2 (Align's default 0.1)
   waterWindow     = list(type = "integer"),     # half-width, points (1)
+  coverage        = list(type = "logical", default = TRUE),  # on with both ground rasters; FALSE = COVERAGE: NO
   coverageMin     = list(type = "numeric"),     # ground returns/m2 (0.02)
   coverageBlock   = list(type = "numeric"),     # m (50)
 
@@ -254,7 +255,8 @@ if (file.exists(final_outlier)) {
 
 executable <- file.path(p$executable_dir, paste0(p$program_name, ".exe"))
 if (!file.exists(executable)) stop("Align executable not found: ", executable)
-for (nm in c("refDTM", "alignDTM")) {
+for (nm in c("refDTM", "alignDTM", "refDSM", "alignDSM")) {
+  if (is_nofile(p[[nm]])) stop(nm, " is required: Align needs both DTMs and both DSMs.")
   if (!file.exists(flt_path(p[[nm]]))) stop(nm, " not found: ", p[[nm]])
 }
 
@@ -280,7 +282,7 @@ input_file <- TWutils::align_input(
   waterMask = p$waterMask, waterMaskBuffer = p$waterMaskBuffer,
   refWater = p$refWater, alignWater = p$alignWater,
   waterMinDensity = p$waterMinDensity, waterWindow = p$waterWindow,
-  coverageMin = p$coverageMin, coverageBlock = p$coverageBlock,
+  coverage = p$coverage, coverageMin = p$coverageMin, coverageBlock = p$coverageBlock,
   outWaterMask = run_path("outWaterMask"),
   tileFit = p$tile_fit, tileSelect = p$tile_select,
   cvBlock = p$cv_block, cvBuffer = p$cv_buffer,
@@ -309,8 +311,8 @@ expected_echo <- c(
   if (!is_nofile(p$waterMask)) c(waterMask = "Water mask raster will be left out"),
   if (!is_nofile(p$refWater) || !is_nofile(p$alignWater))
     c(waterPoints = "Water from lidar water points will be left out"),
-  if (!is.null(p$coverageMin) || !is.null(p$coverageBlock))
-    c(coverage = "Blocks without ground-return coverage will be left out"),
+  if (p$coverage && both_grnd) c(coverage = "Blocks without ground-return coverage will be left out"),
+  if (!p$coverage) c(coverage = "Blocks without ground-return coverage are kept (COVERAGE: NO)"),
   if (!is_nofile(p$outWaterMask)) c(outWaterMask = "Water mask raster will be output"))
 
 check_echo <- function(lines) {

@@ -84,7 +84,7 @@ align_settings <- c("iterations", "convergence", "k", "dampener", "derivatives",
                     "executable_dir", "program_name", "progress_interval_s",
                     # water and gaps in coverage (Align 1.1.0+)
                     "openWaterMinArea", "waterMaskBuffer", "waterMinDensity", "waterWindow",
-                    "coverageMin", "coverageBlock",
+                    "coverage", "coverageMin", "coverageBlock",
                     # optional extra outputs, TRUE to write them into the run folder
                     "outCorDif", "outDenOutlier", "outDX", "outDY", "outDZ", "outWaterMask")
 ril_keys <- c("ril_bldgrds_input", "ril_valleyfloor_input", "ril_input",
@@ -107,8 +107,8 @@ if (length(unknown)) {
 }
 
 required <- c("site_dir", "site_run_name", "scratch_dir",
-              "ref_label", "ref_laz_dir", "ref_ground_dir", "ref_dtm",
-              "align_label", "align_laz_dir", "align_ground_dir", "align_dtm",
+              "ref_label", "ref_laz_dir", "ref_ground_dir", "ref_dtm", "ref_dsm",
+              "align_label", "align_laz_dir", "align_ground_dir", "align_dtm", "align_dsm",
               "align_executable_dir", ril_keys[1:3], "lshunter_accum", "lshunter_executable_dir",
               "lsstats_rasters", "lsstats_executable_dir")
 missing <- required[!vapply(required, function(k) is_set(s[[k]]), logical(1))]
@@ -138,9 +138,6 @@ for (sv in c("ref", "align")) {
     if (!length(src) && !is.null(out)) need(file.exists(flt_path(out)),
       paste0(sv, "_", kind, " doesn't exist and no ", sv, "_", kind, "_tile_dir or _input is given to build it: ", out))
   }
-}
-if (is.null(get("ref_dsm")) != is.null(get("align_dsm"))) {
-  problems <- c(problems, "give both ref_dsm and align_dsm, or neither (Align needs both for canopy terms)")
 }
 for (k in ril_keys[1:3]) need(file.exists(s[[k]]), paste0(k, " not found: ", s[[k]]))
 need(file.exists(flt_path(s$lshunter_accum)), paste0("lshunter_accum not found: ", s$lshunter_accum))
@@ -216,8 +213,7 @@ kv <- function(lst) {
 section <- function(name, lst) c(paste0("[", name, "]"), kv(lst), "")
 
 survey_raster_section <- function(sv, kind) {
-  out <- get(paste0(sv, "_", kind))
-  if (is.null(out)) return(list(existing_dsm = "NOFILE"))
+  out <- get(paste0(sv, "_", kind))  # required for both DTMs and both DSMs
   tile <- get(paste0(sv, "_", kind, "_tile_dir")); input <- get(paste0(sv, "_", kind, "_input"))
   extra <- list(z_units = get(paste0(sv, "_z_units")), file_pattern = get(paste0(sv, "_file_pattern")),
                 clip_buffer_cells = get(paste0(sv, "_clip_buffer_cells")))
@@ -292,12 +288,11 @@ if (!is.null(lsh$seed_den_min)) {  # seed density: the two count rasters Align u
   lsh$seed_den_ref <- count_raster("ref")
   lsh$seed_den_align <- count_raster("align")
 }
-if (!is.null(get("ref_dsm"))) {  # with both DSMs: each patch's mean canopy height in both surveys
-  lsh$canopy_ref_dsm <- win(no_ext(s$ref_dsm))
-  lsh$canopy_ref_dem <- win(no_ext(s$ref_dtm))
-  lsh$canopy_align_dsm <- win(no_ext(s$align_dsm))
-  lsh$canopy_align_dem <- win(no_ext(s$align_dtm))  # the original align DTM, which its DSM matches
-}
+# Each patch's mean canopy height in both surveys, from the DSMs and DTMs
+lsh$canopy_ref_dsm <- win(no_ext(s$ref_dsm))
+lsh$canopy_ref_dem <- win(no_ext(s$ref_dtm))
+lsh$canopy_align_dsm <- win(no_ext(s$align_dsm))
+lsh$canopy_align_dem <- win(no_ext(s$align_dtm))  # the original align DTM, which its DSM matches
 if (!is.null(lsh$road_shapefile) && is.null(lsh$road_buffer)) {
   stop("lshunter_road_shapefile needs lshunter_road_buffer (m).")
 }

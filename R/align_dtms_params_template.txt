@@ -19,9 +19,9 @@ alignDTM: c:\work\data\site1\elev_2023.flt
 refGrnd: c:\work\data\site1\NP_2017\grnd_den\ground_density_epsg2856.tif
 alignGrnd: c:\work\data\site1\cascades_north_wali_2023\grnd_den\ground_density_epsg2856.tif
 
-# Optional reference/align digital surface models. Leave as NOFILE if not used.
-refDSM: NOFILE
-alignDSM: NOFILE
+# Reference/align digital surface models, required (Align uses canopy height).
+refDSM: c:\work\data\site1\dsm_2017
+alignDSM: c:\work\data\site1\dsm_2023
 
 # Number of times to repeat the alignment calculation -- the maximum, when convergence is set.
 iterations: 4

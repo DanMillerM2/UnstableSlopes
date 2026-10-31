@@ -97,9 +97,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `mosaic_dtm.R` once each for a reference and an align folder of DTM tiles (→ `refDTM`/
   `alignDTM`; or a section sets `input_dtm` to run one raster file through `mosaic_dtm.R` as a
   single tile — clipped, unit-converted, reprojected into `output_dtm` — or `existing_dtm` to use
-  an already-mosaicked `.flt` as-is, which must already be in meters and `target_crs`; optional
-  `[ref_dsm]`/`[align_dsm]` sections work the same way with `output_dsm`/`input_dsm`/`existing_dsm`
-  and default to no DSM), then runs Align through `align_supervisor.R`. The reference DTM is built first;
+  an already-mosaicked `.flt` as-is, which must already be in meters and `target_crs`; the
+  required `[ref_dsm]`/`[align_dsm]` sections work the same way with `output_dsm`/`input_dsm`/
+  `existing_dsm` — Align needs both DSMs), then runs Align through `align_supervisor.R`. The reference DTM is built first;
   the align DTM and both DSMs are then built in a background R session (`future`, logging to
   `<output>_mosaic_dtm.log`) while the ground returns are counted, and Align waits for them — a
   counting failure waits for them too before stopping. Each `ground_returns.R` run gets
@@ -124,8 +124,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   DEM), `derivatives` CENTRAL, `nslope` 10 / `maxSlope` 1.5, `densityLod` auto (with both
   ground-return rasters), and always `OUTPUT GRADIENT RASTER` (`<refDTM>_grad<radius>m`, which
   LShunter needs). Align 1.1.0+ also takes `waterMask`/`waterMaskBuffer`, `refWater`/`alignWater`
-  (`waterMinDensity`, `waterWindow`), `openWaterMinArea`, `coverageMin`/`coverageBlock` (blocks
-  where a survey has almost no ground returns: missing or snow-covered tiles) and `outWaterMask`
+  (`waterMinDensity`, `waterWindow`), `openWaterMinArea`, `coverage` (default TRUE: blocks where
+  a survey has almost no ground returns -- missing or snow-covered tiles -- are left out;
+  `coverageMin`/`coverageBlock` change the rule) and `outWaterMask`
   (why each cell was left out); all left-out cells are nodata in every output. A few seconds in it
   checks Align's settings echo — unrecognized keywords, or an
   option not acknowledged (Align drops unknown `TILES` sub-fields silently) — and kills an old exe.

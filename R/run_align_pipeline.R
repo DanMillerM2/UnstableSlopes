@@ -1,6 +1,6 @@
 ## run_align_pipeline.R
 ##
-## Driver script: gets one reference and one to-be-aligned DTM (and, optionally, DSM) -- each
+## Driver script: gets one reference and one to-be-aligned DTM and DSM (both DSMs required) -- each
 ## either mosaicked from a folder of GeoTIFF tiles, processed from one raster file, or read from
 ## an already-mosaicked raster -- then counts ground returns per reference DTM cell for two sets
 ## of LAZ/LAS tiles (a "reference" set and the set to be aligned to it -- the same per-set work
@@ -12,8 +12,8 @@
 ## intersecting it are used, and every raster built from tiles is masked to it. With
 ## clip_polygon NOFILE (the default), every tile in each tile folder is used, unmasked.
 ##
-## Stage 1 (mosaic_dtm.R, up to x4): each of [ref_dtm], [align_dtm], and the optional [ref_dsm]
-## and [align_dsm] that sets tile_dir or input_dtm/input_dsm is run as its own
+## Stage 1 (mosaic_dtm.R, up to x4): each of [ref_dtm], [align_dtm], [ref_dsm] and [align_dsm]
+## that sets tile_dir or input_dtm/input_dsm is run as its own
 ## `Rscript mosaic_dtm.R <params.txt>` subprocess, one at a time -- see
 ## run_ground_returns_batches.R for why each run gets its own subprocess (isolated future::plan
 ## and global-environment state) rather than being source()'d into this session. The tiles
@@ -26,8 +26,8 @@
 ## Alternatively, a section can name an already-mosaicked raster with existing_dtm/existing_dsm;
 ## that raster is used as-is (no mosaic_dtm.R run, no clipping/reprojection/unit conversion), so
 ## it must already be an ESRI GridFloat .flt in meters and in target_crs -- checked before
-## anything runs. A DSM section that's left out (or sets no source, e.g. existing_dsm: NOFILE)
-## means no DSM.
+## anything runs. Both DSM sections are required, like the DTM sections: Align uses canopy
+## height for its canopy classes, stable ground and the level of detection's open-ground rules.
 ##
 ## Stage 2 (ground_returns.R x2): each of [ref_set] and [align_set] below is run the same way,
 ## with template_raster set to the reference DTM, so the output grid -- extent, cell corners,
@@ -91,10 +91,9 @@
 ##                   output_dtm, to clip/convert/reproject a single DTM the same way; or
 ##                   existing_dtm alone to use an already-mosaicked DTM as-is.
 ##   [align_dtm]  -- the same, for the DTM to be aligned (post-change).
-##   [ref_dsm]    -- optional; the same as [ref_dtm] but for a reference DSM, with the keywords
-##                   output_dsm/input_dsm/existing_dsm. Leave the section out, or set
-##                   existing_dsm: NOFILE, for no DSM.
-##   [align_dsm]  -- optional; the same, for the DSM to be aligned.
+##   [ref_dsm]    -- the same as [ref_dtm] but for the reference DSM, with the keywords
+##                   output_dsm/input_dsm/existing_dsm. Required, like the DTMs.
+##   [align_dsm]  -- the same, for the DSM to be aligned. Required.
 ##   [align]      -- align_supervisor.R's keywords (iterations, convergence, k, tileNx, ...,
 ##                   outOutlier, outExceed, outLod, outCenDif, scratch_dir, executable_dir,
 ##                   program_name; see param_specs there), passed on as they are.
@@ -200,11 +199,11 @@ ref_set    <- config[["ref_set"]]
 align_set  <- config[["align_set"]]
 ref_dtm    <- config[["ref_dtm"]]
 align_dtm  <- config[["align_dtm"]]
-ref_dsm    <- config[["ref_dsm"]]    # optional -- no reference DSM when absent
-align_dsm  <- config[["align_dsm"]]  # likewise
+ref_dsm    <- config[["ref_dsm"]]    # required, like the DTMs: Align needs both surveys' DSMs
+align_dsm  <- config[["align_dsm"]]
 align_section <- config[["align"]]
 
-required_sections <- c("ref_set", "align_set", "ref_dtm", "align_dtm", "align")
+required_sections <- c("ref_set", "align_set", "ref_dtm", "align_dtm", "ref_dsm", "align_dsm", "align")
 missing_sections  <- setdiff(required_sections, names(config))
 if (length(missing_sections) > 0) {
   stop("Pipeline config file is missing section(s) ",
@@ -319,13 +318,11 @@ check_existing_raster <- function(existing, section_name, kind) {
 # Returns the .flt path Align will read as path, whether Stage 1 must run mosaic_dtm.R for it as
 # from_tiles, and if so that run's mosaic_dtm.R parameters (output_dsm is passed on as
 # mosaic_dtm.R's output_dtm, input_dtm/input_dsm as its input_file). A source set to NOFILE
-# counts as not set. With optional = TRUE (the DSM sections), a section with no source set (left
-# out, empty, or e.g. existing_dsm: NOFILE) resolves to path NOFILE -- no DSM.
-resolve_raster_section <- function(section, section_name, kind, optional = FALSE) {
+# counts as not set.
+resolve_raster_section <- function(section, section_name, kind) {
   existing_key <- paste0("existing_", kind)
   input_key    <- paste0("input_", kind)
   output_key   <- paste0("output_", kind)
-  no_raster    <- list(from_tiles = FALSE, path = "NOFILE")
 
   source_keys <- c(existing_key, input_key, "tile_dir")
   sources <- Filter(function(k) !is.null(section[[k]]) && nzchar(section[[k]]) &&
@@ -337,8 +334,6 @@ resolve_raster_section <- function(section, section_name, kind, optional = FALSE
     stop("[", section_name, "] sets ", paste(sources, collapse = " and "), " -- set only one of ",
          existing_key, ", ", input_key, ", or tile_dir: ", pipeline_config_path)
   }
-
-  if (optional && length(sources) == 0 && is.null(section[[output_key]])) return(no_raster)
 
   if (identical(sources, existing_key)) {
     ignored <- intersect(names(section), c(output_key, "z_units", "file_pattern",
@@ -353,9 +348,7 @@ resolve_raster_section <- function(section, section_name, kind, optional = FALSE
 
   if (length(sources) == 0 || is.null(section[[output_key]])) {
     stop("[", section_name, "] must set either ", existing_key, ", or ", input_key, " or ",
-         "tile_dir together with ", output_key,
-         if (optional) paste0(" (or ", existing_key, ": NOFILE, or leave the section out)"),
-         ": ", pipeline_config_path)
+         "tile_dir together with ", output_key, ": ", pipeline_config_path)
   }
 
   params <- section
@@ -387,8 +380,8 @@ resolve_raster_section <- function(section, section_name, kind, optional = FALSE
 
 ref_dtm   <- resolve_raster_section(ref_dtm,   "ref_dtm",   "dtm")
 align_dtm <- resolve_raster_section(align_dtm, "align_dtm", "dtm")
-ref_dsm   <- resolve_raster_section(ref_dsm,   "ref_dsm",   "dsm", optional = TRUE)
-align_dsm <- resolve_raster_section(align_dsm, "align_dsm", "dsm", optional = TRUE)
+ref_dsm   <- resolve_raster_section(ref_dsm,   "ref_dsm",   "dsm")
+align_dsm <- resolve_raster_section(align_dsm, "align_dsm", "dsm")
 
 ## ---- Resolve Align's parameters up front -----------------------------------------------------
 ## Done before Stages 1-2 run (not after, as in align_dtms.R) so outOutlier is known early
@@ -426,8 +419,8 @@ align_params$refGrnd   <- file.path(ref_set$output_dir,   "ground_count_ref_grid
 align_params$alignGrnd <- file.path(align_set$output_dir, "ground_count_ref_grid.flt")
 align_params$refDTM    <- ref_dtm$path
 align_params$alignDTM  <- align_dtm$path
-align_params$refDSM    <- ref_dsm$path    # NOFILE when there's no [ref_dsm]
-align_params$alignDSM  <- align_dsm$path  # NOFILE when there's no [align_dsm]
+align_params$refDSM    <- ref_dsm$path
+align_params$alignDSM  <- align_dsm$path
 
 # Water-return counts: a set whose ground_returns.R run counts "water" (extra_counts, e.g.
 # water=9) writes water_count_ref_grid.flt beside its ground counts, and Align's WATER POINTS

@@ -24,9 +24,8 @@
 #                             reprojected to target_crs, then written to output_dtm;
 #   existing_dtm alone     -- an already-mosaicked DTM used as-is (an ESRI GridFloat .flt, in
 #                             meters and in target_crs; it is not clipped to clip_polygon).
-# [ref_dsm] and [align_dsm] are optional and work the same way for digital surface models, with
-# output_dsm/input_dsm/existing_dsm in place of output_dtm/input_dtm/existing_dtm; leave a
-# section out (or set existing_dsm: NOFILE) for no DSM. [align] holds align_supervisor.R's
+# [ref_dsm] and [align_dsm] are required and work the same way for digital surface models, with
+# output_dsm/input_dsm/existing_dsm in place of output_dtm/input_dtm/existing_dtm. [align] holds align_supervisor.R's
 # parameters (see param_specs in align_supervisor.R) -- do NOT set refDTM/alignDTM,
 # refDSM/alignDSM, or refGrnd/alignGrnd there; they are always taken from the sections above.
 #
@@ -97,24 +96,22 @@ z_units: auto
 # Or, instead of all of the above, use an already-mosaicked DTM (.flt, meters, target_crs) as-is:
 # existing_dtm: c:\work\data\site1\elev_2023.flt
 
-# Optional digital surface models. Same three choices as the DTM sections, with
-# output_dsm/input_dsm/existing_dsm:
+# Digital surface models, required for both surveys (Align uses canopy height for its canopy
+# classes, stable ground and the level of detection). Same three choices as the DTM sections,
+# with output_dsm/input_dsm/existing_dsm:
 #   tile_dir + output_dsm   -- DSM tiles (GeoTIFFs) to mosaic and clip to clip_polygon;
 #   input_dsm + output_dsm  -- one DSM file to clip, convert to meters, and reproject;
 #   existing_dsm            -- an already-mosaicked DSM (.flt, meters, target_crs), used as-is.
-# A section with none of these set (existing_dsm: NOFILE, or the section left out) means no DSM.
 # output_dsm must differ from input_dsm -- it's the processed copy written from it.
 [ref_dsm]
-existing_dsm: NOFILE
-# tile_dir: c:\work\data\site1\NP_2017\dsm_tiles
-# output_dsm: c:\work\data\site1\dsm_2017
-# z_units: auto
+tile_dir: c:\work\data\site1\NP_2017\dsm_tiles
+output_dsm: c:\work\data\site1\dsm_2017
+z_units: auto
 
 [align_dsm]
-existing_dsm: NOFILE
-# input_dsm: c:\work\data\site1\cascades_north_wali_2023\dsm_2023.tif
-# output_dsm: c:\work\data\site1\dsm_2023
-# z_units: auto
+input_dsm: c:\work\data\site1\cascades_north_wali_2023\dsm_2023.tif
+output_dsm: c:\work\data\site1\dsm_2023
+z_units: auto
 # existing_dsm: c:\work\data\site1\dsm_2023.flt
 
 [align]

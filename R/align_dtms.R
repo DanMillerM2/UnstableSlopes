@@ -110,10 +110,10 @@ param_specs <- list(
   refGrnd   = list(type = "character", required = TRUE),
   alignGrnd = list(type = "character", required = TRUE),
 
-  # Optional reference/align digital surface models. "NOFILE" (align()'s own default) means not
-  # used.
-  refDSM   = list(type = "character", default = "NOFILE"),
-  alignDSM = list(type = "character", default = "NOFILE"),
+  # Reference/align digital surface models, required (Align 1.1.0+ needs both surveys' canopy
+  # height).
+  refDSM   = list(type = "character", required = TRUE),
+  alignDSM = list(type = "character", required = TRUE),
 
   # Number of times to repeat the alignment calculation -- the maximum, when convergence is set.
   iterations = list(type = "integer", default = 5),
