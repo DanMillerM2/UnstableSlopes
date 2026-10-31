@@ -131,7 +131,8 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   (`--configs-only` writes and checks them). It derives every link: Align's outputs are
   `<run folder>\elev_<align>aligned`, `dif_/outlier_/exceed_/lod_/cendif_/outbins_<ref>_<align>`;
   LShunter gets Align's exceedance, gradient, cendif, IQR and correlogram and RIL's landforms
-  (`OUTPUT RIL RASTER` of `ril_input`), writing `patch_<tag>` and `patch_<tag>_table.csv`; LSstats
+  (`OUTPUT RIL RASTER` of `ril_input`), and with both DSMs the two surveys' DSMs and original DTMs
+  (`canopy_*`), writing `patch_<tag>` and `patch_<tag>_table.csv`; LSstats
   gets the patch raster and table; `@cendif`, `@exceed`, ... in `lsstats_rasters` stand for Align
   outputs. The configs are regenerated every run; edit the site file, not them.
 - **run_landslide_pipelines.R** — driver for the whole method: runs `run_align_pipeline.R` and
@@ -177,8 +178,11 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   raster (recommended, S thresholds such as −4/−2) or outlier raster, plus Align's gradient raster
   (required) and a flow-accumulation raster, in two rounds of paired thresholds. LShunter 1.1's
   options are keywords too: patch table (`cen_dif`, `iqr` + `noise_corr`, `landform`,
-  `dist_channel`, `out_table`, `min_patch_significance`), `null_*` simulation, `seed_den_*` and
-  `sign_flip`; with `out_table` set, the run counts as done only once the table exists. Supports
+  `dist_channel`, `out_table`, `min_patch_significance`), `null_*` simulation, `seed_den_*`,
+  `sign_flip`, and (LShunter 1.2.0+) `canopy_ref_dsm`/`canopy_ref_dem`/`canopy_align_dsm`/
+  `canopy_align_dem`, which add each patch's mean canopy height in both surveys and its change to
+  the table (`canopy_align_dem` is the align survey's original DTM, not Align's shifted one); with
+  `out_table` set, the run counts as done only once the table exists. Supports
   both `LShunter()` modes like RIL.R (mode 1: existing input file via `input_file`). Note
   `LShunter()`'s current wrapper signature takes named, capitalized arguments (`Outlier`, `Accum`,
   `OutPatch`, `ScratchDir`, `Executable_dir`, plus `...` to `LShunterInput()`); MappingLandslides.qmd's

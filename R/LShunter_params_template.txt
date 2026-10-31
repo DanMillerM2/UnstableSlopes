@@ -81,6 +81,13 @@ seed_den_align: NOFILE
 seed_den_min: NA
 seed_den_window: NA
 sign_flip: FALSE               # also run on the negated input: the gain patches, a false-alarm control
+# CANOPY HEIGHT (LShunter 1.2.0+; all four or none; needs out_table): each patch's mean canopy height
+# (DSM - DEM) in both surveys and its change, in the patch table. canopy_align_dem is the align
+# survey's original DTM (the one its DSM matches), not Align's shifted elev_<align>aligned.
+canopy_ref_dsm: NOFILE
+canopy_ref_dem: NOFILE
+canopy_align_dsm: NOFILE
+canopy_align_dem: NOFILE
 
 # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
 overwrite: TRUE

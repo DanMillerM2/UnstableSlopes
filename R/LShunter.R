@@ -208,6 +208,14 @@ param_specs <- list(
   # SIGN FLIP CONTROL: also run the same rules on the negated input -- the gain patches, a control
   # for false alarms.
   sign_flip = list(type = "logical", default = FALSE),
+  # CANOPY HEIGHT (LShunter 1.2.0+; all four together, needs out_table): each survey's DSM and
+  # DEM, for each patch's mean canopy height (DSM - DEM) in both surveys and its change.
+  # canopy_align_dem is the align survey's original DTM (the one its DSM matches), not Align's
+  # shifted elev_<align>aligned.
+  canopy_ref_dsm   = list(type = "character", default = "NOFILE"),
+  canopy_ref_dem   = list(type = "character", default = "NOFILE"),
+  canopy_align_dsm = list(type = "character", default = "NOFILE"),
+  canopy_align_dem = list(type = "character", default = "NOFILE"),
 
   # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
   overwrite = list(type = "logical", default = TRUE)
@@ -340,6 +348,10 @@ if (use_existing_input_file) {
                       SeedDenMin = na_null(seed_den_min),
                       SeedDenWindow = na_null(seed_den_window),
                       SignFlip = sign_flip,
+                      CanopyRefDSM = canopy_ref_dsm,
+                      CanopyRefDEM = canopy_ref_dem,
+                      CanopyAlignDSM = canopy_align_dsm,
+                      CanopyAlignDEM = canopy_align_dem,
                       overwrite = overwrite,
                       Executable_dir = executable_dir)
 

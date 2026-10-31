@@ -284,6 +284,12 @@ if (!is.null(lsh$seed_den_min)) {  # seed density: the two count rasters Align u
   lsh$seed_den_ref <- count_raster("ref")
   lsh$seed_den_align <- count_raster("align")
 }
+if (!is.null(get("ref_dsm"))) {  # with both DSMs: each patch's mean canopy height in both surveys
+  lsh$canopy_ref_dsm <- win(no_ext(s$ref_dsm))
+  lsh$canopy_ref_dem <- win(no_ext(s$ref_dtm))
+  lsh$canopy_align_dsm <- win(no_ext(s$align_dsm))
+  lsh$canopy_align_dem <- win(no_ext(s$align_dtm))  # the original align DTM, which its DSM matches
+}
 if (!is.null(lsh$road_shapefile) && is.null(lsh$road_buffer)) {
   stop("lshunter_road_shapefile needs lshunter_road_buffer (m).")
 }

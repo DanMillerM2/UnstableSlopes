@@ -80,7 +80,9 @@ ril_executable_dir: c:\work\sandbox\channelutilities\projects\ril\x64\release
 # Filled in by run_site.R: Align's exceedance raster, gradient, centred difference, IQR raster
 # and correlogram, RIL's landform raster, and the patch raster and table names
 # (patch_<tag>, patch_<tag>_table.csv). With lshunter_seed_den_min, the seed-density rasters are
-# the two ground-return count rasters.
+# the two ground-return count rasters. With ref_dsm and align_dsm, the patch table also gives each
+# patch's mean canopy height in both surveys and its change (LShunter 1.2.0+), from the two DSMs
+# and DTMs (the align survey's original DTM, not Align's shifted one).
 lshunter_threshold1: -4               # S = -log10(p) for seeds (default -4)
 lshunter_threshold2: -2               # S for growth (default -2)
 lshunter_min1: 0.2                    # minimum gradient, tan(slope)
