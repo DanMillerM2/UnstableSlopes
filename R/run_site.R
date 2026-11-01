@@ -85,8 +85,9 @@ align_settings <- c("iterations", "convergence", "k", "dampener", "derivatives",
                     # water and gaps in coverage (Align 1.1.0+)
                     "openWaterMinArea", "waterMaskBuffer", "waterMinDensity", "waterWindow",
                     "coverage", "coverageMin", "coverageBlock",
+                    "matchSmoothness", "matchFit", "matchMaxSigma",
                     # optional extra outputs, TRUE to write them into the run folder
-                    "outCorDif", "outDenOutlier", "outDX", "outDY", "outDZ", "outWaterMask")
+                    "outCorDif", "outDenOutlier", "outDX", "outDY", "outDZ", "outWaterMask", "outSigma")
 ril_keys <- c("ril_bldgrds_input", "ril_valleyfloor_input", "ril_input",
               "ril_bldgrds_executable_dir", "ril_valleyfloor_executable_dir", "ril_executable_dir")
 lshunter_settings <- c("threshold1", "threshold2", "min1", "min2", "accum", "max_accum1",
@@ -167,7 +168,7 @@ align_out <- list(
   outLod     = in_run(paste0("lod_", tag)),
   outCenDif  = in_run(paste0("cendif_", tag)))
 extra_out <- c(outCorDif = "difcor_", outDenOutlier = "denoutlier_", outDX = "dx_", outDY = "dy_",
-               outDZ = "dz_", outWaterMask = "watermask_")
+               outDZ = "dz_", outWaterMask = "watermask_", outSigma = "sigma_")
 for (k in names(extra_out)) {
   v <- get(paste0("align_", k))
   if (!is.null(v) && isTRUE(as.logical(v))) align_out[[k]] <- in_run(paste0(extra_out[[k]], tag))

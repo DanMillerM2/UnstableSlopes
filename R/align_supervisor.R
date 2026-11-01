@@ -113,6 +113,11 @@ param_specs <- list(
   waterMinDensity = list(type = "numeric"),     # water returns/m2 (Align's default 0.1)
   waterWindow     = list(type = "integer"),     # half-width, points (1)
   coverage        = list(type = "logical", default = TRUE),  # on with both ground rasters; FALSE = COVERAGE: NO
+  # Smooth one DTM after the global fit so dz no longer depends on curvature (Align 1.1.0+):
+  # LOCAL (sigma per canopy x slope class) or GLOBAL; NONE (default) leaves the DTMs as they are
+  matchSmoothness = list(type = "character", default = "NONE"),
+  matchFit        = list(type = "character"),   # CURVATURE (default) or ROUGHNESS
+  matchMaxSigma   = list(type = "numeric"),     # m (1.5)
   coverageMin     = list(type = "numeric"),     # ground returns/m2 (0.02)
   coverageBlock   = list(type = "numeric"),     # m (50)
 
@@ -152,6 +157,7 @@ param_specs <- list(
   outDY         = list(type = "character", default = "NOFILE"),
   outDZ         = list(type = "character", default = "NOFILE"),
   outWaterMask  = list(type = "character", default = "NOFILE"),  # why cells were left out
+  outSigma      = list(type = "character", default = "NOFILE"),  # MATCH SMOOTHNESS sigma (m)
 
   scratch_dir    = list(type = "character", required = TRUE),
   executable_dir = list(type = "character", required = TRUE),
@@ -237,7 +243,7 @@ if (!density_lod) {
 
 flt_path <- function(base) paste0(sub("\\.flt$", "", base, ignore.case = TRUE), ".flt")
 out_keys <- c("outDTM", "outDif", "outOutlier", "outbins", "outExceed", "outLod", "outCenDif",
-              "outDenOutlier", "outCorDif", "outDX", "outDY", "outDZ", "outWaterMask")
+              "outDenOutlier", "outCorDif", "outDX", "outDY", "outDZ", "outWaterMask", "outSigma")
 out_bases <- mget(out_keys, envir = p)
 out_bases <- out_bases[!vapply(out_bases, is_nofile, logical(1))]
 out_bases <- lapply(out_bases, function(b) sub("\\.(flt|csv)$", "", b, ignore.case = TRUE))
@@ -284,6 +290,9 @@ input_file <- TWutils::align_input(
   waterMinDensity = p$waterMinDensity, waterWindow = p$waterWindow,
   coverage = p$coverage, coverageMin = p$coverageMin, coverageBlock = p$coverageBlock,
   outWaterMask = run_path("outWaterMask"),
+  matchSmoothness = if (toupper(p$matchSmoothness) %in% c("NONE", "NO", "FALSE")) NULL else p$matchSmoothness,
+  matchFit = p$matchFit, matchMaxSigma = p$matchMaxSigma,
+  outSigma = run_path("outSigma"),
   tileFit = p$tile_fit, tileSelect = p$tile_select,
   cvBlock = p$cv_block, cvBuffer = p$cv_buffer,
   minTileSize = p$min_tile_size, maxTileSize = p$max_tile_size,
@@ -313,7 +322,9 @@ expected_echo <- c(
     c(waterPoints = "Water from lidar water points will be left out"),
   if (p$coverage && both_grnd) c(coverage = "Blocks without ground-return coverage will be left out"),
   if (!p$coverage) c(coverage = "Blocks without ground-return coverage are kept (COVERAGE: NO)"),
-  if (!is_nofile(p$outWaterMask)) c(outWaterMask = "Water mask raster will be output"))
+  if (!is_nofile(p$outWaterMask)) c(outWaterMask = "Water mask raster will be output"),
+  if (!toupper(p$matchSmoothness) %in% c("NONE", "NO", "FALSE"))
+    c(matchSmoothness = "DTMs matched in smoothness before differencing"))
 
 check_echo <- function(lines) {
   lines <- trimws(lines)

@@ -114,9 +114,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   such as `FCode = 39000`) is rasterized onto the reference DTM grid as
   `water_mask_ref_grid.flt` in the run folder (rebuilt when its source changes) and becomes
   Align's `waterMask` — lakes only: rivers move between surveys, so river polygons match neither
-  survey's channel; and `extra_counts: water=9` in `[defaults]` makes each set's
-  `water_count_ref_grid.flt` Align's `refWater`/`alignWater` (WATER POINTS), which is how rivers
-  are found.
+  survey's channel; and, by default (`extra_counts: water=9` unless `[defaults]` or a set sets
+  `extra_counts: NONE`), each set's `water_count_ref_grid.flt` becomes Align's
+  `refWater`/`alignWater` (WATER POINTS), which is how rivers are found.
 - **align_supervisor.R** — runs Align once (needs GridUtilities 8a08fa6+). With `tileNx`/`tileNy:
   auto` (default) Align itself chooses the tile count and prior by block cross-validation
   (`TILES FIT = JOINT, SELECT = AUTO`; `min_tile_size`, `max_tile_size`, `cv_block`, `cv_buffer`);
@@ -127,7 +127,10 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   (`waterMinDensity`, `waterWindow`), `openWaterMinArea`, `coverage` (default TRUE: blocks where
   a survey has almost no ground returns -- missing or snow-covered tiles -- are left out;
   `coverageMin`/`coverageBlock` change the rule) and `outWaterMask`
-  (why each cell was left out); all left-out cells are nodata in every output. A few seconds in it
+  (why each cell was left out); all left-out cells are nodata in every output. `matchSmoothness`
+  (LOCAL/GLOBAL, default NONE; `matchFit` CURVATURE/ROUGHNESS, `matchMaxSigma`, `outSigma`) smooths
+  one DTM after the global fit so dz stops depending on surface curvature (2017 is rougher at cell
+  scale); the gradient raster and aligned-DEM output keep the original surfaces. A few seconds in it
   checks Align's settings echo — unrecognized keywords, or an
   option not acknowledged (Align drops unknown `TILES` sub-fields silently) — and kills an old exe.
   It runs the exe via `processx` (input file from `TWutils::align_input()`) into
