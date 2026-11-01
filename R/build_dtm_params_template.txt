@@ -1,0 +1,14 @@
+# Parameters for build_dtm.R: DTM and DSM tiles from a folder of LAZ tiles, one interpolation
+# scheme for every survey. "keyword: value"; "#" starts a comment.
+#   Rscript R/build_dtm.R path/to/this_file.txt
+input_dir: c:\work\data\site1\NP_2017\laz
+output_dir: c:\work\data\site1\NP_2017\built_1m      # dtm\ and dsm\ GeoTIFF tiles go here
+res_m: 1.0                  # cell size (m); the same for both surveys so their grids coincide
+max_edge_m: 10              # longest ground-TIN triangle edge kept (m); longer leaves nodata
+buffer_m: 20                # read around each tile (m) so outputs are seamless
+ground_classes: 2           # LAS classes triangulated for the DTM
+dsm_drop_classes: 7 18      # left out of the DSM (low and high noise)
+build_dsm: TRUE
+clip_polygon: NOFILE        # only tiles intersecting it are built; NOFILE builds every tile
+n_workers: 4                # tiles built at once
+threads_per_worker: 2

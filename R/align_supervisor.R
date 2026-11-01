@@ -120,6 +120,13 @@ param_specs <- list(
   matchMaxSigma   = list(type = "numeric"),     # m (1.5)
   coverageMin     = list(type = "numeric"),     # ground returns/m2 (0.02)
   coverageBlock   = list(type = "numeric"),     # m (50)
+  # Replace bumps in one DTM that the other lacks -- vegetation classified as ground (Align 1.1.0+):
+  # REFERENCE, ALIGN or BOTH; NONE (default) keeps everything
+  suspectGround   = list(type = "character", default = "NONE"),
+  suspectHeight   = list(type = "numeric"),     # m above the window median (0.3)
+  suspectWindow   = list(type = "numeric"),     # m (5)
+  suspectCanopy   = list(type = "numeric"),     # m of canopy at least (2)
+  suspectBuffer   = list(type = "numeric"),     # m: farthest growth from the seeds (2)
 
   tileNx  = list(type = "character", default = "auto"),  # "auto" or a number of tiles
   tileNy  = list(type = "character", default = "auto"),
@@ -292,6 +299,9 @@ input_file <- TWutils::align_input(
   outWaterMask = run_path("outWaterMask"),
   matchSmoothness = if (toupper(p$matchSmoothness) %in% c("NONE", "NO", "FALSE")) NULL else p$matchSmoothness,
   matchFit = p$matchFit, matchMaxSigma = p$matchMaxSigma,
+  suspectGround = if (toupper(p$suspectGround) %in% c("NONE", "NO", "FALSE")) NULL else p$suspectGround,
+  suspectHeight = p$suspectHeight, suspectWindow = p$suspectWindow, suspectCanopy = p$suspectCanopy,
+  suspectBuffer = p$suspectBuffer,
   outSigma = run_path("outSigma"),
   tileFit = p$tile_fit, tileSelect = p$tile_select,
   cvBlock = p$cv_block, cvBuffer = p$cv_buffer,
@@ -324,7 +334,9 @@ expected_echo <- c(
   if (!p$coverage) c(coverage = "Blocks without ground-return coverage are kept (COVERAGE: NO)"),
   if (!is_nofile(p$outWaterMask)) c(outWaterMask = "Water mask raster will be output"),
   if (!toupper(p$matchSmoothness) %in% c("NONE", "NO", "FALSE"))
-    c(matchSmoothness = "DTMs matched in smoothness before differencing"))
+    c(matchSmoothness = "DTMs matched in smoothness before differencing"),
+  if (!toupper(p$suspectGround) %in% c("NONE", "NO", "FALSE"))
+    c(suspectGround = "Suspect ground (bumps in one DTM only) will be replaced"))
 
 check_echo <- function(lines) {
   lines <- trimws(lines)

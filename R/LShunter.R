@@ -216,6 +216,15 @@ param_specs <- list(
   canopy_ref_dem   = list(type = "character", default = "NOFILE"),
   canopy_align_dsm = list(type = "character", default = "NOFILE"),
   canopy_align_dem = list(type = "character", default = "NOFILE"),
+  # AREA SEEDS (LShunter 1.3.0+; exceedance input and noise_corr): seeds also where the evidence
+  # pooled over a square window is significant. area_windows: window widths in m, space- or
+  # comma-separated ("5 10 20"); area_threshold: the pooled Z_A a seed needs (< 0, e.g. -4.5);
+  # area_min_fraction: share of a window that must be floodable (0.5); out_area_z: each point's
+  # most extreme Z_A.
+  area_windows      = list(type = "character", default = "NONE"),
+  area_threshold    = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  area_min_fraction = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  out_area_z        = list(type = "character", default = "NOFILE"),
 
   # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
   overwrite = list(type = "logical", default = TRUE)
@@ -352,6 +361,11 @@ if (use_existing_input_file) {
                       CanopyRefDEM = canopy_ref_dem,
                       CanopyAlignDSM = canopy_align_dsm,
                       CanopyAlignDEM = canopy_align_dem,
+                      AreaWindows = if (toupper(area_windows) %in% c("NONE", "NA", "")) NULL else
+                        as.numeric(strsplit(trimws(area_windows), "[ ,]+")[[1]]),
+                      AreaThreshold = na_null(area_threshold),
+                      AreaMinFraction = na_null(area_min_fraction),
+                      OutAreaZ = out_area_z,
                       overwrite = overwrite,
                       Executable_dir = executable_dir)
 

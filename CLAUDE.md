@@ -130,7 +130,11 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   (why each cell was left out); all left-out cells are nodata in every output. `matchSmoothness`
   (LOCAL/GLOBAL, default NONE; `matchFit` CURVATURE/ROUGHNESS, `matchMaxSigma`, `outSigma`) smooths
   one DTM after the global fit so dz stops depending on surface curvature (2017 is rougher at cell
-  scale); the gradient raster and aligned-DEM output keep the original surfaces. A few seconds in it
+  scale); the gradient raster and aligned-DEM output keep the original surfaces. `suspectGround`
+  (REFERENCE/ALIGN/BOTH, default NONE; `suspectHeight`, `suspectWindow`, `suspectCanopy`,
+  `suspectBuffer`) replaces with the local median (code 5; nodata where too few neighbours remain)
+  bumps under canopy in one DTM that the other lacks -- vegetation classified as ground, which
+  read as loss (2017) or gain. A few seconds in it
   checks Align's settings echo — unrecognized keywords, or an
   option not acknowledged (Align drops unknown `TILES` sub-fields silently) — and kills an old exe.
   It runs the exe via `processx` (input file from `TWutils::align_input()`) into
@@ -199,7 +203,10 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `sign_flip`, and (LShunter 1.2.0+) `canopy_ref_dsm`/`canopy_ref_dem`/`canopy_align_dsm`/
   `canopy_align_dem`, which add each patch's mean canopy height in both surveys and its change to
   the table (`canopy_align_dem` is the align survey's original DTM, not Align's shifted one); with
-  `out_table` set, the run counts as done only once the table exists. Supports
+  `out_table` set, the run counts as done only once the table exists. LShunter 1.3.0+ adds area
+  seeds (`area_windows`, e.g. `5 10 20`, default NONE; `area_threshold`, `area_min_fraction`,
+  `out_area_z`): seeds from evidence pooled over windows, which need the exceedance raster and
+  `noise_corr`. Supports
   both `LShunter()` modes like RIL.R (mode 1: existing input file via `input_file`). Note
   `LShunter()`'s current wrapper signature takes named, capitalized arguments (`Outlier`, `Accum`,
   `OutPatch`, `ScratchDir`, `Executable_dir`, plus `...` to `LShunterInput()`); MappingLandslides.qmd's
@@ -225,6 +232,13 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   read back — outputs are named from `path`/`dem_id` (`ang_<dem_id>.flt`, `accum_<dem_id>.flt`,
   `NodeAttributes_<dem_id>.dat`/`NodeNet_<dem_id>.dat`), and `path` must end with a trailing path
   separator since bldgrds concatenates it directly with those prefixes rather than joining it.
+- **build_dtm.R** — builds DTM (TIN of `ground_classes`, edges up to `max_edge_m`) and DSM
+  (highest return, `dsm_drop_classes` left out) GeoTIFF tiles from LAZ with lasR, one output tile
+  per input tile on a `res_m` grid in the LAZ's own CRS and units, each with a `buffer_m` margin
+  read from neighbouring tiles; optional `clip_polygon`; resumable (existing tiles are skipped,
+  each is written as `_partial` and renamed). lasR leaves `.lax` index files beside the LAZ. A
+  Site1 pilot found the rebuilt DTMs give the same patches as the vendor's; vendor DTMs remain the
+  default, but the rebuilt ones exposed a half-cell offset in the vendor 2017 GeoTIFFs.
 
 ## Key R dependencies
 

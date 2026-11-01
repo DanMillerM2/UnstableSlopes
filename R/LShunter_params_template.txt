@@ -88,6 +88,12 @@ canopy_ref_dsm: NOFILE
 canopy_ref_dem: NOFILE
 canopy_align_dsm: NOFILE
 canopy_align_dem: NOFILE
+# AREA SEEDS (LShunter 1.3.0+; exceedance input and noise_corr): seeds also where the evidence pooled
+# over a square window is significant. Widths in m, space-separated; threshold is the pooled Z_A (< 0).
+area_windows: NONE             # e.g. 5 10 20
+area_threshold: NA             # e.g. -4.5
+area_min_fraction: NA          # share of a window that must be floodable (0.5)
+out_area_z: NOFILE             # each point's most extreme Z_A
 
 # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
 overwrite: TRUE

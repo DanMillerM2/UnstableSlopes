@@ -86,6 +86,7 @@ align_settings <- c("iterations", "convergence", "k", "dampener", "derivatives",
                     "openWaterMinArea", "waterMaskBuffer", "waterMinDensity", "waterWindow",
                     "coverage", "coverageMin", "coverageBlock",
                     "matchSmoothness", "matchFit", "matchMaxSigma",
+                    "suspectGround", "suspectHeight", "suspectWindow", "suspectCanopy", "suspectBuffer",
                     # optional extra outputs, TRUE to write them into the run folder
                     "outCorDif", "outDenOutlier", "outDX", "outDY", "outDZ", "outWaterMask", "outSigma")
 ril_keys <- c("ril_bldgrds_input", "ril_valleyfloor_input", "ril_input",
@@ -94,6 +95,7 @@ lshunter_settings <- c("threshold1", "threshold2", "min1", "min2", "accum", "max
                        "max_accum2", "min_size", "road_shapefile", "road_buffer", "noise_cover",
                        "dist_channel", "min_patch_significance", "null_realizations",
                        "null_tile", "null_seed", "seed_den_min", "seed_den_window", "sign_flip",
+                       "area_windows", "area_threshold", "area_min_fraction",
                        "executable_dir")
 lsstats_settings <- c("rasters", "distance_raster", "radius", "out_distance_raster",
                       "executable_dir")
