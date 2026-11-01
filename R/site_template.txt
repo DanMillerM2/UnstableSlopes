@@ -56,7 +56,8 @@ align_z_units: auto
 ground_n_workers: 6
 ground_batch_size_tiles: 50
 # ground_stream_chunk_size: 100000
-ground_extra_counts: water=9          # also count water returns, left out of Align (WATER POINTS)
+# ground_extra_counts: water=9        # the default: water returns counted, left out of Align
+#                                     # (WATER POINTS); NONE turns it off
 
 # ---- Align: any align_supervisor.R setting, prefixed align_ -----------------------------------
 # Defaults: tiles and prior chosen by cross-validation (tileNx auto, SELECT = AUTO, square tiles

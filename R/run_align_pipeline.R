@@ -78,11 +78,11 @@
 ##                   condition that picks features): lakes, rasterized onto the reference DTM's
 ##                   grid as water_mask_ref_grid.flt in the run folder and given to Align as its
 ##                   WATER MASK. Not rivers: they move between surveys, so their polygons match
-##                   neither survey's channel. extra_counts: water=9 in [defaults]
-##                   (or a set) also counts the surveys' water returns, given to Align as WATER
-##                   POINTS.
+##                   neither survey's channel.
 ##   [defaults]   -- optional; ground_returns.R parameters shared by both [ref_set] and
 ##                   [align_set] below, unless a set repeats the same keyword to override it.
+##                   extra_counts defaults to water=9 here: the surveys' water returns are
+##                   counted and given to Align as WATER POINTS (extra_counts: NONE turns it off).
 ##   [ref_set]    -- ground_returns.R parameters (input_dir, output_dir, ...) for the reference
 ##                   LAZ tiles (pre-change).
 ##   [align_set]  -- ground_returns.R parameters for the LAZ tiles to be aligned (post-change).
@@ -192,6 +192,10 @@ config <- read_sectioned_config(pipeline_config_path)
 
 ground_returns_defaults <- config[["defaults"]]
 if (is.null(ground_returns_defaults)) ground_returns_defaults <- list()
+# Water handling is on by default: both surveys' lidar water returns (LAS class 9) are counted with
+# the ground returns and left out of Align as WATER POINTS. extra_counts: NONE in [defaults] (or a
+# set) turns it off; a survey without water points simply marks nothing.
+if (is.null(ground_returns_defaults$extra_counts)) ground_returns_defaults$extra_counts <- "water=9"
 
 study_area <- config[["study_area"]]
 if (is.null(study_area)) study_area <- list()

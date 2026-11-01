@@ -29,7 +29,7 @@ alignDSM: c:\work\data\site1\dsm_2023
 # Maximum iterations in each of Align's global and tiled loops, and the change of the aligned
 # DEM (m: 99th percentile on steep ground, and the predicted remaining change) below which a
 # loop stops; 0 runs every iteration.
-iterations: 8
+iterations: 10
 convergence: 0.005
 
 # Tukey-fence multiplier for outliers, and the proportion of each iteration's shift applied.

@@ -59,8 +59,9 @@ export_ground_points_gpkg: FALSE
 fill_empty_cells_with_zero: FALSE
 cleanup_intermediate_files: TRUE
 stream_chunk_size: 100000
-# Also count the lidar water returns (LAS class 9), left out of Align as WATER POINTS.
-extra_counts: water=9
+# The lidar water returns (LAS class 9) are counted too by default (extra_counts: water=9), and
+# left out of Align as WATER POINTS; extra_counts: NONE turns that off.
+# extra_counts: water=9
 
 [ref_set]
 input_dir: c:\work\data\site1\NP_2017\laz
