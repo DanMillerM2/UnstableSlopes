@@ -23,7 +23,15 @@ results:
 | 1. Align and its inputs | `R/run_align_pipeline.R` → `R/align_supervisor.R` | aligned DTM, DoD, outlier and exceedance rasters, level of detection, gradient raster, `align_run\*.csv` |
 | 2. RIL (runs alongside 1) | `R/ril_pipeline.R` | landform raster |
 | 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files |
+| 4. Strip noise (runs alongside 3) | `R/strip_noise.R`, as Stage 4 of `R/run_align_pipeline.R` | each survey's noise between its own flight passes: strip offsets and a noise floor by canopy, slope and ground density |
 | Report | `PipelineReport.qmd` | one self-contained html file |
+
+Step 4 is a check on the surveys, not an input to the results. It measures each survey's noise
+where two of its flight passes overlap (no real change between passes flown minutes apart). The
+report shows the offsets between passes -- above about 0.1 m is a systematic strip error, which
+appears in the change map along flight lines -- and the pass noise as a floor under Align's level
+of detection. It adds about 50 minutes of computing per site; `noise_run: FALSE` in the site file
+skips it.
 
 Every input for a site goes in **one site file** of `keyword: value` lines (template
 `R/site_template.txt`). `R/run_site.R` reads it, writes each pipeline's configuration file, and
@@ -35,7 +43,8 @@ interpretation from the outputs, and renders the report.
 
 Keywords are grouped by prefix: `site_` (names, folders, polygon, CRS), `ref_` and `align_` for
 the two surveys (label, LAZ, DTM and DSM), `ground_` (ground-return counts), `align_` (Align
-settings), `ril_` (the RIL chain's three Fortran input files), `lshunter_` and `lsstats_`.
+settings), `ril_` (the RIL chain's three Fortran input files), `lshunter_`, `lsstats_` and
+`noise_` (strip noise; all optional).
 Anything left out takes its default, and an unknown keyword stops the run. Everything that links
 one program to the next is filled in: Align's output names come from the run folder and the
 survey labels; LShunter reads Align's exceedance raster, gradient, centred difference, IQR raster
@@ -52,19 +61,54 @@ Rscript R/run_site.R C:\Work\Data\Site2\site2_2017_2025.txt                  # r
 Outputs go to `<site_dir>\<site_run_name>\`, the generated configurations to its `configs\`
 folder. The configurations are rewritten on every run, so change settings in the site file.
 
+A site file holds full paths: the data, the RIL input files (which name their own DEM, scratch
+and output paths) and the executable folders (`align_executable_dir`,
+`ril_bldgrds_executable_dir`, `ril_valleyfloor_executable_dir`, `ril_executable_dir`,
+`lshunter_executable_dir`, `lsstats_executable_dir`). On another computer, copy the site file and
+the RIL input files and change every path that differs there; `--configs-only` stops on any input
+or executable it can't find.
+
 ## One-time setup on each computer
 
-1. **Pull the repos**: unstableslopes (`align_pipeline`), TWutils (`main`), GridUtilities
-   (`align_clean`) and LandslideUtilities (`LShunter_update`).
-2. **Build the executables** in Visual Studio, Release|x64: `Projects\align` (Align, GridUtilities
-   8a08fa6 or later), `Projects\LShunter` (1.1.0 or later) and `Projects\LSstats` (1.1.0 or later).
-3. **Install the R packages**: TWutils (`R CMD INSTALL` from the Repos folder), plus `terra`,
-   `sf`, `processx`, `ggplot2`, `knitr`, `lasR` and `lidR`.
-4. **Put Quarto on the PATH**, so that `quarto --version` works in a new terminal. RStudio has a
+1. **Clone or pull the repos** into one `repos` folder, on these branches:
+
+   | Repo | Branch | Holds |
+   |---|---|---|
+   | UnstableSlopes (`DanMillerM2`) | `align_pipeline` | the R scripts, the skill, this guide |
+   | TWutils (`DanMillerM2`) | `main` (c2290a4 or later) | the R package that writes the programs' input files |
+   | GridUtilities (`teal-waters`) | `align_clean` (ab662ea or later) | Align, bldgrds |
+   | LandslideUtilities (`DanMillerM2`) | `LShunter_update` | LShunter, LSstats |
+   | ChannelUtilities (`teal-waters`) | `master` | ValleyFloor, RIL |
+   | modules (`teal-waters`) | `master` | Fortran modules shared by all of the above |
+
+2. **Copy the Visual Studio projects.** The project files (`.sln`, `.vfproj`) are not in the
+   repos: each program is built by a project under `<Repo>\Projects\<Name>\`, a folder beside
+   `repos` (for example `C:\Work\Sandbox\GridUtilities\Projects\align` next to
+   `C:\Work\Sandbox\repos\GridUtilities`). The projects find their source by relative path
+   (`..\..\..\repos\GridUtilities\...`), so copy the `GridUtilities`, `LandslideUtilities` and
+   `ChannelUtilities` project folders from a computer that has them, keeping that layout. Two
+   exceptions: LSstats's project is `LandslideUtilities\LSstats\` (not under `Projects\`), and
+   RIL's project includes Intel MKL's `lapack.f90` from
+   `C:\Program Files (x86)\IntelSWTools\compilers_and_libraries_2020.4.311\...`, so on a computer
+   with another Intel Fortran version, point that file at its MKL.
+3. **Build the executables** in Visual Studio, Release|x64: `align` (GridUtilities 8a08fa6 or
+   later; ab662ea or later for the optional `align_exceedanceTrim`, 78b4911 for
+   `align_suspectGround`, 2083edb for `align_matchSmoothness`), `bldgrds`, `ValleyFloor`, `RIL`,
+   `LShunter` (1.1.0 or later) and `LSstats` (1.1.0 or later). Build from the pulled source, so
+   each executable matches a commit.
+4. **Install the R packages**: TWutils (`R CMD INSTALL TWutils` from the `repos` folder, on
+   `main`), plus `terra`, `sf`, `lasR`, `lidR`, `future`, `future.apply`, `processx`, `ggplot2`
+   and `knitr`. An older TWutils stops Align at the start with "The installed TWutils is older
+   than this pipeline", naming what's missing.
+5. **Put Quarto on the PATH**, so that `quarto --version` works in a new terminal. RStudio has a
    copy that isn't on the PATH (`C:\Program Files\RStudio\resources\app\bin\quarto\bin`); either
    add that folder to the PATH or install Quarto from <https://quarto.org>.
+6. **Copy `PipelineReport.qmd`** into the UnstableSlopes folder from a computer that has it. The
+   report template is kept out of git because it is adapted to each study site. Without it,
+   Claude writes a new one from the skill's description and shows it to you first.
 
-The skill checks all of this before it starts and says what is missing.
+The skill checks the R packages, TWutils and Quarto before it starts and says what is missing; an
+executable that is too old is caught a few seconds after it starts.
 
 ## Running a site
 
@@ -88,9 +132,9 @@ Or without one:
 Without a site file, Claude asks, in one message, for anything it still needs:
 
 - study name, output folder, study-area polygon and target CRS (default EPSG:2856);
-- for each survey (older reference, newer to align): DTM tiles or file, LAZ tiles, and
-  optionally DSM tiles or file. Without both LAZ sets there is no density-based level of
-  detection and no exceedance raster;
+- for each survey (older reference, newer to align): DTM tiles or file, LAZ tiles, and DSM tiles
+  or file. All three are required: the LAZ tiles give the density-based level of detection, the
+  exceedance raster and the strip noise, and Align uses both DSMs for canopy height;
 - the complete DTM for RIL, and the bldgrds, ValleyFloor and RIL input files to copy;
 - LShunter and LSstats settings (thresholds, flow-accumulation raster, rasters to summarize);
 - executable folders, if they aren't the defaults.
@@ -108,11 +152,12 @@ Without a site file, Claude asks, in one message, for anything it still needs:
    ground returns; Align itself takes about 25 minutes on a 370-million-cell site. Run one site
    at a time: Align holds whole DEMs in memory (about 48 GB). Claude reports each Align milestone
    (global fit converged, tiles chosen, tile loop converged) and stops with the cause if a step
-   fails.
+   fails. After Align, LShunter/LSstats and the strip noise run side by side.
 4. **Interpretation.** Claude reads the run's tables and writes `<report_dir>\narrative.md`: the
    tiles chosen and how clear the choice was, convergence, RMSE and the level of detection, the
    pattern of shifts, the candidate landslides with volumes ± SD against the sign-flip control,
-   their landforms, and caveats. Every number comes from the output files.
+   their landforms, the strip offsets and how much of the noise each survey explains on its own,
+   and caveats. Every number comes from the output files.
 5. **Report.** `run_site.R` is rerun; it skips every finished step and renders
    `<report_dir>\<study_name>_report.html`. The file is self-contained and can be emailed as is.
 
