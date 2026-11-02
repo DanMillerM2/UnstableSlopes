@@ -196,10 +196,38 @@ isn't there, write it, then show it to the user:
   alignment (the `align_run_dir` tables: run summary, convergence by iteration, the
   cross-validation table, a map of node shifts); difference maps (`out_dif_0` and `out_dif`,
   same colour scale, plus `out_exceed` if set); level of detection (`out_lod` and its `_iqr`, and
-  the `<out_bins>_densityLod.csv` fits); candidate landslides (`patch_raster` over a hillshade of
+  the `<out_bins>_densityLod.csv` fits); noise reference from flight-pass overlaps (below);
+  candidate landslides (`patch_raster` over a hillshade of
   `ref_dtm`, the `lshunter_table` summary); landforms (`landform_raster`, the LSstats csvs);
   Interpretation (include `narrative_md` if it exists, else a note that it hasn't been written);
   run details (`created`, `config`, `elapsed_min`, `log_dir`).
+- Noise reference section, from `strip_noise_dir` (`NOFILE` when `noise_run: FALSE`: one note),
+  with files named `<label>_noise_*` for `noise_ref_label` and `noise_align_label`. Say first that
+  each survey's noise is measured between its own flight passes (no real change), so it is a floor
+  under the level of detection, not a prediction of it. Per survey: the `_summary.txt` lines as
+  bullets (pass method, why others were rejected, pass checks); a strip-offset table from
+  `_pairs.csv` (pairs, cells, median / 90th percentile / max of |`median_m`|), noting a
+  systematic strip error when the max exceeds 0.1 m; then one table merging both surveys'
+  `_classes.csv` (cells, `iqr_m`, `gt10`, `gt20` by canopy and slope, in the csv's row order).
+  Then the pass-noise floor table, which needs both `_density_classes.csv` files, `out_cendif`,
+  `<out_lod>_iqr`, both DTMs and DSMs and `ref_ground_count`/`align_ground_count`:
+  - sample `out_cendif` (about 1e6 regular cells) and keep cells whose canopy class (DSM - DTM,
+    breaks read back from the class labels) is the same in both surveys;
+  - each survey's ground returns per m2 at the cell: its count raster summed over 5 x 5 cells,
+    divided by their area;
+  - per survey and canopy x slope class, fit `iqr_m^2 = c0 + c1 * inv_density_sum` over
+    `_density_classes.csv` rows with at least 5000 cells (weights = cells); one pass's noise is
+    `sqrt(max(c0/2, 0) + max(c1, 0) / d)`, and the floor is both surveys' values combined in
+    quadrature;
+  - table by canopy class and the sparser survey's density (< 0.25, 0.25-0.75, 0.75-2, 2-4,
+    >= 4 returns/m2; groups of at least 300 cells): cells, observed IQR, median of Align's
+    `_iqr`, median floor, and the floor's share of the observed variance (floor^2 / IQR^2,
+    at most 1);
+  - a note that the remainder is what differs between the surveys (classification, gridding,
+    sensor, season, alignment) plus real change, and grows as ground returns thin; where the
+    floor's share is small, more points wouldn't lower the level of detection.
+  Keep the comparisons' filters free of NA (test both canopy classes for NA before comparing
+  them), or the grouping shifts silently.
 - Each optional input (`NOFILE` in the manifest, or a file that doesn't exist) gets a one-line
   note instead of its figure or table, so the report renders for every configuration.
 - Downsample rasters for display (`terra::aggregate`) so the html stays emailable.
