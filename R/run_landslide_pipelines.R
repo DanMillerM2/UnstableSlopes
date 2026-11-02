@@ -1,7 +1,8 @@
 ## run_landslide_pipelines.R
 ##
 ## Driver script for the whole method: runs run_align_pipeline.R and ril_pipeline.R side by side
-## (neither needs the other's output), then lshunter_lsstats_pipeline.R on their results, then
+## (neither needs the other's output), then lshunter_lsstats_pipeline.R on their results -- beside
+## the align pipeline's Stage 4 (strip_noise.R, when its config has a [strip_noise] section), then
 ## renders PipelineReport.qmd (repo root) to one self-contained html file summarizing the run.
 ## Each pipeline is its own `Rscript <script> <config>` subprocess, handed its own config file
 ## unmodified, with its console output in <report_dir>/logs/<pipeline>.log; the align and RIL
@@ -258,10 +259,10 @@ narrative_md <- if (is_set(cfg$narrative_md)) cfg$narrative_md else file.path(re
 
 ## ---- Run the pipelines ------------------------------------------------------------------------
 
-start_pipeline <- function(script, config, label) {
+start_pipeline <- function(script, config, label, flags = character(0)) {
   log <- file.path(log_dir, paste0(label, ".log"))
   message("\n==== Starting ", label, " (", script, ")\n  log: ", log)
-  proc <- processx::process$new("Rscript", c(file.path(script_dir, script), config),
+  proc <- processx::process$new("Rscript", c(file.path(script_dir, script), config, flags),
                                 stdout = log, stderr = "2>&1", cleanup = TRUE)
   list(proc = proc, log = log, label = label, shown = 0L, start = Sys.time())
 }
@@ -293,23 +294,27 @@ finish <- function(r) {
   elapsed
 }
 
-runs <- list(start_pipeline("run_align_pipeline.R", cfg$align_pipeline_config, "align_pipeline"),
-             start_pipeline("ril_pipeline.R", cfg$ril_pipeline_config, "ril_pipeline"))
-while (any(vapply(runs, function(r) r$proc$is_alive(), logical(1)))) {
-  for (r in runs) if (r$proc$is_alive()) { r$proc$wait(timeout = progress_interval_s * 1000); break }
+# Waits for every run, echoing their logs; returns each one's minutes, named by label.
+wait_all <- function(runs) {
+  while (any(vapply(runs, function(r) r$proc$is_alive(), logical(1)))) {
+    for (r in runs) if (r$proc$is_alive()) { r$proc$wait(timeout = progress_interval_s * 1000); break }
+    runs <- echo_logs(runs)
+  }
   runs <- echo_logs(runs)
+  vapply(runs, finish, numeric(1)) |> setNames(vapply(runs, `[[`, "", "label"))
 }
-runs <- echo_logs(runs)
-elapsed <- c(align_pipeline = finish(runs[[1]]), ril_pipeline = finish(runs[[2]]))
 
-ls_run <- start_pipeline("lshunter_lsstats_pipeline.R", cfg$lshunter_lsstats_config,
-                         "lshunter_lsstats_pipeline")
-while (ls_run$proc$is_alive()) {
-  ls_run$proc$wait(timeout = progress_interval_s * 1000)
-  ls_run <- echo_logs(list(ls_run))[[1]]
-}
-ls_run <- echo_logs(list(ls_run))[[1]]
-elapsed["lshunter_lsstats_pipeline"] <- finish(ls_run)
+# The align pipeline's Stage 4 (strip_noise.R) doesn't feed LShunter, so it runs beside it
+sn <- align_cfg[["strip_noise"]]
+strip_noise_on <- !is.null(sn) && !identical(toupper(sn$run %||% "TRUE"), "FALSE")
+
+elapsed <- wait_all(list(
+  start_pipeline("run_align_pipeline.R", cfg$align_pipeline_config, "align_pipeline", "--no-strip-noise"),
+  start_pipeline("ril_pipeline.R", cfg$ril_pipeline_config, "ril_pipeline")))
+elapsed <- c(elapsed, wait_all(c(
+  list(start_pipeline("lshunter_lsstats_pipeline.R", cfg$lshunter_lsstats_config, "lshunter_lsstats_pipeline")),
+  if (strip_noise_on) list(start_pipeline("run_align_pipeline.R", cfg$align_pipeline_config, "strip_noise",
+                                          "--strip-noise-only")))))
 
 ## ---- Manifest and report ----------------------------------------------------------------------
 
@@ -344,6 +349,11 @@ manifest <- list(
   landform_raster    = flt_path(landform_raster),
   lsstats_csv        = sub("\\.csv$", "", lsstats_csv, ignore.case = TRUE),
   lsstats_rasters    = paste(lsstats_rasters, collapse = "; "),
+  strip_noise_dir    = if (strip_noise_on) (sn$output_dir %||% file.path(dirname(al$outOutlier), "strip_noise")) else "NOFILE",
+  noise_ref_label    = sn$ref_label %||% "ref",
+  noise_align_label  = sn$align_label %||% "align",
+  ref_ground_count   = if (is.na(g <- grnd_path(align_cfg$ref_set))) "NOFILE" else g,
+  align_ground_count = if (is.na(g <- grnd_path(align_cfg$align_set))) "NOFILE" else g,
   narrative_md       = narrative_md,
   log_dir            = log_dir,
   elapsed_min        = paste(names(elapsed), round(elapsed, 1), sep = "=", collapse = "; ")

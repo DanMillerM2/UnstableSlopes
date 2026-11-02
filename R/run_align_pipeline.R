@@ -43,6 +43,16 @@
 ## LoD, writes the gradient raster LShunter needs, and moves the outputs to their final paths --
 ## see that script's header for its keywords and defaults.
 ##
+## Stage 4 (strip_noise.R x2, only with a [strip_noise] section): each survey's noise measured
+## where its own flight passes overlap (see strip_noise.R), on a sample of its LAZ tiles, classed by
+## canopy height (that survey's DSM - DTM) and Align's gradient raster, with the reference DTM as
+## the template grid and each set's pass_tally.csv (from Stage 2) when it exists. Outputs
+## <label>_noise_*.csv in the section's output_dir (default: strip_noise\ in the run folder); a
+## survey is skipped once its <label>_noise_classes.csv exists. It doesn't feed Align, so it runs
+## after it -- even when Align was already done. Flags: --no-strip-noise runs Stages 1-3 only,
+## --strip-noise-only Stage 4 only (run_landslide_pipelines.R uses both, to run Stage 4 beside
+## LShunter).
+##
 ## Resumability: every file this pipeline produces is checked for existence before it's
 ## (re)created, and skipped if it's already there -- same convention used throughout this repo
 ## (see ground_returns.R's per-batch merged-file skip and align_dtms.R's outOutlier skip). In
@@ -94,6 +104,10 @@
 ##   [ref_dsm]    -- the same as [ref_dtm] but for the reference DSM, with the keywords
 ##                   output_dsm/input_dsm/existing_dsm. Required, like the DTMs.
 ##   [align_dsm]  -- the same, for the DSM to be aligned. Required.
+##   [strip_noise] -- optional; strip_noise.R's keywords (noise_method, tile_fraction, n_workers,
+##                   ...), passed on as they are, plus run (default TRUE), output_dir, ref_label and
+##                   align_label (output prefixes, default ref/align). input_dir, template_raster,
+##                   dtm, dsm, gradient_raster, pass_tally and clip_polygon are set here.
 ##   [align]      -- align_supervisor.R's keywords (iterations, convergence, k, tileNx, ...,
 ##                   outOutlier, outExceed, outLod, outCenDif, scratch_dir, executable_dir,
 ##                   program_name; see param_specs there), passed on as they are.
@@ -123,6 +137,9 @@ get_script_dir <- function() {
 pipeline_config_path <- file.path(get_script_dir(), "run_align_pipeline_params_template.txt")  # fallback; overridden by a command-line argument below
 
 cli_args <- commandArgs(trailingOnly = TRUE)
+no_strip_noise   <- "--no-strip-noise" %in% cli_args    # Stages 1-3 only
+strip_noise_only <- "--strip-noise-only" %in% cli_args  # Stage 4 only
+cli_args <- setdiff(cli_args, c("--no-strip-noise", "--strip-noise-only"))
 if (length(cli_args) >= 1) pipeline_config_path <- cli_args[1]  # Rscript ... pipeline_config.txt takes precedence over the hardcoded fallback above
 
 if (!file.exists(pipeline_config_path)) {
@@ -134,6 +151,7 @@ if (!file.exists(pipeline_config_path)) {
 ground_returns_script <- file.path(get_script_dir(), "ground_returns.R")  # sibling script, same folder as this one
 mosaic_dtm_script     <- file.path(get_script_dir(), "mosaic_dtm.R")      # likewise
 supervisor_script     <- file.path(get_script_dir(), "align_supervisor.R")  # likewise
+strip_noise_script    <- file.path(get_script_dir(), "strip_noise.R")       # likewise
 param_dir <- file.path(tempdir(), "run_align_pipeline_params")  # generated ground_returns.R/mosaic_dtm.R parameter files are written here
 dir.create(param_dir, showWarnings = FALSE, recursive = TRUE)
 
@@ -206,6 +224,7 @@ align_dtm  <- config[["align_dtm"]]
 ref_dsm    <- config[["ref_dsm"]]    # required, like the DTMs: Align needs both surveys' DSMs
 align_dsm  <- config[["align_dsm"]]
 align_section <- config[["align"]]
+strip_noise_section <- config[["strip_noise"]]  # optional (Stage 4)
 
 required_sections <- c("ref_set", "align_set", "ref_dtm", "align_dtm", "ref_dsm", "align_dsm", "align")
 missing_sections  <- setdiff(required_sections, names(config))
@@ -455,60 +474,62 @@ outOutlier <- sub("\\.flt$", "", align_params$outOutlier, ignore.case = TRUE)
 
 outOutlier_path <- paste0(outOutlier, ".flt")
 
-if (file.exists(outOutlier_path)) {
+# Writes a named list out as a "keyword: value" parameter file and returns that file's path.
+write_param_file <- function(params, path) {
+  lines <- vapply(names(params), function(nm) paste0(nm, ": ", params[[nm]]), character(1))
+  writeLines(lines, path)
+  path
+}
+
+# Runs one sibling script (ground_returns.R, mosaic_dtm.R, ...) as its own Rscript subprocess on
+# an already-written parameter file and returns the path to the output it's expected to produce.
+# Skips the Rscript call entirely if that output already exists. label is just for messages.
+# With log_file set, the subprocess's console output goes to that file instead of this
+# session's -- needed for the background mosaics (see Stage 1), whose output would otherwise
+# be lost.
+run_script_step <- function(script, label, param_path, expected_output, log_file = NULL) {
+  if (all(file.exists(expected_output))) {
+    message("\n==== ", label, ": output already exists, skipping ", basename(script), ": ",
+            paste(expected_output, collapse = ", "), " ====")
+    return(expected_output[1])
+  }
+
+  message("\n==== ", label, " (", basename(script), ") ====",
+          if (!is.null(log_file)) paste0("\n  log: ", log_file))
+
+  start_time <- Sys.time()
+  status <- if (is.null(log_file)) {
+    system2("Rscript", args = shQuote(c(script, param_path)))
+  } else {
+    system2("Rscript", args = shQuote(c(script, param_path)),
+            stdout = log_file, stderr = log_file)
+  }
+  elapsed <- Sys.time() - start_time
+
+  if (status != 0) {
+    stop(basename(script), " failed for ", label, " (parameters: ", param_path,
+         ") -- exit status ", status, ".",
+         if (!is.null(log_file) && file.exists(log_file)) {
+           paste0(" Last lines of its log (", log_file, "):\n",
+                  paste(tail(readLines(log_file, warn = FALSE), 10), collapse = "\n"))
+         })
+  }
+
+  message(label, " finished in ", format(unclass(elapsed), digits = 4), " ", units(elapsed))
+
+  if (!all(file.exists(expected_output))) {
+    stop(basename(script), " reported success for ", label, " but expected output is missing: ",
+         paste(expected_output[!file.exists(expected_output)], collapse = ", "))
+  }
+  expected_output[1]
+}
+
+if (strip_noise_only) {
+  message("--strip-noise-only: Stages 1-3 skipped.")
+} else if (file.exists(outOutlier_path)) {
   message("Final outlier output already exists -- pipeline already complete, nothing to do: ",
           outOutlier_path)
 } else {
-
-  # Writes a named list out as a "keyword: value" parameter file and returns that file's path.
-  write_param_file <- function(params, path) {
-    lines <- vapply(names(params), function(nm) paste0(nm, ": ", params[[nm]]), character(1))
-    writeLines(lines, path)
-    path
-  }
-
-  # Runs one sibling script (ground_returns.R or mosaic_dtm.R) as its own Rscript subprocess on an
-  # already-written parameter file and returns the path to the output it's expected to produce.
-  # Skips the Rscript call entirely if that output already exists. label is just for messages.
-  # With log_file set, the subprocess's console output goes to that file instead of this
-  # session's -- needed for the background mosaics (see Stage 1), whose output would otherwise
-  # be lost.
-  run_script_step <- function(script, label, param_path, expected_output, log_file = NULL) {
-    if (all(file.exists(expected_output))) {
-      message("\n==== ", label, ": output already exists, skipping ", basename(script), ": ",
-              paste(expected_output, collapse = ", "), " ====")
-      return(expected_output[1])
-    }
-
-    message("\n==== ", label, " (", basename(script), ") ====",
-            if (!is.null(log_file)) paste0("\n  log: ", log_file))
-
-    start_time <- Sys.time()
-    status <- if (is.null(log_file)) {
-      system2("Rscript", args = shQuote(c(script, param_path)))
-    } else {
-      system2("Rscript", args = shQuote(c(script, param_path)),
-              stdout = log_file, stderr = log_file)
-    }
-    elapsed <- Sys.time() - start_time
-
-    if (status != 0) {
-      stop(basename(script), " failed for ", label, " (parameters: ", param_path,
-           ") -- exit status ", status, ".",
-           if (!is.null(log_file) && file.exists(log_file)) {
-             paste0(" Last lines of its log (", log_file, "):\n",
-                    paste(tail(readLines(log_file, warn = FALSE), 10), collapse = "\n"))
-           })
-    }
-
-    message(label, " finished in ", format(unclass(elapsed), digits = 4), " ", units(elapsed))
-
-    if (!all(file.exists(expected_output))) {
-      stop(basename(script), " reported success for ", label, " but expected output is missing: ",
-           paste(expected_output[!file.exists(expected_output)], collapse = ", "))
-    }
-    expected_output[1]
-  }
 
   ## ---- Stage 1: mosaic_dtm.R for each DTM/DSM built from tiles or one input file --------------
   ## One Rscript subprocess per raster (see run_ground_returns_batches.R for why each run gets
@@ -711,6 +732,35 @@ if (file.exists(outOutlier_path)) {
                                         file.path(param_dir, "params_align_supervisor.txt"))
   run_script_step(supervisor_script, "Align", supervisor_params, outOutlier_path)
   message("Align finished. Aligned DTM written to: ", outDTM)
+}
+
+## ---- Stage 4: strip_noise.R, once per survey ---------------------------------------------------
+## Each survey's own flight-pass overlaps, classed by its own canopy height and Align's gradient.
+if (!is.null(strip_noise_section) && !no_strip_noise &&
+    !identical(toupper(strip_noise_section$run %||% "TRUE"), "FALSE")) {
+  noise_dir <- strip_noise_section$output_dir %||% file.path(dirname(align_params$outOutlier), "strip_noise")
+  noise_labels <- c(ref = strip_noise_section$ref_label %||% "ref",
+                    align = strip_noise_section$align_label %||% "align")
+  set_keys <- c("input_dir", "output_dir", "label", "template_raster", "dtm", "dsm", "gradient_raster",
+                "pass_tally", "clip_polygon")
+  ignored <- intersect(names(strip_noise_section), set_keys[-2])
+  if (length(ignored)) warning(paste(ignored, collapse = "/"), " in [strip_noise] ignored -- set from the other sections.")
+  passed <- strip_noise_section[setdiff(names(strip_noise_section), c(set_keys, "run", "ref_label", "align_label"))]
+  gradient <- flt_path(TWutils::align_gradient_raster(ref_dtm$path, as.numeric(align_params$radius %||% 15)))
+  surveys <- list(ref = list(set = ref_set, dtm = ref_dtm$path, dsm = ref_dsm$path),
+                  align = list(set = align_set, dtm = align_dtm$path, dsm = align_dsm$path))
+  for (sv in names(surveys)) {
+    x <- surveys[[sv]]
+    tally <- file.path(x$set$output_dir, "pass_tally.csv")
+    params <- c(list(input_dir = x$set$input_dir, output_dir = noise_dir, label = noise_labels[[sv]],
+                     template_raster = ref_dtm$path, dtm = x$dtm, dsm = x$dsm,
+                     gradient_raster = if (file.exists(gradient)) gradient else "NOFILE",
+                     pass_tally = if (file.exists(tally)) tally else "NOFILE",
+                     clip_polygon = study_area_params$clip_polygon), passed)
+    run_script_step(strip_noise_script, paste0("strip_noise_", sv),
+                    write_param_file(params, file.path(param_dir, paste0("params_strip_noise_", sv, ".txt"))),
+                    file.path(noise_dir, paste0(noise_labels[[sv]], "_noise_classes.csv")))
+  }
 }
 
 message("\nPipeline complete.")

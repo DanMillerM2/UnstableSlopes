@@ -185,7 +185,8 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   the template's CRS, and tallied per template cell in a lasR `callback()`; the output is the point
   count per template cell, `ground_count_ref_grid.flt`, instead of the density raster;
   `extra_counts` (e.g. `water=9, snow=21`) counts other LAS classes in the same pass, as
-  `<name>_count_ref_grid.flt`. It's masked
+  `<name>_count_ref_grid.flt`; the same pass tallies ground points per tile, second of GPS time and
+  PointSourceID into `pass_tally.csv` (for strip_noise.R). It's masked
   with the polygon built exactly as `mosaic_dtm.R` builds it (terra `aggregate()` + `project()`, not
   sf), so it keeps the same boundary cells as the DTM, and — like the per-batch `.tif`s — it's
   written under a `_partial` name and renamed into place when complete.
@@ -239,6 +240,34 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   each is written as `_partial` and renamed). lasR leaves `.lax` index files beside the LAZ. A
   Site1 pilot found the rebuilt DTMs give the same patches as the vendor's; vendor DTMs remain the
   default, but the rebuilt ones exposed a half-cell offset in the vendor 2017 GeoTIFFs.
+- **strip_noise.R** — one survey's noise measured inside the survey: where two flight passes
+  overlap, each pass's ground points are triangulated alone and the surfaces differenced (no real
+  change between passes flown minutes apart), on a sample of tiles; histograms and statistics by
+  canopy and gradient class (`<label>_noise_classes.csv`, `_hist.csv`, `_pairs.csv`,
+  `_passes.csv`, `_summary.txt`), and also by ground-return density of the sparser pass
+  (`_density_classes.csv`; `density_breaks`, `density_window_m`). Passes come from `noise_method: auto`: PointSourceID if it passes
+  its checks (not all 0, not one per tile; IDs reflown are split by GPS time, IDs flown together
+  merged), else GPS-time gaps, else none (no independent reference; the summary says so). Pass
+  tallies come from ground_returns.R's `pass_tally.csv` or are made for the sampled tiles. The
+  pipeline runs it as run_align_pipeline.R's Stage 4 (`[strip_noise]` section; run_site.R's
+  `noise_` keywords, on unless `noise_run: FALSE`; outputs in `<run folder>\strip_noise\`), after
+  Align and beside LShunter (`--no-strip-noise` / `--strip-noise-only`), and the report's "Noise
+  reference" section shows each survey's checks, strip offsets, class table, and the pass-noise
+  floor (each survey's single-pass noise read at its ground density, from `ref_ground_count`/
+  `align_ground_count` in the manifest) beside the observed DoD IQR and Align's IQR by canopy and
+  density. It is a diagnostic and doesn't feed Align. Pilots: within-pass splits (scanner
+  channels) understate DoD noise 3-7x. Pooled over density, single-pass differences come within
+  about 0.8-1.4x of observed DoD noise under forest (Site1, Site2) and 2.7-3.2x below it on open
+  flat ground, but see below. Site1 2017 has strip offsets up to
+  0.22 m. Pass noise falls steeply with density (Site1: IQR^2 = a + b/density, r2 >= 0.99), but read
+  at the surveys' full density it predicts a DoD IQR 1.5-5x below the observed one, which
+  falls less steeply with density: the DoD holds a between-survey term (about 0.1 m under forest at
+  Site1) that passes of one survey don't share. The pooled ratio near 1 under forest is a
+  coincidence of overlap cells being sparse; pass noise is a floor, not the whole LoD. Nor is the
+  rest a constant: pass noise plus one between-survey term per canopy x gradient class, fitted on
+  dense ground, underpredicts the DoD IQR at 0.25-2 returns/m2 by 1.2-1.6x under cover (Site1),
+  where Align's own density LoD is within 1.0-1.2x; the between-survey term grows as ground
+  returns thin (about 0.09 m at 2-4 returns/m2, 0.17 m at 0.25-0.75 under forest).
 
 ## Key R dependencies
 

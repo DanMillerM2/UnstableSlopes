@@ -1,0 +1,37 @@
+# Parameters for strip_noise.R: one survey's noise measured where its flight passes overlap.
+# "keyword: value"; "#" starts a comment.
+#   Rscript R/strip_noise.R path/to/this_file.txt
+input_dir: c:\work\data\site1\NP_2017\laz
+output_dir: c:\work\data\site1\run_17_23\strip_noise   # <label>_noise_*.csv, summary and tiles\ go here
+label: 2017
+template_raster: c:\work\data\site1\run_17_23\elev_2017.flt   # reference DTM: grid and CRS of the classes
+dtm: c:\work\data\site1\run_17_23\elev_2017.flt               # this survey's DTM and DSM (canopy = dsm - dtm)
+dsm: c:\work\data\site1\run_17_23\dsm_2017.flt
+gradient_raster: NOFILE      # e.g. Align's <ref DTM>_grad15m; NOFILE: gradient of template_raster smoothed over slope_radius_m
+slope_radius_m: 15
+pass_tally: NOFILE           # ground_returns.R's pass_tally.csv; tiles missing from it are tallied here
+noise_method: auto           # auto (pointsource, then gpstime, then none), pointsource, gpstime, none
+pass_gap_s: 20               # a gap in GPS time this long starts a new pass (gpstime)
+reflight_gap_min: 10         # a PointSourceID flown again after a gap this long is a new pass
+max_pass_min: 60             # passes longer than this are flagged
+min_pass_points: 2000        # ground points a pass needs in a tile to count there
+min_overlap_tiles: 3         # a method needs this many tiles with two such passes
+min_pair_cells: 1000         # overlap cells a pass pair needs in a tile
+tile_fraction: 0.15          # share of study-area tiles sampled, between min_tiles and max_tiles
+min_tiles: 10
+max_tiles: 60
+seed: 1
+res_m: 1.0                   # grid of the per-pass TINs (m)
+max_edge_m: 10               # longest TIN edge kept (m)
+buffer_m: 20                 # read around each tile (m)
+ground_classes: 2
+z_units: auto                # auto (= horizontal units), m, ft, ftUS
+canopy_breaks: 2 10 20       # canopy-height classes (m)
+slope_breaks: 0.3 0.5        # gradient classes
+density_breaks: 0.25 0.75 2 4 8 16   # ground returns/m2 of the sparser pass (Align's classes, split above 4)
+density_window_m: 5          # density averaged over a square window about this wide (m)
+bin_m: 0.002                 # histogram bin (m), over +-range_m
+range_m: 5
+clip_polygon: NOFILE         # only tiles intersecting it are sampled; NOFILE: the template's extent
+n_workers: 8
+threads_per_worker: 1

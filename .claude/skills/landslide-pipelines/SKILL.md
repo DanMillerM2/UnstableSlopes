@@ -145,7 +145,11 @@ When the run finishes, read these (all in the run folder), then write `<report_d
 - LShunter's patch table `patch_<tag>_table.csv` and `_null.csv`, and its log in
   `<report_dir>\logs\` (candidate counts, sign-flip and simulated false-discovery counts);
 - the LSstats csv files `lsstats_<tag>_<i>.csv` (with each polygon's Volume, SD_Volume and
-  Z_Volume) and `_landforms_<i>.csv`.
+  Z_Volume) and `_landforms_<i>.csv`;
+- the noise reference in `strip_noise\` (unless `noise_run: FALSE`): each survey's
+  `<label>_noise_summary.txt` (pass method, and why others were rejected), `_classes.csv`,
+  `_density_classes.csv` and `_pairs.csv` (strip offsets), and the report's pass-noise floor
+  table.
 
 Cover, briefly:
 
@@ -156,6 +160,13 @@ Cover, briefly:
   with other runs), and the level of detection: how the loss limit varies with slope, canopy and
   ground-return density;
 - the spatial pattern of node shifts, and the nodes held by their neighbours (too few points);
+- the noise reference: which pass method each survey used (say plainly when it is none -- the LoD
+  then rests on stable ground alone), strip offsets (above about 0.1 m is a systematic strip
+  error), and the pass-noise floor's share of the observed variance by canopy and density: the
+  floor is each survey's own noise, a lower bound and not a prediction of the DoD noise, so don't
+  read agreement between them as validation. Where its share is small, the level of detection is
+  set by differences between the surveys (classification, gridding, alignment) and real change,
+  which more ground returns wouldn't fix;
 - how many candidate landslides LShunter found, their sizes, depths and volumes ± SD, how many
   gain patches the sign-flip control found (false-alarm level), and which landforms hold them;
 - caveats a reader needs (e.g. LSstats used a landform raster other than RIL's output).

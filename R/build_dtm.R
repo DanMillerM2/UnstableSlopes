@@ -138,7 +138,7 @@ build_tile <- function(i) {
   src <- tiles$file[tiles$xmax >= rect[1] & tiles$xmin <= rect[2] & tiles$ymax >= rect[3] & tiles$ymin <= rect[4]]
   tmp <- file.path(p$output_dir, paste0("tmp_", sub("\\.la[sz]$", "", basename(t$file), ignore.case = TRUE)))
   tri <- triangulate(max_edge, filter = keep_class(ground_cls))
-  pipe <- reader_rectangles(rect[1], rect[3], rect[2], rect[4], filter = "-drop_withheld") + tri +
+  pipe <- reader_rectangles(rect[1], rect[3], rect[2], rect[4], filter = "Withheld == 0") + tri +
     lasR::rasterize(res, tri, ofile = paste0(tmp, "_dtm.tif"))
   if (p$build_dsm) pipe <- pipe + lasR::rasterize(res, "zmax", filter = drop_class(drop_cls), ofile = paste0(tmp, "_dsm.tif"))
   exec(pipe, on = src, ncores = p$threads_per_worker)

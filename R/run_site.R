@@ -5,7 +5,8 @@
 ## surveys, writes the configuration files the pipelines already use into
 ## <site_dir>\<site_run_name>\configs\, and runs run_landslide_pipelines.R on them:
 ##
-##   align_pipeline.txt            run_align_pipeline.R (ground returns, mosaics, Align)
+##   align_pipeline.txt            run_align_pipeline.R (ground returns, mosaics, Align, and
+##                                 strip_noise.R's flight-pass noise per survey: noise_ keywords)
 ##   ril_pipeline.txt              ril_pipeline.R (bldgrds, ValleyFloor, RIL)
 ##   lshunter_params.txt           LShunter.R
 ##   lsstats_params.txt            LSstats.R
@@ -100,10 +101,18 @@ lshunter_settings <- c("threshold1", "threshold2", "min1", "min2", "accum", "max
                        "executable_dir")
 lsstats_settings <- c("rasters", "distance_raster", "radius", "out_distance_raster",
                       "executable_dir")
+# strip_noise.R (each survey's flight-pass overlaps; on unless noise_run: FALSE). noise_method is
+# strip_noise.R's noise_method; every other noise_<key> is its <key>.
+noise_settings <- c("run", "method", "tile_fraction", "min_tiles", "max_tiles", "seed", "res_m",
+                    "max_edge_m", "buffer_m", "ground_classes", "z_units", "pass_gap_s",
+                    "reflight_gap_min", "max_pass_min", "min_pass_points", "min_overlap_tiles",
+                    "min_pair_cells", "canopy_breaks", "slope_breaks", "density_breaks",
+                    "density_window_m", "bin_m", "range_m",
+                    "slope_radius_m", "n_workers", "threads_per_worker")
 
 known <- c(site_keys, paste0("ref_", survey_keys), paste0("align_", survey_keys),
            paste0("align_", align_settings), ril_keys, paste0("lshunter_", lshunter_settings),
-           paste0("lsstats_", lsstats_settings))
+           paste0("lsstats_", lsstats_settings), paste0("noise_", noise_settings))
 unknown <- setdiff(names(s)[!startsWith(names(s), "ground_")], known)
 if (length(unknown)) {
   stop("Unrecognized keyword(s) in ", site_path, ": ", paste(unknown, collapse = ", "),
@@ -242,6 +251,13 @@ for (k in setdiff(align_settings, names(extra_out))) {
 }
 align_section <- c(align_section, align_out, list(scratch_dir = s$scratch_dir))
 
+noise_section <- list(run = get("noise_run", "TRUE"), output_dir = in_run("strip_noise"),
+                      ref_label = s$ref_label, align_label = s$align_label)
+for (k in setdiff(noise_settings, "run")) {
+  v <- get(paste0("noise_", k))
+  if (!is.null(v)) noise_section[[if (k == "method") "noise_method" else k]] <- v
+}
+
 align_cfg <- write_lines(c(
   section("study_area", list(clip_polygon = get("site_polygon", "NOFILE"), target_crs = get("site_crs", "EPSG:2856"),
                              water_polygons = get("site_water_polygons"), water_layer = get("site_water_layer"),
@@ -253,7 +269,8 @@ align_cfg <- write_lines(c(
   section("align_dtm", survey_raster_section("align", "dtm")),
   section("ref_dsm", survey_raster_section("ref", "dsm")),
   section("align_dsm", survey_raster_section("align", "dsm")),
-  section("align", align_section)),
+  section("align", align_section),
+  section("strip_noise", noise_section)),
   "align_pipeline.txt", "run_align_pipeline.R config")
 
 ## ---- 2. RIL pipeline ------------------------------------------------------------------------------

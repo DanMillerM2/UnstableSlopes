@@ -31,7 +31,9 @@
 ## counted in the template cell containing it, and the result is the ground-point COUNT per
 ## template cell, written as ground_count_ref_grid.flt (ESRI GridFloat) instead of the density
 ## raster. See "Count points on the template grid" below. extra_counts (e.g. "water=9") counts
-## other LAS classes in the same pass, as <name>_count_ref_grid.flt beside it.
+## other LAS classes in the same pass, as <name>_count_ref_grid.flt beside it. The same pass also
+## tallies the ground points per tile, second of GPS time and PointSourceID (pass_tally.csv), from
+## which strip_noise.R finds the survey's flight passes.
 ##
 ## Requires: lasR, terra, sf, future, future.apply, and lidR (only when clip_polygon or
 ## template_raster is set -- it reads LAS headers only)
@@ -303,6 +305,9 @@ density_tif_2856_path <- file.path(output_dir, "ground_density_epsg2856.tif")
 # per template cell, on the template's own grid (see "Count points on the template grid").
 use_template <- nzchar(template_raster) && toupper(template_raster) != "NOFILE"
 ref_grid_count_flt_path <- file.path(output_dir, "ground_count_ref_grid.flt")
+# Ground points per tile, second of GPS time and PointSourceID, tallied in the same pass (template
+# runs only); strip_noise.R reads it to find the survey's flight passes.
+pass_tally_csv_path <- file.path(output_dir, "pass_tally.csv")
 if (use_template) {
   if (!file.exists(template_raster)) stop("template_raster not found: ", template_raster)
   template_crs <- crs(rast(template_raster))
@@ -600,12 +605,15 @@ rasterize_batch_count <- function(merged_path, native_res, count_tif_path) {
 # already exists, so an interrupted run can resume without recounting batches that finished.
 # With extra_counts, the other classes are counted in the same pass over the tiles (or, when the
 # ground points come from the merged ground-only LAZ, in a second pass over the batch's tiles,
-# extra_tiles) and written next to it as <name>_count_ref_grid.tif.
+# extra_tiles) and written next to it as <name>_count_ref_grid.tif. The ground points are also
+# tallied per tile, second of GPS time and PointSourceID, written as <batch>_pass_tally.csv (tile
+# is the merged LAZ's name when the points come from it).
 count_batch_on_template <- function(las_source, native_crs, hull, template_path, template_crs,
                                     count_tif_path, from_merged, extra_tiles = las_source) {
   extra_tifs <- vapply(names(extra_classes), function(nm)
     sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"), count_tif_path, fixed = TRUE),
     character(1))
+  tally_csv <- sub("ground_count_ref_grid[.]tif$", "pass_tally.csv", count_tif_path)
   if (file.exists(count_tif_path) && all(file.exists(extra_tifs))) {
     message("Template-grid count raster already exists, skipping: ", count_tif_path)
     return(count_tif_path)
@@ -636,11 +644,27 @@ count_batch_on_template <- function(las_source, native_crs, hull, template_path,
   native_wkt  <- native_crs$wkt
   n_counted   <- 0
   n_outside   <- 0
+  tally       <- list()  # per call: tile, second of GPS time, PointSourceID, ground points
+  cur_tile    <- ""
+
+  # Tallies one chunk's ground points by (second of GPS time, PointSourceID). A point format
+  # without GPS time (0 and 2) gets second -1.
+  tally_passes <- function(data, is_ground) {
+    sec <- if (is.null(data$gpstime)) rep(-1, nrow(data)) else floor(data$gpstime)
+    key <- sec[is_ground] * 65536 + data$PointSourceID[is_ground]  # PointSourceID < 2^16
+    if (!length(key)) return(invisible())
+    u <- unique(key)
+    tally[[length(tally) + 1]] <<- data.frame(tile = cur_tile, second = floor(u / 65536),
+                                              psid = u %% 65536, n = tabulate(match(key, u)))
+  }
 
   # counted: the groups a pass counts. A pass that reads ground only (keep_ground(), or the merged
   # ground-only LAZ) has no Classification to look at; a pass over several classes does.
   make_counter <- function(counted) function(data) {
     if (nrow(data) == 0) return(0L)  # lasR can call back with an empty chunk near tile edges
+    if ("ground" %in% counted) {
+      tally_passes(data, if (identical(counted, "ground")) rep(TRUE, nrow(data)) else data$Classification == 2)
+    }
     xy <- cbind(data$X, data$Y)
     if (!same_crs) xy <- sf_project(native_wkt, template_crs, xy)
     cells <- cellFromXY(window, xy)
@@ -658,7 +682,8 @@ count_batch_on_template <- function(las_source, native_crs, hull, template_path,
   # drop_buffer = TRUE: a chunked read can hand the callback a chunk's buffer points too, which
   # are also another chunk's own points -- counting them would count them twice.
   counter_cb <- function(counted) callback(make_counter(counted),
-                                           expose = if (length(counted) > 1 || !identical(counted, "ground")) "xyc" else "xy",
+                                           expose = paste0(if (length(counted) > 1 || !identical(counted, "ground")) "xyc" else "xy",
+                                                           if ("ground" %in% counted) "tp"),
                                            drop_buffer = TRUE, no_las_update = TRUE)
   # One exec() per tile, NOT one over all the batch's tiles: given several files, lasR treats
   # them as one seamless point cloud and processes each file's bounding box as a chunk, reading
@@ -667,6 +692,7 @@ count_batch_on_template <- function(las_source, native_crs, hull, template_path,
   # counted, once per overlapping tile. Read alone, each tile yields exactly its own points.
   extra_cls <- unlist(extra_classes, use.names = FALSE)
   if (from_merged) {
+    cur_tile <- basename(las_source)
     exec(reader() + counter_cb("ground"), on = las_source, with = list(chunk = stream_chunk_size))
     if (length(extra_classes)) {
       cb <- counter_cb(names(extra_classes))
@@ -674,10 +700,24 @@ count_batch_on_template <- function(las_source, native_crs, hull, template_path,
     }
   } else if (length(extra_classes)) {
     cb <- counter_cb(names(groups))
-    for (f in las_source) exec(reader(filter = keep_class(c(2L, extra_cls))) + cb, on = f)
+    for (f in las_source) {
+      cur_tile <- basename(f)
+      exec(reader(filter = keep_class(c(2L, extra_cls))) + cb, on = f)
+    }
   } else {
     cb <- counter_cb("ground")
-    for (f in las_source) exec(reader(filter = keep_ground()) + cb, on = f)
+    for (f in las_source) {
+      cur_tile <- basename(f)
+      exec(reader(filter = keep_ground()) + cb, on = f)
+    }
+  }
+
+  # The pass tally, summed over each tile's chunks, written before the count rasters (the ground
+  # raster marks the batch complete)
+  pass_tally <- do.call(rbind, tally)
+  if (!is.null(pass_tally)) {
+    pass_tally <- aggregate(n ~ tile + second + psid, data = pass_tally, FUN = sum)
+    write.csv(pass_tally, tally_csv, row.names = FALSE)
   }
 
   # Each written under a temporary name and renamed when complete: the skip at the top of this
@@ -870,6 +910,16 @@ if (use_template) {
     message(tools::toTitleCase(kind), "-point count per template cell written to: ", out_flt)
   }
 
+  # The batches' pass tallies, combined (a batch counted before the tally existed has none, and is
+  # missing from it -- strip_noise.R then tallies those tiles itself)
+  batch_tally_csvs <- sub("ground_count_ref_grid[.]tif$", "pass_tally.csv", batch_ground_tifs)
+  batch_tally_csvs <- batch_tally_csvs[file.exists(batch_tally_csvs)]
+  if (length(batch_tally_csvs)) {
+    write.csv(do.call(rbind, lapply(batch_tally_csvs, read.csv)), pass_tally_csv_path, row.names = FALSE)
+    message("Ground points by tile, GPS second and PointSourceID written to: ", pass_tally_csv_path,
+            " (", length(batch_tally_csvs), " of ", length(batch_ground_tifs), " batches)")
+  }
+
   # The extra counts first: the ground count raster, written last, marks the run complete.
   for (nm in names(extra_classes)) {
     write_template_counts(sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"),
@@ -993,7 +1043,8 @@ if (cleanup_intermediate_files) {
 
   batch_extra_paths <- unlist(lapply(names(extra_classes), function(nm)
     sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"), batch_count_paths, fixed = TRUE)))
-  intermediate_paths <- c(batch_merged_paths, batch_count_paths, batch_extra_paths, lax_paths,
+  batch_tally_paths <- if (use_template) sub("ground_count_ref_grid[.]tif$", "pass_tally.csv", batch_count_paths) else character(0)
+  intermediate_paths <- c(batch_merged_paths, batch_count_paths, batch_extra_paths, batch_tally_paths, lax_paths,
                           if (export_ground_points_gpkg) batch_gpkg_paths else character(0))
   intermediate_paths <- intermediate_paths[file.exists(intermediate_paths)]  # only try to delete files that actually exist
 

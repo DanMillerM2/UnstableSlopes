@@ -129,3 +129,18 @@ lsstats_rasters: @gradient, @cendif, @exceed
 # lsstats_distance_raster: c:\work\data\site1\distanceTo
 lsstats_radius: 1000
 lsstats_executable_dir: c:\work\sandbox\landslideutilities\projects\LSstats\x64\release
+
+# ---- Noise reference from flight-pass overlaps: strip_noise.R, prefixed noise_ -----------------
+# Each survey's noise measured where its own flight passes overlap (no real change between passes
+# flown minutes apart), by canopy, gradient and ground-density class, written to
+# <run folder>\strip_noise\. The report shows strip offsets and this noise as a floor under Align's
+# level of detection; it doesn't change Align. Runs beside LShunter. Passes come from PointSourceID,
+# else GPS-time gaps, else none (noise_method: auto). Filled in: the LAZ folders, the reference DTM
+# grid, each survey's DTM and DSM, Align's gradient, ground_returns.R's pass tallies, the polygon.
+# noise_run: TRUE                 # FALSE skips it
+# noise_method: auto              # auto, pointsource, gpstime, none
+# noise_tile_fraction: 0.15       # share of tiles sampled, between noise_min_tiles and noise_max_tiles
+# noise_min_tiles: 10
+# noise_max_tiles: 60
+# noise_res_m: 1.0                # per-pass TIN grid (m)
+# noise_n_workers: 8
