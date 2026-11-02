@@ -63,17 +63,21 @@ not already given, in one message:
 Run these and fix anything that fails before writing configs:
 
 ```
-Rscript -e "a <- names(formals(TWutils::align_input)); stopifnot(all(c('tileSelect','minTileSize','outGradient','densityLod','outExceed','outCenDif') %in% a)); l <- names(formals(TWutils::LShunterInput)); stopifnot(all(c('Exceedance','Gradient','OutTable','SignFlip') %in% l)); stopifnot(exists('align_gradient_raster', asNamespace('TWutils')), 'patch_table' %in% names(formals(TWutils::LSstats_input))); for (p in c('terra','sf','processx','ggplot2','knitr')) stopifnot(requireNamespace(p, quietly = TRUE))"
+Rscript -e "a <- names(formals(TWutils::align_input)); stopifnot(all(c('tileSelect','minTileSize','outGradient','densityLod','outExceed','outCenDif','matchSmoothness','suspectGround','exceedanceTrim') %in% a)); l <- names(formals(TWutils::LShunterInput)); stopifnot(all(c('Exceedance','Gradient','OutTable','SignFlip','CanopyRefDSM','AreaWindows') %in% l)); stopifnot(exists('align_gradient_raster', asNamespace('TWutils')), 'patch_table' %in% names(formals(TWutils::LSstats_input))); for (p in c('terra','sf','processx','ggplot2','knitr')) stopifnot(requireNamespace(p, quietly = TRUE))"
 quarto --version
 ```
 
-- If TWutils fails the check, reinstall it from `..\TWutils` (`R CMD INSTALL`; current `main`).
+- If TWutils fails the check, reinstall it from `..\TWutils` (`R CMD INSTALL`; current `main`,
+  c2290a4 or later). An older TWutils is also caught when Align starts: the supervisor stops with
+  "The installed TWutils is older than this pipeline" and names the missing arguments.
 - If `quarto` isn't found, the report can't render. RStudio has a copy that isn't on the PATH
   (`C:\Program Files\RStudio\resources\app\bin\quarto\bin`); ask the user to add it to the PATH
   (or install Quarto), or set `render_report: FALSE` in the site file until then.
 - **Align** must be built from GridUtilities `align_clean` 8a08fa6 or later (`Projects\align`,
-  Release|x64). An older `align.exe` is caught a few seconds into the run -- the supervisor stops
-  with "Align ... is older than this pipeline" and names what it didn't recognize. **LShunter**
+  Release|x64); the options `align_matchSmoothness`, `align_suspectGround` and
+  `align_exceedanceTrim` need 2083edb, 78b4911 and ab662ea or later respectively. An older
+  `align.exe` is caught a few seconds into the run -- the supervisor stops with "Align ... is
+  older than this pipeline" and names what it didn't recognize. **LShunter**
   must be 1.1.0 or later (LandslideUtilities `LShunter_update` e37b98c; its log's first lines show
   the version), and so must **LSstats** (patch volumes; earlier versions crash on a raster path
   containing "DoD"). The fix for any of them is to rebuild in Visual Studio. Tell the user; don't try to
