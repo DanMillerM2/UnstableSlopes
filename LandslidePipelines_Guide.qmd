@@ -22,7 +22,7 @@ results:
 |---|---|---|
 | 1. Align and its inputs | `R/run_align_pipeline.R` → `R/align_supervisor.R` | aligned DTM, DoD, outlier and exceedance rasters, level of detection, gradient raster, `align_run\*.csv` |
 | 2. RIL (runs alongside 1) | `R/ril_pipeline.R` | landform raster |
-| 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files |
+| 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files, and the patches as a polygon shapefile |
 | 4. Strip noise (runs alongside 3) | `R/strip_noise.R`, as Stage 4 of `R/run_align_pipeline.R` | each survey's noise between its own flight passes: strip offsets and a noise floor by canopy, slope and ground density |
 | Report | `PipelineReport.qmd` | one self-contained html file |
 
@@ -160,6 +160,24 @@ Without a site file, Claude asks, in one message, for anything it still needs:
    and caveats. Every number comes from the output files.
 5. **Report.** `run_site.R` is rerun; it skips every finished step and renders
    `<report_dir>\<study_name>_report.html`. The file is self-contained and can be emailed as is.
+
+## The patch polygons
+
+After LSstats, `R/patch_polygons.R` writes the candidate landslides as a polygon shapefile,
+`<run folder>\patch_<ref>_<align>_polygons.shp`, one feature per patch, for use in a GIS. Its
+attribute table holds everything known about each patch:
+
+- from LShunter's patch table: cells and area, centroid, mean and deepest elevation change,
+  volume with its SD and z, mean and maximum gradient, the most extreme S, shares of valley floor,
+  hollow and inner gorge, distance to channel, false-discovery rates from the null simulation and
+  the sign-flip control, and (when computed) canopy height in both surveys;
+- from the polygon: perimeter, and the length and width of its minimum rotated rectangle;
+- from LSstats: the landform it lies in, distance to the floodplain edge, and the minimum, median
+  and maximum of each raster LSstats summarized (`lsstats_rasters`).
+
+Shapefile field names are limited to 10 characters, so `<...>_polygons_fields.csv` beside it
+gives each field's source, units and meaning. Missing values (-9999) are null. The shapefile is
+rewritten whenever the patch raster, patch table or LSstats files are newer.
 
 ## Afterwards
 

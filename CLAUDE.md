@@ -225,7 +225,16 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   subprocesses, each handed its own unmodified parameter file (so either stage may be mode 1 or
   2). Stops unless LShunter's output patch raster is LSstats's polygon raster; skips a stage whose
   final output exists, and stops (rather than skipping) if LSstats's csv is older than the patch
-  raster.
+  raster. With `polygons_params` (run_site.R always writes it) it then runs `patch_polygons.R`.
+- **patch_polygons.R** — LShunter's patch raster as a polygon shapefile (`patch_<tag>_polygons.shp`
+  in run_site.R's runs), one feature per patch label (dissolved, so diagonal-only contacts make
+  multipart features), with the patch table's row (every column LShunter wrote, -9999 as null),
+  perimeter and minimum-rotated-rectangle length and width, and from LSstats's per-polygon csvs
+  the landform, distance to the floodplain edge, and min/median/max of each summarized raster.
+  Shapefile field names are 10 characters at most; `<out_shp>_fields.csv` maps each to its
+  source column, units and meaning. Rewritten when older than any input. It refuses an `out_shp`
+  sharing a stem with another file's `.prj`: `patch_x.shp` beside `patch_x.flt` would replace the
+  raster's `.prj`.
 - **bldgrds.R** — runs `TWutils::bldgrds()` (Fortran program bldgrds, see
   `..\GridUtilities\bldGrds2.f90`) to compute D-infinity flow direction and flow accumulation for a
   DEM and, unless `no_channels` is set, trace the channel network downstream into a node-list

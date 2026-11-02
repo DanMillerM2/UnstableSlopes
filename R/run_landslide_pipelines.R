@@ -151,6 +151,7 @@ ril_dem    <- read_fortran_keyword(ril_cfg$ril_input_file, "DEM")
 ls_cfg <- read_keyword_file(cfg$lshunter_lsstats_config)
 lshunter_p <- read_keyword_file(ls_cfg$lshunter_params)
 lsstats_p  <- read_keyword_file(ls_cfg$lsstats_params)
+patch_shp  <- if (is_set(ls_cfg$polygons_params)) read_keyword_file(ls_cfg$polygons_params)$out_shp else "NOFILE"
 # LShunter's inputs that Align writes: the raster it hunts on (exceedance or outlier), the
 # gradient, and the optional patch-table inputs. In mode 1 they come from its input file.
 if (is_set(lshunter_p$input_file)) {
@@ -346,6 +347,7 @@ manifest <- list(
   patch_raster       = flt_path(ls_patch),
   lshunter_input     = flt_path(ls_input),
   lshunter_table     = if (is_set(ls_table)) paste0(sub("\\.csv$", "", ls_table, ignore.case = TRUE), ".csv") else "NOFILE",
+  patch_polygons     = if (is_set(patch_shp)) paste0(sub("\\.shp$", "", patch_shp, ignore.case = TRUE), ".shp") else "NOFILE",
   landform_raster    = flt_path(landform_raster),
   lsstats_csv        = sub("\\.csv$", "", lsstats_csv, ignore.case = TRUE),
   lsstats_rasters    = paste(lsstats_rasters, collapse = "; "),

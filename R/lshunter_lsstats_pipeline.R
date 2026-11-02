@@ -46,6 +46,10 @@
 ##
 ##   lshunter_params:  LShunter.R parameter file, mode 1 or mode 2 (required)
 ##   lsstats_params:   LSstats.R parameter file, mode 1 or mode 2 (required)
+##   polygons_params:  patch_polygons.R parameter file (optional): after LSstats, the patch raster
+##                     as a polygon shapefile with each patch's table row, shape and LSstats
+##                     summaries; its patch_raster must be LShunter's output patch raster.
+##                     patch_polygons.R skips itself when its shapefile is newer than its inputs.
 
 library(TWutils)
 
@@ -85,8 +89,9 @@ if (!file.exists(pipeline_config_path)) {
 # invocation, exactly as if a user had typed `Rscript <script> <params.txt>` by hand.
 lshunter_script <- file.path(get_script_dir(), "LShunter.R")
 lsstats_script  <- file.path(get_script_dir(), "LSstats.R")
+polygons_script <- file.path(get_script_dir(), "patch_polygons.R")
 
-for (script_path in c(lshunter_script, lsstats_script)) {
+for (script_path in c(lshunter_script, lsstats_script, polygons_script)) {
   if (!file.exists(script_path)) {
     stop("Cannot find ", basename(script_path), " next to this pipeline script (expected at ",
          script_path, ").")
@@ -120,13 +125,18 @@ read_config <- function(path) {
 }
 
 required_keys <- c("lshunter_params", "lsstats_params")
+optional_keys <- "polygons_params"
 
 config <- read_config(pipeline_config_path)
 
-unknown_keys <- setdiff(names(config), required_keys)
+unknown_keys <- setdiff(names(config), c(required_keys, optional_keys))
 if (length(unknown_keys) > 0) {
   stop("Unrecognized keyword(s) in ", pipeline_config_path, ": ", paste(unknown_keys, collapse = ", "),
-       ". Expected: ", paste(required_keys, collapse = ", "), ".")
+       ". Expected: ", paste(c(required_keys, optional_keys), collapse = ", "), ".")
+}
+polygons_params_path <- if (is_nofile_text(config[["polygons_params"]])) NULL else config[["polygons_params"]]
+if (!is.null(polygons_params_path) && !file.exists(polygons_params_path)) {
+  stop("polygons_params not found: ", polygons_params_path)
 }
 
 for (key in required_keys) {
@@ -255,6 +265,15 @@ if (!is_nofile_text(lsstats_table)) {
   }
 }
 
+# The polygons must be made from this run's patch raster.
+if (!is.null(polygons_params_path)) {
+  poly_raster <- read_config(polygons_params_path)[["patch_raster"]]
+  if (is_nofile_text(poly_raster) || raster_key(poly_raster) != raster_key(out_patch)) {
+    stop("patch_polygons.R's patch_raster is not LShunter's output patch raster:\n",
+         "  patch_polygons patch_raster:  ", poly_raster, "\n  LShunter output patch raster: ", out_patch)
+  }
+}
+
 out_patch_flt <- paste0(sub("\\.flt$", "", out_patch, ignore.case = TRUE), ".flt")
 out_csv_base  <- sub("\\.csv$", "", out_csv, ignore.case = TRUE)
 last_csv      <- paste0(out_csv_base, "_landforms_", num_rasters, ".csv")
@@ -298,6 +317,13 @@ if (file.exists(last_csv)) {
   run_stage("LSstats", lsstats_script, lsstats_params_path)
 }
 
+if (!is.null(polygons_params_path)) {
+  message("\n==== Patch polygons ====")
+  status <- system2("Rscript", args = shQuote(c(polygons_script, polygons_params_path)))
+  if (status != 0) stop("patch_polygons.R failed (Rscript exit status ", status, "); parameters: ", polygons_params_path)
+}
+
 message("\nPipeline complete. Patch raster: ", out_patch_flt,
         "\nLSstats csv files: ", out_csv_base, "_<i>.csv and ", out_csv_base,
-        "_landforms_<i>.csv, i = 1..", num_rasters)
+        "_landforms_<i>.csv, i = 1..", num_rasters,
+        if (!is.null(polygons_params_path)) paste0("\nPatch polygons: ", read_config(polygons_params_path)[["out_shp"]]))

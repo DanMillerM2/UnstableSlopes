@@ -1,0 +1,10 @@
+# patch_polygons.R parameters: LShunter's patch raster as a polygon shapefile with each patch's
+# attributes. run_site.R writes this file for every run (configs\patch_polygons_params.txt).
+#
+#   Rscript R/patch_polygons.R path/to/this_file.txt
+
+patch_raster: c:\work\data\site1\run_17_23\patch_2017_2023          # LShunter out_patch (.flt)
+patch_table: c:\work\data\site1\run_17_23\patch_2017_2023_table.csv # LShunter out_table; NOFILE: label only
+lsstats_csv: c:\work\data\site1\run_17_23\lsstats_2017_2023         # LSstats out_csv base; NOFILE: no landform or raster summaries
+out_shp: c:\work\data\site1\run_17_23\patch_2017_2023_polygons.shp  # also writes <out_shp>_fields.csv;
+# not the patch raster's own name: the shapefile's .prj would replace the raster's

@@ -11,7 +11,7 @@ This repo chains three pipelines and a report:
 |---|---|---|
 | 1. Align (and its inputs) | `R/run_align_pipeline.R` -> `R/align_supervisor.R` | aligned DTM, DoD (`outDif`, `<outDif>_0`), outlier raster, exceedance raster, LoD rasters (`<outLod>`, `_gain`, `_centre`, `_iqr`), centred difference, gradient raster `<ref DTM>_grad<radius>m`, `<outbins>_*.csv`, `align_run\*.csv` |
 | 2. RIL (independent of 1) | `R/ril_pipeline.R` | landform raster (codes 1-10 as LSstats names them: Floodplain, Bedrock_Hollow, Inner_Gorge, Steep_/Convergent, Divergent, Planar, Other) |
-| 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv` |
+| 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv` |
 | Report | `PipelineReport.qmd` (repo root, gitignored -- see section 6) | one self-contained html file |
 
 **Everything for a site goes in one site file** (`keyword: value` lines; template
@@ -181,6 +181,8 @@ includes the narrative.
 
 Give the user the report path (`<report_dir>\<study_name>_report.html`). It is self-contained
 and can be emailed as is; offer to publish it as a private claude.ai page if they want a link.
+Also give the patch polygons (`<run folder>\patch_<tag>_polygons.shp`, fields described in its
+`_fields.csv`) for use in a GIS.
 
 ## 6. If PipelineReport.qmd is missing
 
@@ -198,7 +200,8 @@ isn't there, write it, then show it to the user:
   same colour scale, plus `out_exceed` if set); level of detection (`out_lod` and its `_iqr`, and
   the `<out_bins>_densityLod.csv` fits); noise reference from flight-pass overlaps (below);
   candidate landslides (`patch_raster` over a hillshade of
-  `ref_dtm`, the `lshunter_table` summary); landforms (`landform_raster`, the LSstats csvs);
+  `ref_dtm`, the `lshunter_table` summary, and a line naming `patch_polygons` with its feature
+  count and `_fields.csv`); landforms (`landform_raster`, the LSstats csvs);
   Interpretation (include `narrative_md` if it exists, else a note that it hasn't been written);
   run details (`created`, `config`, `elapsed_min`, `log_dir`).
 - Noise reference section, from `strip_noise_dir` (`NOFILE` when `noise_run: FALSE`: one note),

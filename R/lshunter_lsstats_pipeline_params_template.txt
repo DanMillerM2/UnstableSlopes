@@ -18,3 +18,8 @@
 
 lshunter_params: c:\work\data\postmortem\LShunter_params.txt
 lsstats_params: c:\work\data\postmortem\LSstats_params.txt
+
+# Optional: patch_polygons.R's parameter file (see patch_polygons_params_template.txt). After
+# LSstats, the patch raster is written as a polygon shapefile with each patch's attributes; its
+# patch_raster must be LShunter's output patch raster.
+# polygons_params: c:\work\data\postmortem\patch_polygons_params.txt

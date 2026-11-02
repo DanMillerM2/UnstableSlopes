@@ -10,6 +10,7 @@
 ##   ril_pipeline.txt              ril_pipeline.R (bldgrds, ValleyFloor, RIL)
 ##   lshunter_params.txt           LShunter.R
 ##   lsstats_params.txt            LSstats.R
+##   patch_polygons_params.txt     patch_polygons.R (patch_<tag>_polygons.shp)
 ##   lshunter_lsstats_pipeline.txt lshunter_lsstats_pipeline.R
 ##   landslide_pipelines.txt       run_landslide_pipelines.R
 ##
@@ -351,7 +352,12 @@ if (is_set(s$lsstats_distance_raster)) {
 }
 lss_params <- write_lines(kv(lss), "lsstats_params.txt", "LSstats.R parameters (mode 2)")
 
-ls_cfg <- write_lines(kv(list(lshunter_params = lsh_params, lsstats_params = lss_params)),
+poly_params <- write_lines(kv(list(patch_raster = out_patch, patch_table = out_table, lsstats_csv = lss$out_csv,
+                                   out_shp = in_run(paste0("patch_", tag, "_polygons.shp")))),
+                           "patch_polygons_params.txt", "patch_polygons.R parameters")
+
+ls_cfg <- write_lines(kv(list(lshunter_params = lsh_params, lsstats_params = lss_params,
+                              polygons_params = poly_params)),
                       "lshunter_lsstats_pipeline.txt", "lshunter_lsstats_pipeline.R config")
 
 ## ---- 4. Driver --------------------------------------------------------------------------------------
@@ -368,7 +374,7 @@ driver_cfg <- write_lines(kv(list(
   "landslide_pipelines.txt", "run_landslide_pipelines.R config")
 
 message("Configs written to ", win(config_dir), ":\n  ",
-        paste(basename(c(align_cfg, ril_cfg, lsh_params, lss_params, ls_cfg, driver_cfg)), collapse = "\n  "),
+        paste(basename(c(align_cfg, ril_cfg, lsh_params, lss_params, poly_params, ls_cfg, driver_cfg)), collapse = "\n  "),
         "\nOutputs go to ", win(run_dir), " (tag ", tag, "); gradient raster ", gradient, ".")
 
 if (configs_only) quit(save = "no", status = 0)
