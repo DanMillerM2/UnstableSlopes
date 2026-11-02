@@ -150,6 +150,11 @@ param_specs <- list(
   densityLod           = list(type = "character", default = "auto"),  # auto = with both ground rasters
   localOffsetWindow    = list(type = "numeric"),
   localOffsetMinPoints = list(type = "integer"),
+  # Leave coherent excursions (clusters of large same-sign residuals: real change) out of the
+  # exceedance calibration, so S isn't capped near the share of the site that changed (Align 1.1.0+)
+  exceedanceTrim         = list(type = "numeric"),   # window (m); NULL (default) keeps them
+  exceedanceTrimZ        = list(type = "numeric"),   # |z| that counts as an excursion (3)
+  exceedanceTrimFraction = list(type = "numeric"),   # share of the window beyond z (0.5)
 
   outDTM        = list(type = "character", required = TRUE),
   outbins       = list(type = "character", required = TRUE),
@@ -312,6 +317,8 @@ input_file <- TWutils::align_input(
   outCenDif = run_path("outCenDif"), outExceed = run_path("outExceed"),
   outCorDif = run_path("outCorDif"),
   localOffsetWindow = p$localOffsetWindow, localOffsetMinPoints = p$localOffsetMinPoints,
+  exceedanceTrim = p$exceedanceTrim, exceedanceTrimZ = p$exceedanceTrimZ,
+  exceedanceTrimFraction = p$exceedanceTrimFraction,
   outDX = run_path("outDX"), outDY = run_path("outDY"), outDZ = run_path("outDZ"))
 
 ## ---- Run Align ------------------------------------------------------------------------------
@@ -336,7 +343,9 @@ expected_echo <- c(
   if (!toupper(p$matchSmoothness) %in% c("NONE", "NO", "FALSE"))
     c(matchSmoothness = "DTMs matched in smoothness before differencing"),
   if (!toupper(p$suspectGround) %in% c("NONE", "NO", "FALSE"))
-    c(suspectGround = "Suspect ground (bumps in one DTM only) will be replaced"))
+    c(suspectGround = "Suspect ground (bumps in one DTM only) will be replaced"),
+  if (!is.null(p$exceedanceTrim))
+    c(exceedanceTrim = "Exceedance calibration leaves out coherent excursions"))
 
 check_echo <- function(lines) {
   lines <- trimws(lines)

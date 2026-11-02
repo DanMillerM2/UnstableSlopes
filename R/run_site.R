@@ -81,6 +81,7 @@ align_settings <- c("iterations", "convergence", "k", "dampener", "derivatives",
                     "cv_buffer", "min_tile_size", "max_tile_size", "prior_points",
                     "prior_fraction", "prior", "min_tile_points", "radius", "nslope", "maxSlope",
                     "nAzimuth", "densityLod", "localOffsetWindow", "localOffsetMinPoints",
+                    "exceedanceTrim", "exceedanceTrimZ", "exceedanceTrimFraction",
                     "executable_dir", "program_name", "progress_interval_s",
                     # water and gaps in coverage (Align 1.1.0+)
                     "openWaterMinArea", "waterMaskBuffer", "waterMinDensity", "waterWindow",
