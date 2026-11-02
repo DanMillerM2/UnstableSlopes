@@ -287,7 +287,7 @@ run_path    <- function(key) if (is.null(run_out[[key]])) "NOFILE" else run_out[
 dir.create(run_dir, showWarnings = FALSE, recursive = TRUE)
 dir.create(run_scratch, showWarnings = FALSE, recursive = TRUE)
 
-input_file <- TWutils::align_input(
+align_args <- list(
   p$refDTM, p$alignDTM, p$refGrnd, p$alignGrnd, p$refDSM, p$alignDSM,
   p$iterations, p$k, p$dampener, run_path("outDTM"),
   tile_nx, tile_ny, p$overlap, p$radius, p$nslope, p$maxSlope, p$nAzimuth,
@@ -317,9 +317,17 @@ input_file <- TWutils::align_input(
   outCenDif = run_path("outCenDif"), outExceed = run_path("outExceed"),
   outCorDif = run_path("outCorDif"),
   localOffsetWindow = p$localOffsetWindow, localOffsetMinPoints = p$localOffsetMinPoints,
-  exceedanceTrim = p$exceedanceTrim, exceedanceTrimZ = p$exceedanceTrimZ,
-  exceedanceTrimFraction = p$exceedanceTrimFraction,
   outDX = run_path("outDX"), outDY = run_path("outDY"), outDZ = run_path("outDZ"))
+## EXCEEDANCE TRIM only when asked for, so a TWutils without it still runs everything else
+trim <- Filter(Negate(is.null), list(exceedanceTrim = p$exceedanceTrim, exceedanceTrimZ = p$exceedanceTrimZ,
+                                     exceedanceTrimFraction = p$exceedanceTrimFraction))
+align_args <- c(align_args, trim)
+lacking <- setdiff(names(align_args)[nzchar(names(align_args))], names(formals(TWutils::align_input)))
+if (length(lacking)) {
+  stop("The installed TWutils is older than this pipeline: align_input() has no ", paste(lacking, collapse = ", "),
+       ". Reinstall TWutils from ..\\TWutils (R CMD INSTALL).", call. = FALSE)
+}
+input_file <- do.call(TWutils::align_input, align_args)
 
 ## ---- Run Align ------------------------------------------------------------------------------
 
