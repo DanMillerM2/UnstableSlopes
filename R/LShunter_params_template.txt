@@ -1,0 +1,99 @@
+# Parameter file for LShunter.R
+#
+# One "keyword: value" pair per line. The order lines appear in is not significant -- every
+# line is self-labeled by its keyword. Blank lines and lines starting with "#" are ignored,
+# and a trailing "# comment" after a value is stripped. A value may contain a colon itself
+# (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
+# from its value, so that's safe.
+#
+# gradient, accum, out_patch, scratch_dir, and executable_dir have no default and must be set
+# below (mode 2), as must exactly one of exceedance and outlier. Every other keyword falls back
+# to the default noted in param_specs (in LShunter.R) if you delete or comment out its line here.
+#
+# input_file selects mode 1: point it at an already-written LShunter input file to hand straight
+# to LShunter.exe, skipping LShunterInput() entirely. When set, every other keyword below except
+# executable_dir is ignored. See LShunter_params_mode1_example.txt for a ready-to-copy example.
+
+# Optional: path to an already-written LShunter input file (selects mode 1 -- see the note
+# above). Leave as NOFILE (the default) to build one from the parameters below (mode 2).
+input_file: NOFILE
+
+# Raster created by Align -- exactly one of: exceedance (OUTPUT EXCEEDANCE PROBABILITY RASTER;
+# recommended, thresholds in S = -log10(p)) or outlier (OUTPUT OUTLIER RASTER) -- and flow
+# accumulation raster (.flt) created by bldgrds.
+exceedance: c:\work\data\postmortem\exceed_2006_2023
+outlier: NOFILE
+accum: c:\work\data\postmortem\accum_2006
+
+# Output patch raster (.flt), given without extension.
+out_patch: c:\work\data\postmortem\patch_2006_2023
+
+# Scratch directory (must already exist; LShunter's input file is written here) and the folder
+# containing LShunter.exe.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x64\release\
+
+# --- Two-round thresholds: a strict 1st round finds patch cores, a looser 2nd round grows them ---
+# Maximum value for a patch: outlier (k) values with outlier; with exceedance, S values such as
+# threshold1: -4 and threshold2: -2 (p <= 0.01% and p <= 1%). With outlier, e.g. -5.0 and -1.5
+# (the defaults).
+threshold1: -4
+threshold2: -2
+# Minimum gradient for a patch, as tan(slope).
+min1: 0.2
+min2: 0.1
+# Maximum flow accumulation for a patch.
+max_accum1: 1000
+max_accum2: 1000
+
+# Minimum patch size (square meters).
+min_size: 10
+
+# --- Gradient (required): the raster Align uses -- Align's OUTPUT GRADIENT RASTER: YES writes
+# <reference DEM>_grad<RADIUS>m, as sin(slope). gradient_units: SIN (default) or TAN; LShunter
+# converts to tan(slope), the units of min1/min2. LShunter no longer computes gradient itself. ---
+gradient: c:\work\data\postmortem\elev_2006_grad15m
+gradient_units: SIN
+
+# --- Optional road layer used to exclude road-related earth movement. road_buffer (m) is
+# required when road_shapefile is given. ---
+road_shapefile: NOFILE
+road_buffer: NA
+
+# --- Optional (LShunter 1.1): patch table, significance and controls, from Align's density-LoD
+# outputs. NOFILE/NA leaves each out. cen_dif is Align's outCenDif; iqr is <outLod>_iqr;
+# noise_corr is <outbins>_densityLodCorr.csv (iqr and noise_corr go together). ---
+cen_dif: c:\work\data\postmortem\cendif_2006_2023
+iqr: c:\work\data\postmortem\lod_2006_2023_iqr
+noise_corr: c:\work\data\postmortem\outbins_densityLodCorr.csv
+noise_cover: NOFILE            # ALL (LShunter's default), OPEN or VEGETATED
+landform: NOFILE               # RIL landform raster, reported per patch
+dist_channel: NOFILE           # distance-to-channel raster (m), reported per patch
+out_table: c:\work\data\postmortem\patch_2006_2023_table.csv
+min_patch_significance: NA     # drop patches with -volume/SD(volume) below this z
+null_realizations: NA          # NULL SIMULATION realizations (needs noise_corr)
+null_tile: NA                  # FFT tile in points (power of 2, >= 512)
+null_seed: NA
+# SEED DENSITY: seeds only where both surveys have at least seed_den_min ground returns/m2; the
+# count rasters are Align's refGrnd/alignGrnd (each LAZ set's ground_count_ref_grid.flt).
+seed_den_ref: NOFILE
+seed_den_align: NOFILE
+seed_den_min: NA
+seed_den_window: NA
+sign_flip: FALSE               # also run on the negated input: the gain patches, a false-alarm control
+# CANOPY HEIGHT (LShunter 1.2.0+; all four or none; needs out_table): each patch's mean canopy height
+# (DSM - DEM) in both surveys and its change, in the patch table. canopy_align_dem is the align
+# survey's original DTM (the one its DSM matches), not Align's shifted elev_<align>aligned.
+canopy_ref_dsm: NOFILE
+canopy_ref_dem: NOFILE
+canopy_align_dsm: NOFILE
+canopy_align_dem: NOFILE
+# AREA SEEDS (LShunter 1.3.0+; exceedance input and noise_corr): seeds also where the evidence pooled
+# over a square window is significant. Widths in m, space-separated; threshold is the pooled Z_A (< 0).
+area_windows: NONE             # e.g. 5 10 20
+area_threshold: NA             # e.g. -4.5
+area_min_fraction: NA          # share of a window that must be floodable (0.5)
+out_area_z: NOFILE             # each point's most extreme Z_A
+
+# If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
+overwrite: TRUE

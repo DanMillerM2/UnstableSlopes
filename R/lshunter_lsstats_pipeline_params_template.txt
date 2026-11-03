@@ -1,0 +1,25 @@
+# Pipeline config file for lshunter_lsstats_pipeline.R
+#
+# "keyword: value" lines (same rules as LShunter.R's/LSstats.R's own parameter files -- order
+# doesn't matter, blank lines and lines starting with "#" are ignored, a trailing "# comment"
+# after a value is stripped, and only the first colon on a line separates the keyword from its
+# value, so a value like "c:\..." is safe).
+#
+# Each keyword names a parameter file written for that stage's own script, handed to it
+# unmodified -- so each stage can run in mode 1 (its parameter file sets input_file: to an
+# existing Fortran input file) or mode 2 (its parameter file carries the individual parameters).
+# Start from LShunter_params_template.txt / LShunter_params_mode1_example.txt and
+# LSstats_params_template.txt / LSstats_params_mode1_example.txt.
+#
+# LShunter's output patch raster (out_patch, or OUTPUT PATCH RASTER in a mode-1 input file) must
+# be the same file as LSstats's polygon raster (polygon_raster, or LANDSLIDE POLYGON RASTER in a
+# mode-1 input file) -- lshunter_lsstats_pipeline.R checks this before running anything.
+# Replace both paths below with your own project's.
+
+lshunter_params: c:\work\data\postmortem\LShunter_params.txt
+lsstats_params: c:\work\data\postmortem\LSstats_params.txt
+
+# Optional: patch_polygons.R's parameter file (see patch_polygons_params_template.txt). After
+# LSstats, the patch raster is written as a polygon shapefile with each patch's attributes; its
+# patch_raster must be LShunter's output patch raster.
+# polygons_params: c:\work\data\postmortem\patch_polygons_params.txt

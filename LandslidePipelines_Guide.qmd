@@ -1,0 +1,192 @@
+---
+title: "Running the landslide pipelines with Claude Code"
+subtitle: "How to use the landslide-pipelines skill: Align, RIL, LShunter, LSstats and the html report"
+author: "Dan Miller"
+date: today
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    embed-resources: true
+    theme: cosmo
+---
+
+## What the skill does
+
+The `landslide-pipelines` skill (`.claude/skills/landslide-pipelines/SKILL.md` in this repo)
+lets Claude Code run the whole landslide-mapping method for one study area and write up the
+results:
+
+| Step | Script | Produces |
+|---|---|---|
+| 1. Align and its inputs | `R/run_align_pipeline.R` → `R/align_supervisor.R` | aligned DTM, DoD, outlier and exceedance rasters, level of detection, gradient raster, `align_run\*.csv` |
+| 2. RIL (runs alongside 1) | `R/ril_pipeline.R` | landform raster |
+| 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files, and the patches as a polygon shapefile |
+| 4. Strip noise (runs alongside 3) | `R/strip_noise.R`, as Stage 4 of `R/run_align_pipeline.R` | each survey's noise between its own flight passes: strip offsets and a noise floor by canopy, slope and ground density |
+| Report | `PipelineReport.qmd` | one self-contained html file |
+
+Step 4 is a check on the surveys, not an input to the results. It measures each survey's noise
+where two of its flight passes overlap (no real change between passes flown minutes apart). The
+report shows the offsets between passes -- above about 0.1 m is a systematic strip error, which
+appears in the change map along flight lines -- and the pass noise as a floor under Align's level
+of detection. It adds about 50 minutes of computing per site; `noise_run: FALSE` in the site file
+skips it.
+
+Every input for a site goes in **one site file** of `keyword: value` lines (template
+`R/site_template.txt`). `R/run_site.R` reads it, writes each pipeline's configuration file, and
+runs the driver `R/run_landslide_pipelines.R`, which runs the steps in order and renders the
+report. Claude fills in the site file, starts the run, follows its progress, writes the
+interpretation from the outputs, and renders the report.
+
+## The site file
+
+Keywords are grouped by prefix: `site_` (names, folders, polygon, CRS), `ref_` and `align_` for
+the two surveys (label, LAZ, DTM and DSM), `ground_` (ground-return counts), `align_` (Align
+settings), `ril_` (the RIL chain's three Fortran input files), `lshunter_`, `lsstats_` and
+`noise_` (strip noise; all optional).
+Anything left out takes its default, and an unknown keyword stops the run. Everything that links
+one program to the next is filled in: Align's output names come from the run folder and the
+survey labels; LShunter reads Align's exceedance raster, gradient, centred difference, IQR raster
+and noise correlogram, and RIL's landform raster; LSstats reads LShunter's patch raster and patch
+table. In `lsstats_rasters`, `@cendif`, `@exceed`, `@dif`, `@outlier`, `@lod`, `@gradient` and
+`@aligned` stand for this run's Align outputs. For Site 2 the file is
+`C:\Work\Data\Site2\site2_2017_2025.txt`.
+
+```
+Rscript R/run_site.R C:\Work\Data\Site2\site2_2017_2025.txt --configs-only   # check only
+Rscript R/run_site.R C:\Work\Data\Site2\site2_2017_2025.txt                  # run everything
+```
+
+Outputs go to `<site_dir>\<site_run_name>\`, the generated configurations to its `configs\`
+folder. The configurations are rewritten on every run, so change settings in the site file.
+
+A site file holds full paths: the data, the RIL input files (which name their own DEM, scratch
+and output paths) and the executable folders (`align_executable_dir`,
+`ril_bldgrds_executable_dir`, `ril_valleyfloor_executable_dir`, `ril_executable_dir`,
+`lshunter_executable_dir`, `lsstats_executable_dir`). On another computer, copy the site file and
+the RIL input files and change every path that differs there; `--configs-only` stops on any input
+or executable it can't find.
+
+## One-time setup on each computer
+
+1. **Clone or pull the repos** into one `repos` folder, on these branches:
+
+   | Repo | Branch | Holds |
+   |---|---|---|
+   | UnstableSlopes (`DanMillerM2`) | `align_pipeline` | the R scripts, the skill, this guide |
+   | TWutils (`DanMillerM2`) | `main` (c2290a4 or later) | the R package that writes the programs' input files |
+   | GridUtilities (`teal-waters`) | `align_clean` (ab662ea or later) | Align, bldgrds |
+   | LandslideUtilities (`DanMillerM2`) | `LShunter_update` | LShunter, LSstats |
+   | ChannelUtilities (`teal-waters`) | `master` | ValleyFloor, RIL |
+   | modules (`teal-waters`) | `master` | Fortran modules shared by all of the above |
+
+2. **Copy the Visual Studio projects.** The project files (`.sln`, `.vfproj`) are not in the
+   repos: each program is built by a project under `<Repo>\Projects\<Name>\`, a folder beside
+   `repos` (for example `C:\Work\Sandbox\GridUtilities\Projects\align` next to
+   `C:\Work\Sandbox\repos\GridUtilities`). The projects find their source by relative path
+   (`..\..\..\repos\GridUtilities\...`), so copy the `GridUtilities`, `LandslideUtilities` and
+   `ChannelUtilities` project folders from a computer that has them, keeping that layout. Two
+   exceptions: LSstats's project is `LandslideUtilities\LSstats\` (not under `Projects\`), and
+   RIL's project includes Intel MKL's `lapack.f90` from
+   `C:\Program Files (x86)\IntelSWTools\compilers_and_libraries_2020.4.311\...`, so on a computer
+   with another Intel Fortran version, point that file at its MKL.
+3. **Build the executables** in Visual Studio, Release|x64: `align` (GridUtilities 8a08fa6 or
+   later; ab662ea or later for the optional `align_exceedanceTrim`, 78b4911 for
+   `align_suspectGround`, 2083edb for `align_matchSmoothness`), `bldgrds`, `ValleyFloor`, `RIL`,
+   `LShunter` (1.1.0 or later) and `LSstats` (1.1.0 or later). Build from the pulled source, so
+   each executable matches a commit.
+4. **Install the R packages**: TWutils (`R CMD INSTALL TWutils` from the `repos` folder, on
+   `main`), plus `terra`, `sf`, `lasR`, `lidR`, `future`, `future.apply`, `processx`, `ggplot2`
+   and `knitr`. An older TWutils stops Align at the start with "The installed TWutils is older
+   than this pipeline", naming what's missing.
+5. **Put Quarto on the PATH**, so that `quarto --version` works in a new terminal. RStudio has a
+   copy that isn't on the PATH (`C:\Program Files\RStudio\resources\app\bin\quarto\bin`); either
+   add that folder to the PATH or install Quarto from <https://quarto.org>.
+6. **Copy `PipelineReport.qmd`** into the UnstableSlopes folder from a computer that has it. The
+   report template is kept out of git because it is adapted to each study site. Without it,
+   Claude writes a new one from the skill's description and shows it to you first.
+
+The skill checks the R packages, TWutils and Quarto before it starts and says what is missing; an
+executable that is too old is caught a few seconds after it starts.
+
+## Running a site
+
+Start Claude Code in this repo, so that the skill is loaded:
+
+```
+cd C:\Work\Sandbox\Repos\unstableslopes
+claude
+```
+
+Then type `/landslide-pipelines`, or ask in your own words. With a site file:
+
+> Run the landslide pipelines for `C:\Work\Data\Site2\site2_2017_2025.txt`.
+
+Or without one:
+
+> Run the landslide pipelines for Site 3, 2018 to 2024. Site folder `C:\Work\Data\Site3`,
+> study area `C:\Work\Data\Site3\study_area.shp`. Use the Site 2 site file and RIL inputs as
+> templates.
+
+Without a site file, Claude asks, in one message, for anything it still needs:
+
+- study name, output folder, study-area polygon and target CRS (default EPSG:2856);
+- for each survey (older reference, newer to align): DTM tiles or file, LAZ tiles, and DSM tiles
+  or file. All three are required: the LAZ tiles give the density-based level of detection, the
+  exceedance raster and the strip noise, and Align uses both DSMs for canopy height;
+- the complete DTM for RIL, and the bldgrds, ValleyFloor and RIL input files to copy;
+- LShunter and LSstats settings (thresholds, flow-accumulation raster, rasters to summarize);
+- executable folders, if they aren't the defaults.
+
+## What happens next
+
+1. **Checks.** Claude runs the prerequisite checks. If `PipelineReport.qmd` is missing (it is
+   gitignored, so a fresh checkout has none) it writes the report template and shows it to you.
+2. **Site file.** It writes (or checks) the site file and runs `run_site.R --configs-only`. Align
+   uses its defaults unless the file says otherwise: tiles chosen by cross-validation, iterations
+   stopping once the aligned DEM changes by less than 5 mm, central derivatives and the
+   density-based level of detection. Claude shows you the site file, the Align settings and
+   LShunter's inputs and thresholds before running.
+3. **Run.** The driver runs in the background. Large sites take hours, mostly for counting
+   ground returns; Align itself takes about 25 minutes on a 370-million-cell site. Run one site
+   at a time: Align holds whole DEMs in memory (about 48 GB). Claude reports each Align milestone
+   (global fit converged, tiles chosen, tile loop converged) and stops with the cause if a step
+   fails. After Align, LShunter/LSstats and the strip noise run side by side.
+4. **Interpretation.** Claude reads the run's tables and writes `<report_dir>\narrative.md`: the
+   tiles chosen and how clear the choice was, convergence, RMSE and the level of detection, the
+   pattern of shifts, the candidate landslides with volumes ± SD against the sign-flip control,
+   their landforms, the strip offsets and how much of the noise each survey explains on its own,
+   and caveats. Every number comes from the output files.
+5. **Report.** `run_site.R` is rerun; it skips every finished step and renders
+   `<report_dir>\<study_name>_report.html`. The file is self-contained and can be emailed as is.
+
+## The patch polygons
+
+After LSstats, `R/patch_polygons.R` writes the candidate landslides as a polygon shapefile,
+`<run folder>\patch_<ref>_<align>_polygons.shp`, one feature per patch, for use in a GIS. Its
+attribute table holds everything known about each patch:
+
+- from LShunter's patch table: cells and area, centroid, mean and deepest elevation change,
+  volume with its SD and z, mean and maximum gradient, the most extreme S, shares of valley floor,
+  hollow and inner gorge, distance to channel, false-discovery rates from the null simulation and
+  the sign-flip control, and (when computed) canopy height in both surveys;
+- from the polygon: perimeter, and the length and width of its minimum rotated rectangle;
+- from LSstats: the landform it lies in, distance to the floodplain edge, and the minimum, median
+  and maximum of each raster LSstats summarized (`lsstats_rasters`).
+
+Shapefile field names are limited to 10 characters, so `<...>_polygons_fields.csv` beside it
+gives each field's source, units and meaning. Missing values (-9999) are null. The shapefile is
+rewritten whenever the patch raster, patch table or LSstats files are newer.
+
+## Afterwards
+
+- **Edit the wording**: change `narrative.md` yourself, or ask Claude to revise it, then ask for
+  a re-render.
+- **Change a parameter**: edit the site file. Claude asks before deleting the outputs the change
+  affects, then reruns;
+  only the missing outputs are rebuilt.
+- **Resume after a failure**: ask Claude to run it again. Every step skips the outputs it already
+  has.
+- **Rerun one program by hand**: each script also runs on its own, for example
+  `Rscript R/align_supervisor.R params.txt`; see the header of each script.

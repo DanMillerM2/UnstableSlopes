@@ -1,0 +1,1075 @@
+## SusNRunPointCloud_Workflow
+## Standalone R script assembled from the code chunks in
+## SusNRun_PointCloudWorkflow_blank_082626.qmd
+##
+## Point Cloud Pre-Processing Workflow
+##
+## To keep any single output from growing unmanageably large on big lidar collections, the full
+## set of input tiles is split into batches (a configurable number of tiles each). Steps 2-4
+## below run once per batch -- each batch gets its own merged LAZ and (optionally) its own
+## GeoPackage -- and the per-batch count rasters from step 4 are mosaicked into one whole-site
+## raster before the final reprojection in step 5. Every batch is always filtered down to ground
+## returns (Classification == 2) in step 2, whether or not the optional GeoPackage in step 3 is
+## created -- the GeoPackage toggle only controls whether those already-ground-only points also
+## get written out as a vector layer, not whether the filtering itself happens.
+##
+## 0. (Optional) Keep only the LAZ tiles whose bounding box intersects clip_polygon
+## 1. Split the full set of LAZ tiles into batches of a configurable size
+## 2. Filter ground returns (Classification == 2) and merge LAZ tiles, one merged file per batch
+##    -- always happens, regardless of the GeoPackage option below
+## 3. (Optional) Write each batch's ground-only points to its own GeoPackage as a point feature
+##    class
+## 4. Compute a point-count raster per batch (target pixel size = 3 m), then mosaic all batches
+##    together into one whole-site count raster and derive density from it -- the count raster
+##    itself is only an internal step here and is never written out as a final output
+## 5. Reproject the combined density raster to EPSG:2856 (the workflow's only raster output),
+##    masked to clip_polygon if one is set
+##
+## With template_raster set (e.g. the reference DEM, as run_align_pipeline.R does), steps 4-5 are
+## replaced: the output grid -- extent, cell corners, and cellsize -- is taken from the template
+## before any points are counted, each ground point is projected into the template's CRS and
+## counted in the template cell containing it, and the result is the ground-point COUNT per
+## template cell, written as ground_count_ref_grid.flt (ESRI GridFloat) instead of the density
+## raster. See "Count points on the template grid" below. extra_counts (e.g. "water=9") counts
+## other LAS classes in the same pass, as <name>_count_ref_grid.flt beside it. The same pass also
+## tallies the ground points per tile, second of GPS time and PointSourceID (pass_tally.csv), from
+## which strip_noise.R finds the survey's flight passes.
+##
+## Requires: lasR, terra, sf, future, future.apply, and lidR (only when clip_polygon or
+## template_raster is set -- it reads LAS headers only)
+##
+## For terra, sf, future, future.apply, and lidR:
+##   install.packages(c("terra", "sf", "future", "future.apply", "lidR"))
+##
+## lasR is not on CRAN (by design, not due to archival)
+## Install with: install.packages("lasR", repos = "https://r-lidar.r-universe.dev")
+##
+## All input parameters below (input_dir, output_dir, n_workers, batch_size_tiles, etc.) are
+## read from a plain-text parameter file rather than hardcoded in this script -- see the
+## "Parameter file" section just below for its format, and
+## ground_returns_params_template.txt for a ready-to-copy example. Pass that file's
+## path as a command-line argument when running via Rscript:
+##   Rscript ground_returns.R path/to/your_params.txt
+## or, when sourcing/running from R/RStudio, set config_path below before running the script.
+
+## ---- Inputs -----------------------------------------------------------------------------
+
+# Marks the start of the entire workflow (first thing that runs), so total run time can be
+# reported at the end alongside the start/end timestamps -- see the "Workflow timing" section
+# at the bottom of this file.
+workflow_start_time <- Sys.time()
+
+library(lasR)          # point cloud engine: filters/merges LAZ tiles and computes hulls
+library(terra)         # raster creation, math (density calc), and reprojection
+library(sf)            # vector I/O (GeoPackage) and CRS handling for the point layer
+library(future)        # backend for running batches in parallel worker processes (see plan() below)
+library(future.apply)  # future_lapply() -- parallel dispatch across batches, used in "Process batches"
+
+## ---- Parameter file ------------------------------------------------------------------------
+##
+## Every workflow input (input_dir, output_dir, n_workers, batch_size_tiles, gpkg_layer,
+## export_ground_points_gpkg, target_pixel_size_m, target_crs, fill_empty_cells_with_zero,
+## cleanup_intermediate_files, stream_chunk_size, clip_polygon) is read from a plain-text parameter file
+## using "keyword: value" lines, one per line -- e.g.:
+##
+##   input_dir: c:\work\data\site1\cascades_north_wali_2023\laz
+##   output_dir: c:\work\data\site1\cascades_north_wali_2023\grnd_den\
+##   n_workers: 6
+##   batch_size_tiles: 50
+##
+## Because each line is self-labeled with its keyword, the order lines appear in the file does
+## not matter -- see param_specs below for the full set of recognized keywords, their types,
+## and their defaults. Blank lines and lines starting with "#" are ignored, and a trailing
+## "# comment" after a value is stripped. A value may itself contain a colon (e.g. a Windows
+## drive letter, "c:\...", or "EPSG:2856") -- only the FIRST colon on a line splits the keyword
+## from its value, so that's safe. input_dir and output_dir have no default and must be present
+## in the file; every other keyword falls back to the default shown below if omitted.
+
+# Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
+# fallback config_path below (and other scripts' references to a sibling script or template
+# file) is found by this script's location on disk rather than by the caller's working
+# directory -- e.g. `Rscript R/ground_returns.R` from the repo root and `Rscript ground_returns.R`
+# from inside R/ both find R/ground_returns_params_template.txt. Falls back to "." (assume cwd)
+# when there's no "--file=" argument to read, e.g. when this script is source()'d from RStudio
+# instead of run via Rscript.
+get_script_dir <- function() {
+  file_arg <- sub("^--file=", "", grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE))
+  if (length(file_arg) == 1) dirname(normalizePath(file_arg, winslash = "/", mustWork = FALSE)) else "."
+}
+
+# Path to this run's parameter file. Overridden by a command-line argument when the script is
+# run via `Rscript ground_returns.R path/to/params.txt` -- the line below is only used as a
+# fallback when no such argument is given (e.g. sourcing this script from RStudio), so set it
+# there in that case.
+#config_path <- "path/to/params.txt"   # template -- point this at your own project's parameter file
+config_path <- file.path(get_script_dir(), "ground_returns_params_template.txt")
+
+cli_args <- commandArgs(trailingOnly = TRUE)
+if (length(cli_args) >= 1) config_path <- cli_args[1]  # Rscript ... params.txt takes precedence over the hardcoded fallback above
+
+if (!file.exists(config_path)) {
+  stop("Parameter file not found: ", config_path, ". Set config_path in this script, or pass ",
+       "the parameter file's path as a command-line argument (Rscript ... params.txt).")
+}
+
+# Reads a "keyword: value" parameter file into a named list of raw (still character) values.
+# Order doesn't matter -- every line is self-labeled by its keyword -- so this just builds a
+# lookup table; build_params() below is what applies types/defaults/required-ness on top of it.
+read_param_file <- function(path) {
+  raw_lines <- readLines(path, warn = FALSE)
+  raw_lines <- trimws(raw_lines)
+  raw_lines <- raw_lines[nzchar(raw_lines) & !startsWith(raw_lines, "#")]  # drop blank lines and comment-only lines
+
+  keys <- character(0)
+  vals <- character(0)
+  for (line in raw_lines) {
+    colon_pos <- regexpr(":", line, fixed = TRUE)  # only the FIRST colon splits keyword from value -- keeps values like "c:\..." or "EPSG:2856" intact
+    if (colon_pos < 0) {
+      stop("Malformed line in parameter file (expected \"keyword: value\"): ", line)
+    }
+    key <- trimws(substr(line, 1, colon_pos - 1))
+    val <- trimws(substr(line, colon_pos + 1, nchar(line)))
+    val <- trimws(sub("\\s+#.*$", "", val))  # strip a trailing " # comment", if any, from the value
+    keys <- c(keys, key)
+    vals <- c(vals, val)
+  }
+
+  if (anyDuplicated(keys)) {
+    stop("Duplicate keyword(s) in parameter file ", path, ": ",
+         paste(unique(keys[duplicated(keys)]), collapse = ", "))
+  }
+
+  setNames(as.list(vals), keys)
+}
+
+# The full set of recognized parameter-file keywords: expected type, and default value used
+# when a keyword is omitted from the file (required = TRUE means there is no default and the
+# file must supply it). This table is the single place that documents what each keyword means;
+# comments here mirror the ones that used to sit next to each hardcoded assignment.
+param_specs <- list(
+  # Folder containing the LAZ/LAS tiles for this site/date. No default -- must be set in the
+  # parameter file.
+  input_dir = list(type = "character", required = TRUE),
+
+  # Output folder for all intermediate and final files. Created (with any missing parent
+  # folders) if it doesn't already exist. No default -- must be set in the parameter file.
+  output_dir = list(type = "character", required = TRUE),
+
+  # Maximum number of batches processed at once, in separate worker processes (see "Process
+  # batches" below, where this is capped to n_batches -- no point spinning up idle workers if
+  # there are fewer batches than n_workers). multisession spawns background Rscript processes
+  # rather than forking -- required on Windows, and also works cross-platform -- so each worker
+  # starts with none of the packages from this session loaded; process_one_batch() reloads what
+  # it needs itself.
+  # NOTE: lasR's exec() calls already multithread internally (no explicit ncores is set below,
+  # so each call may use all available cores on its own). Running n_workers batches at once on
+  # top of that can oversubscribe the CPU -- if that's a problem, pass an explicit, lower ncores
+  # into the exec() calls inside filter_merge_batch/detect_native_crs/rasterize_batch_count
+  # (e.g. total cores / n_workers each), or lower n_workers.
+  n_workers = list(type = "integer", default = 6),
+
+  # Number of LAS/LAZ tiles processed together in one batch. Splitting the full tile set into
+  # batches this size keeps each batch's merged LAZ, GeoPackage, and native raster small and
+  # bounded, no matter how many tiles input_dir holds overall. Lower this if a single batch's
+  # GeoPackage is still too large, or if a batch's point count is still bumping into lasR's
+  # 32-bit point-index ceiling (see stream_chunk_size below); raise it if batches come out small
+  # enough that merging more tiles together per batch would still be manageable.
+  batch_size_tiles = list(type = "integer", default = 50),
+
+  # Layer name used inside every batch's GeoPackage.
+  gpkg_layer = list(type = "character", default = "ground_points"),
+
+  # If TRUE, each batch's ground-only points are also streamed out to their own GeoPackage (see
+  # the "Export" section below). This is the slowest step in the per-batch loop and isn't needed
+  # if all you want is the density raster, so it's off by default -- set TRUE to get a vector
+  # point layer per batch alongside the raster.
+  export_ground_points_gpkg = list(type = "logical", default = FALSE),
+
+  # Target pixel size, in meters, for the (internal, per-batch) count raster and the density
+  # raster derived from it.
+  target_pixel_size_m = list(type = "numeric", default = 3),
+
+  # Target CRS the final density raster is reprojected to.
+  target_crs = list(type = "character", default = "EPSG:2856"),  # NAD83(HARN) / Washington South (Meters)
+
+  # If TRUE, cells with no ground points get density/count = 0 instead of NA.
+  fill_empty_cells_with_zero = list(type = "logical", default = FALSE),
+
+  # If TRUE, every per-batch intermediate file (merged LAZ, per-batch GeoPackage, per-batch
+  # native-CRS count raster) is deleted once the workflow finishes, keeping only the final
+  # EPSG:2856 density raster (density_tif_2856_path). Set FALSE to keep the per-batch files
+  # around -- e.g. to inspect them or resume a run without redoing batches (see
+  # filter_merge_batch below). See the "Clean up intermediate files" section near the end of
+  # this file.
+  cleanup_intermediate_files = list(type = "logical", default = TRUE),
+
+  # Spatial chunk size (native CRS units) used whenever we stream a batch's merged LAZ file.
+  # lasR's internal point index is a 32-bit integer (max 2,147,483,647 points), so reading a
+  # very large file in one unchunked pass can overflow it. Chunking keeps each pass well under
+  # that ceiling and bounds memory use. This value doesn't need to be precise for correctness --
+  # shrink it if a chunk is still dense enough to overflow (or shrink batch_size_tiles instead,
+  # if it's a whole batch, not just a chunk within it, that's overflowing).
+  stream_chunk_size = list(type = "integer", default = 100000),
+
+  # Optional polygon (any vector format sf reads, e.g. a .shp; any CRS) delimiting the area of
+  # interest. When set, only the LAS/LAZ tiles whose header bounding box intersects it are
+  # processed (see "Discover and batch LAZ tiles" below), and the final density raster is
+  # masked to it. The points themselves are not clipped -- merged LAZ files and any GeoPackages
+  # hold every ground point of every intersecting tile. NOFILE processes every tile in
+  # input_dir, unmasked.
+  clip_polygon = list(type = "character", default = "NOFILE"),
+
+  # Optional raster (e.g. the reference DEM, any format terra reads) whose grid the output is
+  # built on: same extent, cell corners, and cellsize. When set, ground points are counted
+  # directly per template cell (after projecting them into the template's CRS -- or target_crs,
+  # if the template carries no CRS), and the output is that count raster,
+  # ground_count_ref_grid.flt, instead of the reprojected density raster; target_pixel_size_m is
+  # then unused. NOFILE builds the density raster on its own target_pixel_size_m grid as usual.
+  template_raster = list(type = "character", default = "NOFILE"),
+
+  # Other LAS classes to count per template cell alongside the ground points (needs
+  # template_raster), as name=class pairs, e.g. "water=9" or "water=9, snow=21" (several classes
+  # for one name joined by "+", e.g. "water=9+41"). Each is written as <name>_count_ref_grid.flt
+  # next to ground_count_ref_grid.flt; Align's WATER POINTS reads the water counts. NONE counts
+  # ground only.
+  extra_counts = list(type = "character", default = "NONE")
+)
+
+# Applies param_specs on top of the raw (character) values read_param_file() returned: converts
+# each recognized keyword to its declared type, falls back to its default when the keyword is
+# absent from the file, and stops with a clear error if a required keyword (no default) is
+# missing or a value can't be parsed as its declared type. Keywords in the file that aren't in
+# param_specs are ignored with a warning, rather than silently accepted, so a typo'd keyword in
+# the parameter file doesn't just vanish unnoticed.
+build_params <- function(raw_params, specs, path) {
+  unknown <- setdiff(names(raw_params), names(specs))
+  if (length(unknown) > 0) {
+    warning("Ignoring unrecognized parameter(s) in ", path, ": ", paste(unknown, collapse = ", "))
+  }
+
+  out <- list()
+  for (nm in names(specs)) {
+    spec <- specs[[nm]]
+    if (nm %in% names(raw_params)) {
+      raw_val   <- raw_params[[nm]]
+      converted <- switch(spec$type,
+        character = as.character(raw_val),
+        numeric   = suppressWarnings(as.numeric(raw_val)),
+        integer   = suppressWarnings(as.integer(raw_val)),
+        logical   = suppressWarnings(as.logical(raw_val)),
+        stop("Internal error: unknown parameter type '", spec$type, "' for '", nm, "'")
+      )
+      if (spec$type != "character" && is.na(converted)) {
+        stop("Could not parse parameter '", nm, "' (value \"", raw_val, "\") as ", spec$type,
+             " -- check ", path, ".")
+      }
+      out[[nm]] <- converted
+    } else if (!is.null(spec$default)) {
+      out[[nm]] <- spec$default
+    } else if (isTRUE(spec$required)) {
+      stop("Required parameter '", nm, "' is missing from parameter file: ", path)
+    }
+  }
+  out
+}
+
+raw_params <- read_param_file(config_path)
+params     <- build_params(raw_params, param_specs, config_path)
+list2env(params, envir = globalenv())  # makes input_dir, output_dir, n_workers, ... ordinary top-level variables, exactly as if they'd been assigned by hand below
+
+message("Loaded parameters from: ", config_path)
+
+if (!dir.exists(output_dir)) dir.create(output_dir, recursive = TRUE)  # create output_dir (and any missing parent folders) if it doesn't exist yet
+
+# Builds a batch-specific output path, e.g. batch_path("ground_merged.laz", 3) ->
+# ".../b003_ground_merged.laz". Namespacing every intermediate by batch number keeps batches
+# from overwriting each other's outputs, and lets an interrupted run resume without redoing
+# batches that already finished (see filter_merge_batch below).
+batch_path <- function(name, batch_id) {
+  file.path(output_dir, sprintf("b%03d_%s", batch_id, name))
+}
+
+# Final, whole-site raster output -- assembled by mosaicking each batch's native count raster
+# together once all batches finish, deriving density from that combined total, then
+# reprojecting the density raster to EPSG:2856 (see the "Combine batches" and reprojection
+# sections below). The native-CRS count/density mosaics are only kept in memory as
+# intermediates on the way to this EPSG:2856 raster, not written to disk, and the count raster
+# itself is never written out in any CRS -- this path is the only whole-site raster file the
+# workflow produces.
+# There is no single whole-site GeoPackage by design -- that's the file batching exists to keep
+# from growing unmanageably large -- so, when export_ground_points_gpkg is TRUE, ground points
+# stay split across the per-batch GeoPackages built in the "Export" section.
+density_tif_2856_path <- file.path(output_dir, "ground_density_epsg2856.tif")
+
+# With template_raster set, the workflow's only raster output is instead the ground-point count
+# per template cell, on the template's own grid (see "Count points on the template grid").
+use_template <- nzchar(template_raster) && toupper(template_raster) != "NOFILE"
+ref_grid_count_flt_path <- file.path(output_dir, "ground_count_ref_grid.flt")
+# Ground points per tile, second of GPS time and PointSourceID, tallied in the same pass (template
+# runs only); strip_noise.R reads it to find the survey's flight passes.
+pass_tally_csv_path <- file.path(output_dir, "pass_tally.csv")
+if (use_template) {
+  if (!file.exists(template_raster)) stop("template_raster not found: ", template_raster)
+  template_crs <- crs(rast(template_raster))
+  if (template_crs == "") {
+    template_crs <- crs(rast(crs = target_crs))
+    warning("template_raster has no CRS -- assuming it is in target_crs ", target_crs, ": ",
+            template_raster)
+  }
+  if (linearUnits(rast(crs = template_crs)) == 0) {
+    stop("template_raster must be in a projected CRS: ", template_raster)
+  }
+}
+
+# extra_counts: named lists of LAS classes counted alongside ground, e.g. list(water = 9L)
+parse_extra_counts <- function(spec) {
+  if (!nzchar(trimws(spec)) || toupper(trimws(spec)) == "NONE") return(list())
+  parts <- trimws(strsplit(spec, ",", fixed = TRUE)[[1]])
+  parts <- parts[nzchar(parts)]
+  out <- list()
+  for (p in parts) {
+    kv <- trimws(strsplit(p, "=", fixed = TRUE)[[1]])
+    cls <- suppressWarnings(as.integer(strsplit(kv[2], "+", fixed = TRUE)[[1]]))
+    if (length(kv) != 2 || !grepl("^[A-Za-z][A-Za-z0-9_]*$", kv[1]) || anyNA(cls) || kv[1] == "ground") {
+      stop("extra_counts must be name=class pairs such as \"water=9, snow=21\" (got \"", p, "\").")
+    }
+    out[[kv[1]]] <- cls
+  }
+  out
+}
+extra_classes <- parse_extra_counts(extra_counts)
+if (length(extra_classes) && !use_template) {
+  stop("extra_counts needs template_raster: the extra counts are written on the template grid.")
+}
+extra_count_flt_paths <- vapply(names(extra_classes), function(nm)
+  file.path(output_dir, paste0(nm, "_count_ref_grid.flt")), character(1))
+
+## ---- Discover and batch LAZ tiles --------------------------------------------------------
+## Lists every input tile once, then splits that list into batch_size_tiles-sized groups.
+## Everything from here on operates on one batch at a time.
+
+las_files <- list.files(input_dir, pattern = "\\.(laz|las)$",
+                        full.names = TRUE, ignore.case = TRUE)  # gather every LAS/LAZ tile in input_dir (case-insensitive extension match), with full paths
+
+if (length(las_files) == 0) {
+  stop("No LAS/LAZ files found in input_dir. Check the path.")  # fail fast with a clear message if the folder is empty or misconfigured
+}
+
+# Keep only the tiles that intersect clip_polygon, if one is set. Tile extents come from each
+# file's LAS header via lidR::readLAScatalog(), which reads headers only, never points. lidR is
+# called by namespace rather than attached with library(), so none of its exports mask lasR's.
+use_clip <- nzchar(clip_polygon) && toupper(clip_polygon) != "NOFILE"
+if (use_clip) {
+  if (!file.exists(clip_polygon)) stop("clip_polygon not found: ", clip_polygon)
+  clip_sf <- st_union(st_read(clip_polygon, quiet = TRUE))  # dissolve every feature into one (multi)polygon
+  if (is.na(st_crs(clip_sf))) stop("clip_polygon has no CRS assigned: ", clip_polygon)
+  # The same polygon as terra builds it -- dissolved by aggregate() and reprojected by project(),
+  # exactly as mosaic_dtm.R masks the DTM -- for masking the template-grid count raster, so it
+  # keeps exactly the cells the template DTM keeps along the polygon's edge. (sf's union and
+  # reprojection give a slightly different edge: on site2's 0.91 m reference grid, ~85,000
+  # boundary cells disagreed with the DTM's mask.)
+  clip_vect <- aggregate(vect(clip_polygon))
+
+  las_ctg  <- lidR::readLAScatalog(las_files, progress = FALSE)
+  tile_crs <- st_crs(las_ctg)
+  if (is.na(tile_crs)) {
+    stop("LAS/LAZ tile headers in input_dir carry no CRS, so clip_polygon can't be ",
+         "reprojected onto them.")
+  }
+  tile_hdr   <- as.data.frame(las_ctg@data)
+  tile_boxes <- st_sfc(lapply(seq_len(nrow(tile_hdr)), function(i) {
+    st_as_sfc(st_bbox(c(xmin = tile_hdr$Min.X[i], ymin = tile_hdr$Min.Y[i],
+                        xmax = tile_hdr$Max.X[i], ymax = tile_hdr$Max.Y[i])))[[1]]
+  }), crs = tile_crs)
+  in_poly <- lengths(st_intersects(tile_boxes, st_transform(clip_sf, tile_crs))) > 0
+
+  if (!any(in_poly)) {
+    stop("None of the ", length(las_files), " LAS/LAZ tiles in input_dir intersect clip_polygon ",
+         clip_polygon, ".")
+  }
+  message(sum(in_poly), " of ", length(las_files), " LAS/LAZ tiles intersect the clip polygon.")
+  las_files <- normalizePath(tile_hdr$filename[in_poly], winslash = "/")
+}
+
+n_tiles   <- length(las_files)
+n_batches <- ceiling(n_tiles / batch_size_tiles)
+tile_batches <- split(las_files, ceiling(seq_len(n_tiles) / batch_size_tiles))  # list of character vectors, one per batch, in file-list order
+
+message("Found ", n_tiles, " tiles; split into ", n_batches,
+        " batch(es) of up to ", batch_size_tiles, " tiles each.")
+
+## ---- Filter and merge LAZ -----------------------------------------------------------------
+## Filters ground returns by tile, then merges one batch's tiles into a single per-batch file.
+## This filtering always runs -- it's independent of export_ground_points_gpkg below, so every
+## batch's merged LAZ is ground-only whether or not a GeoPackage is ever created for it. Defined
+## here as a function; called once per batch in the loop below.
+
+# Filters ground returns (Classification == 2) from one batch's tiles and merges them into a
+# single per-batch LAZ file. Skips the work if that batch's merged file already exists, so a
+# failed/interrupted run can be restarted without redoing batches that already completed.
+filter_merge_batch <- function(las_files_batch, merged_path) {
+  if (file.exists(merged_path)) {
+    message("Merged file already exists, skipping filter/merge: ", merged_path)
+    return(invisible(merged_path))
+  }
+
+  read_stage  <- reader(filter = keep_ground())  # keep_ground() filters at read time, not a separate stage
+  write_stage <- write_las(merged_path)               # no "*" -> single merged file for this batch
+
+  filter_merge_pipeline <- read_stage + write_stage   # chain the two stages into one lasR pipeline: read+filter, then write
+  # chunk = stream_chunk_size, not lasR's default of one chunk per file: by default each file's
+  # bounding box is a chunk that collects every file's points inside it, so where tiles' boxes
+  # overlap (e.g. quarter-quad tiles, at their skewed corners) those points would be written
+  # once per overlapping tile. Spatial chunks on a regular grid don't overlap, so each point is
+  # written once -- exactly, when one chunk covers the whole batch (the default
+  # stream_chunk_size does, for any realistic batch); with smaller chunks, the odd point lying
+  # exactly on a chunk edge can still be read by both chunks.
+  exec(filter_merge_pipeline, on = las_files_batch,
+       with = list(chunk = stream_chunk_size))         # run the pipeline over this batch's tiles only
+
+  message("Ground-only merged point cloud written to: ", merged_path)
+  invisible(merged_path)
+}
+
+## ---- Coordinate system ---------------------------------------------------------------------
+## Detects the native CRS and units of a batch's merged LAZ file, needed for that batch's
+## GeoPackage and count raster. Defined here as a function; called once per batch below.
+
+# Detects the native CRS/units of a batch's merged LAZ file and derives the raster resolution
+# (in native-CRS units) corresponding to target_pixel_size_m. Returned as a list so each
+# batch's result can be checked for consistency with the others afterward -- all batches come
+# from the same site/collection, so they should all report the same CRS, units, and resolution.
+detect_native_crs <- function(merged_path) {
+  probe_pipeline <- reader() + hulls()  # hulls() computes a hull polygon from the actual point coordinates -- it does read every point, but that's still far cheaper than a full rasterize() pass
+  probe_hull <- exec(probe_pipeline, on = merged_path,
+                     with = list(chunk = stream_chunk_size))  # stream in spatial chunks rather than reading the whole merged file at once -- see stream_chunk_size above
+
+  info <- crs_units_info(st_crs(probe_hull), merged_path)  # CRS embedded in the LAZ file, carried through onto the hull
+  info$hull <- probe_hull  # hull: sizes this batch's window of the template grid (see count_batch_on_template)
+  info
+}
+
+# Same result as detect_native_crs(), but read from the batch's own tile headers (via
+# lidR::readLAScatalog(), header only -- no points are read): the CRS, and the tiles' bounding
+# boxes as the "hull" that sizes the batch's template-grid window. Used when template_raster is
+# set and no merged LAZ is needed (see process_one_batch), so the batch is never read just to
+# find its CRS and extent.
+tiles_crs_info <- function(las_files_batch) {
+  ctg  <- lidR::readLAScatalog(las_files_batch, progress = FALSE)
+  info <- crs_units_info(st_crs(ctg), las_files_batch[1])
+  info$hull <- st_as_sf(ctg)[0]  # one bounding-box polygon per tile, geometry only
+  info
+}
+
+# Linear units of a point cloud's CRS, and the raster resolution (in those units)
+# corresponding to target_pixel_size_m. source_desc only names the file(s) in the error.
+crs_units_info <- function(native_crs, source_desc) {
+  native_units <- native_crs$units_gdal      # linear units of that CRS (e.g. "metre", "foot", "us survey foot")
+  if (is.null(native_units) || is.na(native_units)) {  # NA when the file carries no CRS at all
+    stop("Could not determine linear units of the LAS file's CRS for ", source_desc, ". ",
+         "Check that the point cloud has a valid projected CRS assigned.")  # a missing or geographic (lat/long) CRS has no linear units, so bail out here
+  }
+
+  is_us_survey_feet <- grepl("us survey foot", native_units, ignore.case = TRUE)  # check the more specific "us survey foot" unit first...
+  is_feet <- !is_us_survey_feet && grepl("foot|feet|ft", native_units, ignore.case = TRUE)  # ...then treat any other "foot"-like unit as an international foot
+
+  if (is_us_survey_feet) {
+    native_res <- target_pixel_size_m * (3937 / 1200)   # US survey foot: 1 metre = 3937/1200 US survey feet
+  } else if (is_feet) {
+    native_res <- target_pixel_size_m / 0.3048            # international foot: 1 ft = 0.3048 m exactly, so metres -> feet is division by 0.3048
+  } else {
+    native_res <- target_pixel_size_m                     # already metres, no conversion needed
+  }
+
+  list(crs = native_crs, units = native_units, res = native_res)
+}
+
+## ---- Export ground points to GeoPackage ----------------------------------------------------
+## Optional (controlled by export_ground_points_gpkg in Setup). Streams one batch's merged
+## ground-only points (Classification == 2) into that batch's own GeoPackage. Defined here as a
+## function; called once per batch below, only when export_ground_points_gpkg is TRUE.
+
+# NOTE: a batch's merged point cloud can still hold more points than lasR's internal point
+# index can address in a single unchunked read (a 32-bit integer, capped at 2^31 - 1 =~ 2.1
+# billion points). On top of that, a file this large can't be pulled into R as one data.frame/sf object
+# anyway (it would need tens to hundreds of GB of RAM, and a GeoPackage layer with billions of
+# point features isn't something GIS software can realistically open). So instead of reading
+# everything at once, stream each batch's file in spatial chunks (via stream_chunk_size)
+# and write each chunk straight to that batch's GeoPackage as it's read -- only ever holding
+# one chunk in memory. Splitting the whole tile set into batches (batch_size_tiles) is the
+# other half of this: it bounds how large any single GeoPackage can grow in the first place.
+export_to_gpkg <- function(merged_path, gpkg_path, gpkg_layer, native_crs) {
+  first_chunk  <- TRUE   # becomes FALSE after the first chunk is written, so later chunks append instead of overwriting
+  total_points <- 0      # running total across all chunks (a plain double, so it can't overflow like a 32-bit integer could)
+  class_tally  <- integer(0)  # running classification-code tally across all chunks, combined at the end
+
+  write_chunk_to_gpkg <- function(data) {
+    # `data` is one spatial chunk's worth of points (X, Y, Z, Classification) -- never the whole
+    # point cloud. lasR calls this once per chunk as it streams through merged_path.
+    if (nrow(data) == 0) return(nrow(data))  # lasR can call back with an empty chunk near tile edges; nothing to do
+
+    tab <- table(data$Classification)   # tally classification codes seen in this chunk
+    class_tally <<- c(class_tally, tab) # fold into the running tally (collapsed/checked below)
+
+    # Sanity check: keep_ground() should mean everything here is class 2, but confirm rather
+    # than assume -- check per chunk so a bad chunk fails fast instead of after a long run.
+    if (!all(names(tab) == "2")) {
+      stop("Merged ground file contains classes other than 2 -- check ",
+           "that keep_ground() behaved as expected. File: ", merged_path)
+    }
+
+    chunk_sf_native <- st_as_sf(data, coords = c("X", "Y"), crs = native_crs)  # this chunk's points as native-CRS geometries; Z stays as an attribute column
+    chunk_sf_2856   <- st_transform(chunk_sf_native, target_crs)              # reproject just this chunk to the target CRS
+
+    st_write(chunk_sf_2856, gpkg_path, layer = gpkg_layer, driver = "GPKG",
+             delete_layer = first_chunk, append = !first_chunk, quiet = TRUE)
+    # the first chunk (re)creates this batch's layer; every later chunk appends onto it
+    first_chunk  <<- FALSE
+    total_points <<- total_points + nrow(data)
+
+    nrow(data)  # return just a count, not the data, so exec()'s combined result stays tiny
+  }
+
+  cb       <- callback(write_chunk_to_gpkg, expose = "xyzc", no_las_update = TRUE)  # expose X, Y, Z, Classification per chunk; no_las_update = TRUE means we're only reading, not modifying the point cloud
+  read_pipeline <- reader() + cb  # chain reader + callback into one pipeline
+
+  exec(read_pipeline, on = merged_path,
+       with = list(chunk = stream_chunk_size))  # stream through this batch's file in spatial chunks, writing to its GeoPackage as we go
+
+  if (total_points == 0) {
+    stop("No ground points found after filtering in ", merged_path,
+         ". Is the point cloud already ground-classified?")
+  }
+
+  message("Read ", total_points, " ground points from ", merged_path, ".")
+  message("Classification breakdown:")
+  print(tapply(class_tally, names(class_tally), sum))  # collapse the per-chunk tallies into one breakdown for this batch
+
+  message("Ground return points written to: ", gpkg_path,
+          " (layer: ", gpkg_layer, ")")
+
+  total_points
+}
+
+## ---- Create Point Density Raster -----------------------------------------------------------
+## Ground points only. Rasterizes one batch's ground-only points using lasR's own streaming
+## rasterize() stage (not terra::rasterize()), which tallies points per cell while reading and
+## never needs the point cloud loaded into R -- necessary at this file's scale (see note in the
+## Export chunk above). Only the raw point COUNT is computed per batch; density for the whole
+## site is derived once, after all batches' count rasters are combined (see "Combine batches"
+## below) -- computing density per batch first and then mosaicking density values would
+## double-count or misweight cells that straddle a batch boundary, whereas summing raw counts
+## first and dividing once is exact. The count raster is only ever an internal step toward that
+## density value -- the workflow's only raster output is the density raster (see "Project
+## Density Raster to EPSG:2856" below). Defined here as a function; called once per batch below.
+
+# lasR::rasterize(res, "count") is a lasR pipeline stage: it counts points per cell directly
+# inside the C++ streaming engine and writes the result straight to `ofile`, so no point data
+# ever has to pass through R. Cells the point cloud doesn't cover come out as NA. Namespaced
+# explicitly as lasR::rasterize() because terra (loaded after lasR in Setup) also exports a
+# `rasterize` generic that masks lasR's -- calling the bare name here would instead dispatch to
+# terra::rasterize() and fail with "unable to find an inherited method ... x = 'numeric', y =
+# 'character'", since terra's rasterize() expects a SpatVector/SpatRaster, not a lasR pipeline
+# stage's arguments.
+rasterize_batch_count <- function(merged_path, native_res, count_tif_path) {
+  count_stage    <- lasR::rasterize(native_res, "count", ofile = count_tif_path)
+  count_pipeline <- reader() + count_stage
+  exec(count_pipeline, on = merged_path,
+       with = list(chunk = stream_chunk_size))  # stream in the same spatial chunks used for the GeoPackage export, for the same reason
+
+  count_rast <- rast(count_tif_path)  # read the count raster lasR just wrote back in
+  names(count_rast) <- "ground_point_count"
+  message("Batch native-CRS ground count raster written to: ", count_tif_path)
+  count_rast
+}
+
+## ---- Count points on the template grid -----------------------------------------------------
+## Used instead of rasterize_batch_count() when template_raster is set. lasR's rasterize() can't
+## do this: it lays its own grid in the point cloud's native CRS, with cell edges at multiples of
+## the resolution, so its cells can't be made to coincide with a template in another CRS (or
+## even in the same CRS, with corners that aren't such multiples). Instead, the output grid is
+## fixed first -- this batch's window of the template grid, cut from the template with
+## snap = "out" so it keeps the template's own cell corners and cellsize -- and then each chunk's
+## points are projected into the template's CRS and tallied by the window cell containing them.
+## Only one chunk of points and the batch window's integer counts are ever held in memory.
+##
+## The points come straight from the batch's own tiles, read one file at a time with
+## keep_ground() applied at read time, so a batch takes a single pass over its points -- no
+## merged LAZ is written and re-read -- unless export_ground_points_gpkg needs the merged file
+## anyway, in which case they come from it instead, read in stream_chunk_size chunks.
+
+# Counts one batch's ground points per template cell over the part of the template grid the
+# batch covers, and writes that window (template-aligned) to count_tif_path. las_source is the
+# batch's tiles (read file by file) or its merged LAZ (read in chunks). Returns count_tif_path,
+# or NA if the batch lies entirely outside the template. Skips the work if count_tif_path
+# already exists, so an interrupted run can resume without recounting batches that finished.
+# With extra_counts, the other classes are counted in the same pass over the tiles (or, when the
+# ground points come from the merged ground-only LAZ, in a second pass over the batch's tiles,
+# extra_tiles) and written next to it as <name>_count_ref_grid.tif. The ground points are also
+# tallied per tile, second of GPS time and PointSourceID, written as <batch>_pass_tally.csv (tile
+# is the merged LAZ's name when the points come from it).
+count_batch_on_template <- function(las_source, native_crs, hull, template_path, template_crs,
+                                    count_tif_path, from_merged, extra_tiles = las_source) {
+  extra_tifs <- vapply(names(extra_classes), function(nm)
+    sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"), count_tif_path, fixed = TRUE),
+    character(1))
+  tally_csv <- sub("ground_count_ref_grid[.]tif$", "pass_tally.csv", count_tif_path)
+  if (file.exists(count_tif_path) && all(file.exists(extra_tifs))) {
+    message("Template-grid count raster already exists, skipping: ", count_tif_path)
+    return(count_tif_path)
+  }
+
+  template <- rast(template_path)
+  crs(template) <- template_crs  # no-op unless the template carries no CRS (see use_template above)
+
+  # This batch's window: the bounding box of its points' hull (or tiles' bounding boxes),
+  # densified so its edges follow any curvature under reprojection, projected into the
+  # template's CRS and padded by 2 cells, clipped to the template, then snapped outward onto the
+  # template's own cells.
+  hull_box <- st_bbox(st_transform(st_segmentize(hull, 100),  # vertices every 100 native-CRS units
+                                   st_crs(template_crs)))
+  pad      <- 2 * max(res(template))
+  batch_ext <- intersect(ext(hull_box[["xmin"]] - pad, hull_box[["xmax"]] + pad,
+                             hull_box[["ymin"]] - pad, hull_box[["ymax"]] + pad), ext(template))
+  if (is.null(batch_ext)) {
+    message("Batch lies entirely outside template_raster -- no points to count: ", las_source[1])
+    return(NA_character_)
+  }
+  window <- crop(rast(template), batch_ext, snap = "out")  # rast(template): geometry only, no cell values read
+
+  # One count vector per output: ground (class 2) and each extra_counts name
+  groups      <- c(list(ground = 2L), extra_classes)
+  counts      <- lapply(groups, function(g) integer(ncell(window)))
+  same_crs    <- st_crs(native_crs) == st_crs(template_crs)
+  native_wkt  <- native_crs$wkt
+  n_counted   <- 0
+  n_outside   <- 0
+  tally       <- list()  # per call: tile, second of GPS time, PointSourceID, ground points
+  cur_tile    <- ""
+
+  # Tallies one chunk's ground points by (second of GPS time, PointSourceID). A point format
+  # without GPS time (0 and 2) gets second -1.
+  tally_passes <- function(data, is_ground) {
+    sec <- if (is.null(data$gpstime)) rep(-1, nrow(data)) else floor(data$gpstime)
+    key <- sec[is_ground] * 65536 + data$PointSourceID[is_ground]  # PointSourceID < 2^16
+    if (!length(key)) return(invisible())
+    u <- unique(key)
+    tally[[length(tally) + 1]] <<- data.frame(tile = cur_tile, second = floor(u / 65536),
+                                              psid = u %% 65536, n = tabulate(match(key, u)))
+  }
+
+  # counted: the groups a pass counts. A pass that reads ground only (keep_ground(), or the merged
+  # ground-only LAZ) has no Classification to look at; a pass over several classes does.
+  make_counter <- function(counted) function(data) {
+    if (nrow(data) == 0) return(0L)  # lasR can call back with an empty chunk near tile edges
+    if ("ground" %in% counted) {
+      tally_passes(data, if (identical(counted, "ground")) rep(TRUE, nrow(data)) else data$Classification == 2)
+    }
+    xy <- cbind(data$X, data$Y)
+    if (!same_crs) xy <- sf_project(native_wkt, template_crs, xy)
+    cells <- cellFromXY(window, xy)
+    inside <- !is.na(cells)
+    for (g in counted) {
+      keep <- if (length(counted) == 1 && identical(g, "ground")) inside else
+        inside & data$Classification %in% groups[[g]]
+      counts[[g]] <<- counts[[g]] + tabulate(cells[keep], nbins = ncell(window))
+    }
+    n_counted <<- n_counted + sum(inside)
+    n_outside <<- n_outside + sum(!inside)
+    0L  # return nothing of size, so exec()'s combined result stays tiny
+  }
+
+  # drop_buffer = TRUE: a chunked read can hand the callback a chunk's buffer points too, which
+  # are also another chunk's own points -- counting them would count them twice.
+  counter_cb <- function(counted) callback(make_counter(counted),
+                                           expose = paste0(if (length(counted) > 1 || !identical(counted, "ground")) "xyc" else "xy",
+                                                           if ("ground" %in% counted) "tp"),
+                                           drop_buffer = TRUE, no_las_update = TRUE)
+  # One exec() per tile, NOT one over all the batch's tiles: given several files, lasR treats
+  # them as one seamless point cloud and processes each file's bounding box as a chunk, reading
+  # every file's points inside it -- so wherever tiles' bounding boxes overlap (e.g. quarter-
+  # quad tiles, whose boxes overlap at their skewed corners), those points would be read, and
+  # counted, once per overlapping tile. Read alone, each tile yields exactly its own points.
+  extra_cls <- unlist(extra_classes, use.names = FALSE)
+  if (from_merged) {
+    cur_tile <- basename(las_source)
+    exec(reader() + counter_cb("ground"), on = las_source, with = list(chunk = stream_chunk_size))
+    if (length(extra_classes)) {
+      cb <- counter_cb(names(extra_classes))
+      for (f in extra_tiles) exec(reader(filter = keep_class(extra_cls)) + cb, on = f)
+    }
+  } else if (length(extra_classes)) {
+    cb <- counter_cb(names(groups))
+    for (f in las_source) {
+      cur_tile <- basename(f)
+      exec(reader(filter = keep_class(c(2L, extra_cls))) + cb, on = f)
+    }
+  } else {
+    cb <- counter_cb("ground")
+    for (f in las_source) {
+      cur_tile <- basename(f)
+      exec(reader(filter = keep_ground()) + cb, on = f)
+    }
+  }
+
+  # The pass tally, summed over each tile's chunks, written before the count rasters (the ground
+  # raster marks the batch complete)
+  pass_tally <- do.call(rbind, tally)
+  if (!is.null(pass_tally)) {
+    pass_tally <- aggregate(n ~ tile + second + psid, data = pass_tally, FUN = sum)
+    write.csv(pass_tally, tally_csv, row.names = FALSE)
+  }
+
+  # Each written under a temporary name and renamed when complete: the skip at the top of this
+  # function trusts any count raster that exists, so an interrupted write must not leave one. The
+  # ground raster goes last.
+  out_tifs <- c(extra_tifs, ground = count_tif_path)
+  for (g in names(out_tifs)) {
+    values(window) <- counts[[g]]
+    names(window)  <- paste0(g, "_point_count")
+    partial_tif <- sub("[.]tif$", "_partial.tif", out_tifs[[g]], ignore.case = TRUE)
+    invisible(writeRaster(window, partial_tif, datatype = "INT4S", overwrite = TRUE))
+    invisible(gc())  # release terra's handle on the file before renaming it (Windows)
+    if (!file.rename(partial_tif, out_tifs[[g]])) {
+      stop("Could not rename ", partial_tif, " to ", out_tifs[[g]])
+    }
+  }
+  message("Batch template-grid ground count raster written to: ", count_tif_path, " (",
+          n_counted, " points counted",
+          if (length(extra_classes)) paste0("; also ", paste(names(extra_classes), collapse = ", "),
+                                            " counts"),
+          if (n_outside > 0) paste0(", ", n_outside, " outside template_raster's extent"), ")")
+  count_tif_path
+}
+
+## ---- Run the workflow across all batches ---------------------------------------------------
+## Calls the four functions defined above once per batch, in order, using batch-specific paths.
+## Batches run in parallel, up to n_workers at a time (set in Setup), via
+## future.apply::future_lapply().
+
+# Runs the full per-batch pipeline (filter/merge -> detect CRS -> optional GeoPackage export ->
+# rasterize) for one batch. Called once per batch below via future_lapply(), so each call may
+# run in its own worker process (see plan(multisession, ...) in Setup) rather than in this
+# session. Returns a plain list of paths/CRS info rather than the count raster itself --
+# terra::SpatRaster objects hold an external C++ pointer that doesn't survive being passed back
+# from a multisession worker, so the raster is re-read from disk in the main session instead
+# (see below), now that every worker has finished writing its .tif.
+process_one_batch <- function(b) {
+  library(lasR)   # each multisession worker is a separate R process, with none of this
+  library(terra)  # session's packages loaded -- so the packages these functions need have to
+  library(sf)     # be (re)loaded here, inside the worker.
+
+  message("=== Batch ", b, " of ", n_batches, " (", length(tile_batches[[b]]), " tiles) ===")
+
+  merged_path <- batch_path("ground_merged.laz", b)
+  gpkg_path   <- batch_path("ground_points.gpkg", b)
+  count_path  <- batch_path(if (use_template) "ground_count_ref_grid.tif" else
+                              "ground_count_native_crs.tif", b)
+
+  # With template_raster set, counting reads the tiles directly, so the merged LAZ is only built
+  # when the GeoPackage export needs it (see "Count points on the template grid").
+  needs_merged <- !use_template || export_ground_points_gpkg
+
+  if (needs_merged) {
+    filter_merge_batch(tile_batches[[b]], merged_path)
+    crs_info <- detect_native_crs(merged_path)
+  } else {
+    crs_info <- tiles_crs_info(tile_batches[[b]])
+  }
+
+  if (export_ground_points_gpkg) {
+    export_to_gpkg(merged_path, gpkg_path, gpkg_layer, crs_info$crs)
+  }
+
+  if (use_template) {
+    count_path_written <- count_batch_on_template(
+      if (needs_merged) merged_path else tile_batches[[b]], crs_info$crs, crs_info$hull,
+      template_raster, template_crs, count_path, from_merged = needs_merged,
+      extra_tiles = tile_batches[[b]])
+  } else {
+    rasterize_batch_count(merged_path, crs_info$res, count_path)  # writes count_path; the SpatRaster this returns is discarded here -- see note above
+    count_path_written <- count_path
+  }
+  crs_info$hull <- NULL  # not needed past this point -- keep what's returned to the main session small
+
+  list(merged_path = merged_path, gpkg_path = gpkg_path, count_path = count_path,
+       count_path_written = count_path_written, crs_info = crs_info)
+}
+
+# Cap workers at n_batches -- e.g. n_workers = 4 with only 2 batches would otherwise spin up 2
+# worker processes that never get any work.
+plan(multisession, workers = min(n_workers, n_batches))
+
+# future_lapply() dispatches one process_one_batch() call per batch across the worker processes
+# set up just above. Nothing here depends on random numbers, but some package code a worker
+# calls does draw one, and with future.seed = FALSE that draw makes future warn "UNRELIABLE
+# VALUE ... unexpectedly generated random numbers" once per batch -- future.seed = TRUE just
+# gives each worker a proper parallel RNG stream instead, which silences it.
+batch_results <- future_lapply(seq_along(tile_batches), process_one_batch, future.seed = TRUE)
+
+# Batches are done with parallel workers -- everything from here runs sequentially in this
+# session, so release the worker processes.
+plan(sequential)
+
+# Per-batch intermediate file paths, tracked here so they can be deleted afterward if
+# cleanup_intermediate_files is TRUE (see the "Clean up intermediate files" section near the
+# end of this file).
+batch_merged_paths <- vapply(batch_results, function(r) r$merged_path, character(1))
+batch_gpkg_paths   <- vapply(batch_results, function(r) r$gpkg_path, character(1))
+batch_count_paths  <- vapply(batch_results, function(r) r$count_path, character(1))
+batch_native_crs   <- lapply(batch_results, function(r) r$crs_info)  # checked for consistency below
+
+# All batches come from the same site/collection, so they should share one native CRS, units,
+# and resolution -- confirm that rather than assume it, since a mismatch (e.g. mixed-CRS tiles
+# slipping into input_dir) would otherwise silently corrupt the mosaic step below.
+native_units_all <- vapply(batch_native_crs, function(x) x$units, character(1))
+native_res_all   <- vapply(batch_native_crs, function(x) x$res, numeric(1))
+if (length(unique(native_units_all)) > 1 || max(native_res_all) - min(native_res_all) > 1e-6) {
+  stop("Batches do not share a consistent native CRS/resolution -- check for mixed-CRS tiles ",
+       "in input_dir.")
+}
+native_crs <- batch_native_crs[[1]]$crs
+native_res <- batch_native_crs[[1]]$res
+
+if (use_template) {
+
+  ## ---- Combine batches on the template grid --------------------------------------------------
+  ## Every batch's window was cut from the template's own grid, so the windows share its cell
+  ## corners and cellsize and can be summed directly -- fun = "sum" is required here, not just a
+  ## safeguard: windows are sized from each batch's bounding box, so neighboring batches' windows
+  ## overlap, and each point was counted in exactly one batch. The sum is then extended/cropped to
+  ## the template's full extent, so the output matches the template cell for cell.
+
+  template <- rast(template_raster)
+  crs(template) <- template_crs
+  batch_ground_tifs <- Filter(Negate(is.na), vapply(batch_results, function(r) r$count_path_written,
+                                                    character(1)))
+  if (length(batch_ground_tifs) == 0) {
+    stop("No batch overlaps template_raster -- check that the LAS/LAZ tiles and ",
+         template_raster, " cover the same area.")
+  }
+
+  # Sums one count's batch windows onto the template grid and writes it as out_flt. kind names
+  # the points ("ground", or an extra_counts name).
+  write_template_counts <- function(batch_tifs, out_flt, kind) {
+    batch_count_rasts <- lapply(batch_tifs, rast)
+    count_rast <- if (length(batch_count_rasts) == 1) {
+      batch_count_rasts[[1]]
+    } else {
+      mosaic(sprc(batch_count_rasts), fun = "sum")
+    }
+    crs(count_rast) <- template_crs
+    count_rast <- extend(crop(count_rast, template, snap = "near"), template)
+    if (!compareGeom(count_rast, template, stopOnError = FALSE)) {
+      stop("Internal error: combined count raster does not match template_raster's grid.")
+    }
+    names(count_rast) <- paste0(kind, "_point_count")
+
+    # Cells with no points: 0 from the per-batch counts (or NA outside every batch's window) --
+    # made uniformly NA, or uniformly 0 with fill_empty_cells_with_zero.
+    count_rast <- if (fill_empty_cells_with_zero) subst(count_rast, NA, 0) else
+      classify(count_rast, cbind(0, NA))
+    if (use_clip) {
+      count_rast <- mask(count_rast, project(clip_vect, template_crs))
+    }
+
+    n_with_pts <- global(count_rast > 0, fun = "sum", na.rm = TRUE)[1, 1]
+    if (is.na(n_with_pts)) n_with_pts <- 0  # every cell NA: no points of this kind at all
+    message(sprintf("%.0f of %.0f template cells (%.1f%%) have %s points.",
+                    n_with_pts, ncell(count_rast), 100 * n_with_pts / ncell(count_rast), kind))
+
+    # Written as an ESRI GridFloat (.flt with an ESRI-keyword .hdr) for the Fortran grid reader,
+    # same as mosaic_dtm.R's output (see the note there on why GDAL's own BIL-style .hdr is
+    # rewritten rather than converted with TWutils' convert_hdr()) -- and, as there, under a
+    # "_partial" name renamed into place only once complete, so an interrupted run never leaves a
+    # truncated count raster that run_align_pipeline.R would skip as finished.
+    out_base     <- sub("[.]flt$", "", out_flt, ignore.case = TRUE)
+    partial_base <- paste0(out_base, "_partial")
+    raster_exts  <- c(".flt", ".hdr", ".prj", ".stx", ".flt.aux.xml")  # every file of one GridFloat raster
+    unlink(paste0(c(out_base, partial_base), rep(raster_exts, each = 2)))  # stale sidecars / leftovers
+
+    count_rast <- writeRaster(count_rast, paste0(partial_base, ".flt"), filetype = "EHdr",
+                              datatype = "FLT4S", NAflag = -9999, gdal = "BYTEORDER=LSB",
+                              overwrite = TRUE)
+    count_ext <- ext(count_rast)
+    writeLines(sprintf("%-14s %s",
+                       c("ncols", "nrows", "xllcorner", "yllcorner", "cellsize", "NODATA_value",
+                         "byteorder"),
+                       c(ncol(count_rast), nrow(count_rast), sprintf("%.6f", xmin(count_ext)),
+                         sprintf("%.6f", ymin(count_ext)), sprintf("%.12f", res(count_rast)[1]),
+                         "-9999", "LSBFIRST")),
+               paste0(partial_base, ".hdr"))
+
+    rm(count_rast); invisible(gc())  # release terra's handle on the partial file before renaming it
+    for (e in c(setdiff(raster_exts, ".flt"), ".flt")) {  # the .flt last: it marks the output complete
+      if (!file.exists(paste0(partial_base, e))) next
+      if (!file.rename(paste0(partial_base, e), paste0(out_base, e))) {
+        stop("Could not rename ", partial_base, e, " to ", out_base, e)
+      }
+    }
+    message(tools::toTitleCase(kind), "-point count per template cell written to: ", out_flt)
+  }
+
+  # The batches' pass tallies, combined (a batch counted before the tally existed has none, and is
+  # missing from it -- strip_noise.R then tallies those tiles itself)
+  batch_tally_csvs <- sub("ground_count_ref_grid[.]tif$", "pass_tally.csv", batch_ground_tifs)
+  batch_tally_csvs <- batch_tally_csvs[file.exists(batch_tally_csvs)]
+  if (length(batch_tally_csvs)) {
+    write.csv(do.call(rbind, lapply(batch_tally_csvs, read.csv)), pass_tally_csv_path, row.names = FALSE)
+    message("Ground points by tile, GPS second and PointSourceID written to: ", pass_tally_csv_path,
+            " (", length(batch_tally_csvs), " of ", length(batch_ground_tifs), " batches)")
+  }
+
+  # The extra counts first: the ground count raster, written last, marks the run complete.
+  for (nm in names(extra_classes)) {
+    write_template_counts(sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"),
+                              batch_ground_tifs, fixed = TRUE),
+                          extra_count_flt_paths[[nm]], nm)
+  }
+  write_template_counts(batch_ground_tifs, ref_grid_count_flt_path, "ground")
+  final_rast <- rast(ref_grid_count_flt_path)
+
+} else {
+
+  # Re-read each batch's native-CRS count raster from disk now that every worker has finished --
+  # see the note on process_one_batch() above for why the SpatRaster itself isn't passed back
+  # directly from a worker.
+  batch_count_rasts <- lapply(batch_count_paths, function(p) {
+    r <- rast(p)
+    names(r) <- "ground_point_count"
+    r
+  })
+
+  message("Native-CRS resolution corresponding to ", target_pixel_size_m,
+          " m pixels: ", round(native_res, 6), " (", native_units_all[1], ")")
+
+  ## ---- Combine batches -----------------------------------------------------------------------
+  ## Mosaics every batch's native-CRS count raster into one whole-site count raster, then derives
+  ## density from that combined total. Both are kept in memory only -- the count raster is purely
+  ## an intermediate on the way to the density value and is never written to disk in any CRS, and
+  ## the density raster is only written to disk once, after reprojection, in the next step.
+
+  # Mosaic every batch's native count raster into one whole-site count raster. fun = "sum"
+  # (rather than the default "first") means that if any batches' tiles happen to overlap in
+  # space, their counts are added together instead of one silently overwriting the other; for
+  # the ordinary case of non-overlapping tiles this behaves just like a plain mosaic. This
+  # assumes every batch's raster shares the same origin/grid alignment, which holds here because
+  # lasR's rasterize() snaps cell edges to multiples of native_res regardless of a batch's
+  # extent, and native_res was confirmed identical across batches above.
+  count_rast <- if (length(batch_count_rasts) == 1) {
+    batch_count_rasts[[1]]
+  } else {
+    do.call(mosaic, c(batch_count_rasts, fun = "first"))
+  }
+  names(count_rast) <- "ground_point_count"
+
+  if (fill_empty_cells_with_zero) {
+    count_rast <- subst(count_rast, NA, 0)  # replace "no points" cells (NA) with 0, per fill_empty_cells_with_zero
+  }
+  # Native-CRS count_rast is kept in memory only -- it's an intermediate on the way to
+  # density_rast below (see "Project Density Raster to EPSG:2856"), never a final output itself,
+  # so it's not written to disk.
+
+  n_na <- global(count_rast, fun = "isNA")[1, 1]  # number of cells with no ground points (NA), for reporting
+  n_total <- ncell(count_rast)                    # total number of cells in the raster
+  message(sprintf("%d of %d cells (%.1f%%) have no ground points.",
+                   n_na, n_total, 100 * n_na / n_total))  # report the fraction of empty cells so coverage gaps are visible
+
+  # Normalized density (ground points per square meter), computed once from the combined counts
+  cell_area    <- target_pixel_size_m^2   # true physical cell area, in m^2 instead of native_res^2, which would be in native (e.g. square feet) units and give density in the wrong units
+  density_rast <- count_rast / cell_area  # convert combined counts to density (points per m^2) using the true physical cell area
+  names(density_rast) <- "ground_point_density"
+
+  # Likewise, native-CRS density_rast is kept in memory only -- see the note on count_rast above.
+  # count_rast itself is discarded after this point -- it was only ever a step toward density_rast
+  # and is never written to disk or reprojected.
+
+  ## ---- Project Density Raster to EPSG:2856 -----------------------------------------------------
+  ## Bilinear resampling is appropriate here since density is a continuous field. This is the
+  ## workflow's only raster output -- no count raster is written, in any CRS.
+
+  density_rast_2856 <- project(density_rast, target_crs, method = "bilinear",
+                               res = target_pixel_size_m)  # reproject the combined density raster; bilinear interpolation is appropriate for a continuous field
+  if (use_clip) {
+    clip_vect_target  <- vect(st_transform(clip_sf, target_crs))
+    density_rast_2856 <- mask(crop(density_rast_2856, clip_vect_target), clip_vect_target)  # trim to the polygon; tiles were only selected by bounding box, so their points extend past it
+  }
+  writeRaster(density_rast_2856, density_tif_2856_path, overwrite = TRUE)
+  message("Reprojected ground density raster written to: ", density_tif_2856_path)
+  final_rast <- density_rast_2856
+
+}
+
+## ---- Quick check to see if it worked ---------------------------------------------------------
+
+print(final_rast)  # inspect CRS, extent, and resolution of the workflow's raster output
+
+# GeoPackage export is optional (export_ground_points_gpkg in Setup); only look for/sample them
+# if that step actually ran.
+if (export_ground_points_gpkg) {
+  # There is no single whole-site GeoPackage (that's the whole reason tiles were batched --
+  # see batch_size_tiles above), so list the per-batch GeoPackages and sample from the first one.
+  # The full point layer within a batch is still too large to hold in R at once (that's why it
+  # was streamed straight to the GeoPackage instead), so pull back only a handful of rows with a
+  # SQL LIMIT rather than reading the layer in and then subsetting it.
+  batch_gpkgs <- vapply(seq_len(n_batches), function(b) batch_path("ground_points.gpkg", b),
+                        character(1))
+  message("Batch GeoPackages written:")
+  print(batch_gpkgs)
+
+  ground_sample <- st_read(batch_gpkgs[1], layer = gpkg_layer,
+                           query = paste0("SELECT * FROM \"", gpkg_layer, "\" LIMIT 5"),
+                           quiet = TRUE)
+  print(ground_sample)  # peek at a handful of reprojected ground points from the first batch
+} else {
+  message("export_ground_points_gpkg is FALSE -- no per-batch GeoPackages were written.")
+}
+
+## ---- Clean up intermediate files -------------------------------------------------------------
+## Optional (controlled by cleanup_intermediate_files in Setup). Deletes every per-batch
+## intermediate file -- merged LAZ, per-batch GeoPackage (if export_ground_points_gpkg was
+## TRUE), per-batch native-CRS count raster, and any .lax spatial-index sidecar files lasR left
+## behind in output_dir -- now that they've been folded into the final output. Only the final
+## EPSG:2856 density raster (density_tif_2856_path) is kept; the native-CRS count/density
+## mosaics were never written to disk in the first place (see "Combine batches" above), and no
+## count raster is written out in any CRS.
+
+if (cleanup_intermediate_files) {
+  # lasR builds a .lax spatial-index sidecar (same basename, .lax extension) next to any
+  # LAZ/LAS file it reads or writes -- including each batch's merged LAZ -- to speed up spatial
+  # queries. Rather than assuming exactly one .lax per merged file, just glob output_dir for
+  # any ".lax" so nothing gets left behind regardless of naming.
+  lax_paths <- list.files(output_dir, pattern = "\\.lax$", full.names = TRUE, ignore.case = TRUE)
+
+  batch_extra_paths <- unlist(lapply(names(extra_classes), function(nm)
+    sub("ground_count_ref_grid", paste0(nm, "_count_ref_grid"), batch_count_paths, fixed = TRUE)))
+  batch_tally_paths <- if (use_template) sub("ground_count_ref_grid[.]tif$", "pass_tally.csv", batch_count_paths) else character(0)
+  intermediate_paths <- c(batch_merged_paths, batch_count_paths, batch_extra_paths, batch_tally_paths, lax_paths,
+                          if (export_ground_points_gpkg) batch_gpkg_paths else character(0))
+  intermediate_paths <- intermediate_paths[file.exists(intermediate_paths)]  # only try to delete files that actually exist
+
+  if (length(intermediate_paths) == 0) {
+    message("No intermediate files found to clean up.")
+  } else {
+    removed <- file.remove(intermediate_paths)
+    message(sum(removed), " of ", length(intermediate_paths), " intermediate file(s) deleted.")
+    if (!all(removed)) {
+      warning("Could not delete: ", paste(intermediate_paths[!removed], collapse = ", "))
+    }
+  }
+} else {
+  message("cleanup_intermediate_files is FALSE -- per-batch intermediate files were left in ",
+          output_dir)
+}
+
+## ---- Workflow timing -----------------------------------------------------------------------
+## Reports the start time, end time, and total elapsed time for the entire workflow, using the
+## workflow_start_time timestamp captured at the very top of the Setup chunk.
+
+workflow_end_time <- Sys.time()
+workflow_run_time <- workflow_end_time - workflow_start_time
+
+message("Workflow start time: ", format(workflow_start_time, "%Y-%m-%d %H:%M:%S"))
+message("Workflow end time:   ", format(workflow_end_time, "%Y-%m-%d %H:%M:%S"))
+message("Total run time:      ", format(unclass(workflow_run_time), digits = 4),
+        " ", units(workflow_run_time))

@@ -1,0 +1,27 @@
+# Pipeline config file for ril_pipeline.R
+#
+# "keyword: value" lines (same rules as bldgrds_enforce.R's/valleyfloor.R's/RIL.R's own parameter
+# files -- order doesn't matter, blank lines and lines starting with "#" are ignored, a trailing
+# "# comment" after a value is stripped, and only the first colon on a line separates the keyword
+# from its value, so a value like "c:\..." is safe).
+#
+# Every stage runs in mode 1: each *_input_file below is an existing, user-prepared Fortran input
+# file (the programs' own `KEYWORD: value[, SUBFIELD=value]` grammar), handed straight to that
+# stage's executable. Write them by hand, or keep the ones a prior mode-2 run of
+# bldgrds_enforce.R/valleyfloor.R/RIL.R left in its scratch_dir.
+#
+# All three input files must name the same DEM: (ril_pipeline.R checks this before running
+# anything), and the ValleyFloor input file must not set a DATA ID that differs from the
+# DEM-derived ID -- the DEM-derived ID is what links bldgrds's NodeNet_<ID>.dat -> ValleyFloor's
+# valleyfloor_<ID>.dat -> RIL.
+#
+# Each *_executable_dir is only a fallback: an input file's own "EXECUTABLE DIR:" line wins. Set
+# it (or leave it as NOFILE) per stage. Replace every path below with your own project's.
+
+bldgrds_input_file: c:\work\data\site1\input_bldgrds_enforce.txt
+valleyfloor_input_file: c:\work\data\site1\input_valleyfloor.txt
+ril_input_file: c:\work\data\site1\input_RIL.txt
+
+bldgrds_executable_dir: c:\work\sandbox\gridutilities\projects\bldgrds\x64\release\
+valleyfloor_executable_dir: c:\work\sandbox\channelutilities\projects\valleyfloor\x64\release\
+ril_executable_dir: c:\work\sandbox\channelutilities\projects\ril\x64\release\

@@ -1,0 +1,26 @@
+# Example parameter file for valleyfloor.R -- MODE 1 (existing ValleyFloor input file).
+#
+# Mode 1 hands an already-written ValleyFloor input file straight to ValleyFloor.exe, skipping
+# valleyfloor_input() entirely -- see valleyfloor_params_template.txt for mode 2 (build the
+# input file from dem/scratch_dir/... parameters instead), which is the more common case.
+#
+# Setting input_file to anything other than NOFILE selects mode 1. Every mode-2-only keyword
+# (dem, scratch_dir, valley_buffer, attribute_list_file, out_elev, ...) is then ignored -- the
+# input file already carries everything ValleyFloor needs -- so this example only sets the two
+# keywords mode 1 actually uses:
+#   - input_file: the existing ValleyFloor input file.
+#   - executable_dir: the folder containing ValleyFloor.exe. Only used as a FALLBACK here -- if
+#     the input file has its own working "EXECUTABLE DIR:" line, that wins instead (see
+#     TWutils::resolve_executable_dir()). This example's input file has no such line, so
+#     executable_dir must be set for the run to find ValleyFloor.exe.
+#
+# This example points at c:\work\data\cherry\input_valleyfloor.txt, a working hand-written
+# reference input file (the same Cherry project reference run valleyfloor_params_template.txt's
+# mode-2 defaults are built from). That file's DEM keyword (elev_Cherry) and its ALL CHANNELS
+# line's lack of a DATA ID subfield mean this run's output data file resolves to the DEM-derived
+# ID -- c:\work\data\cherry\valleyfloor_Cherry.dat -- and, since that file's own ALL CHANNELS
+# line already sets OVERWRITE EXISTING DATA FILES = YES, a repeat run is expected to overwrite
+# it rather than fail.
+
+input_file: c:\work\data\cherry\input_valleyfloor.txt
+executable_dir: c:\work\sandbox\channelutilities\projects\valleyfloor\x64\release\

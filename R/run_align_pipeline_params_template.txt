@@ -1,0 +1,193 @@
+# Pipeline config file for run_align_pipeline.R
+#
+# "keyword: value" lines (same rules as ground_returns.R's and align_dtms.R's own parameter
+# files -- order within a section doesn't matter, blank lines and lines starting with "#" are
+# ignored, a trailing "# comment" after a value is stripped, and only the first colon on a line
+# separates the keyword from its value, so a value like "c:\..." or "EPSG:2856" is safe),
+# grouped under section headers: [study_area], [defaults], [ref_set], [align_set], [ref_dtm],
+# [align_dtm], [ref_dsm], [align_dsm], [align].
+#
+# [study_area] holds clip_polygon and target_crs, which are passed to every ground_returns.R and
+# mosaic_dtm.R run -- set them only there. clip_polygon NOFILE (the default) uses every LAZ, DTM,
+# and DSM tile in each folder, unmasked.
+# [defaults] is optional and holds ground_returns.R parameters shared by both [ref_set] and
+# [align_set]; a set can repeat a keyword itself to override the shared default just for it.
+# [ref_set] and [align_set] are each one ground_returns.R run (see param_specs in
+# ground_returns.R for the full list of recognized keywords) and must set input_dir and
+# output_dir; each writes ground_count_ref_grid.flt there -- ground points per reference DTM
+# cell -- which Align gets as its ground-return raster. [ref_dtm] and [align_dtm] each take
+# their DTM from exactly one of:
+#   tile_dir + output_dtm  -- a folder of tiles, mosaicked by mosaic_dtm.R (see param_specs in
+#                             mosaic_dtm.R) and clipped to clip_polygon;
+#   input_dtm + output_dtm -- one raster file (GeoTIFF, .flt, ...), run through mosaic_dtm.R the
+#                             same way: clipped to clip_polygon, converted to meters, and
+#                             reprojected to target_crs, then written to output_dtm;
+#   existing_dtm alone     -- an already-mosaicked DTM used as-is (an ESRI GridFloat .flt, in
+#                             meters and in target_crs; it is not clipped to clip_polygon).
+# [ref_dsm] and [align_dsm] are required and work the same way for digital surface models, with
+# output_dsm/input_dsm/existing_dsm in place of output_dtm/input_dtm/existing_dtm. [align] holds align_supervisor.R's
+# parameters (see param_specs in align_supervisor.R) -- do NOT set refDTM/alignDTM,
+# refDSM/alignDSM, or refGrnd/alignGrnd there; they are always taken from the sections above.
+#
+# Every output is skipped if it already exists. After changing clip_polygon (or anything else),
+# delete the outputs it affects so they're rebuilt.
+
+[study_area]
+# Polygon delimiting the area of interest (e.g. a .shp; any CRS). Only LAZ, DTM, and DSM tiles
+# that intersect it are used, and the ground-point count rasters, DTMs, and DSMs are masked to it.
+# NOFILE = use every tile in each folder, unmasked.
+clip_polygon: c:\work\data\site1\study_area.shp
+# CRS of every raster the pipeline produces.
+target_crs: EPSG:2856
+# Optional lakes (any vector format; water_layer names the layer of a geodatabase, water_where is
+# an SQL condition picking features), rasterized onto the reference DTM's grid and left out of
+# Align as its WATER MASK. Lakes only: rivers move between surveys, so their polygons match
+# neither survey; Align finds them from the surveys' water returns (extra_counts below).
+# water_polygons: c:\work\data\site1\300940_EDH_ECYFinal.gdb
+# water_layer: Polygons
+# water_where: FCode = 39000
+
+
+[defaults]
+# Ground points are counted per reference DTM cell (ground_returns.R's template_raster is always
+# set to the reference DTM), so the count rasters take the DTM's extent, cell corners, and
+# cellsize; target_pixel_size_m doesn't apply and template_raster can't be set here.
+n_workers: 6
+batch_size_tiles: 50
+gpkg_layer: ground_points
+export_ground_points_gpkg: FALSE
+fill_empty_cells_with_zero: FALSE
+cleanup_intermediate_files: TRUE
+stream_chunk_size: 100000
+# The lidar water returns (LAS class 9) are counted too by default (extra_counts: water=9), and
+# left out of Align as WATER POINTS; extra_counts: NONE turns that off.
+# extra_counts: water=9
+
+[ref_set]
+input_dir: c:\work\data\site1\NP_2017\laz
+output_dir: c:\work\data\site1\NP_2017\grnd_den
+
+[align_set]
+input_dir: c:\work\data\site1\cascades_north_wali_2023\laz
+output_dir: c:\work\data\site1\cascades_north_wali_2023\grnd_den
+# n_workers: 4   # example: uncomment to override [defaults] for just this set
+
+[ref_dtm]
+# DTM tiles (GeoTIFFs) for the reference (pre-change) DTM, and the output path, without
+# extension (<output_dtm>.flt is written). Keep the "elev_<id>" naming Align expects.
+tile_dir: c:\work\data\site1\NP_2017\dtm_tiles
+output_dtm: c:\work\data\site1\elev_2017
+# Elevation units of the tiles: auto, m, ft (international), or ftUS (US survey foot). "auto"
+# trusts a vertical CRS if the tiles have one, otherwise assumes the horizontal unit.
+z_units: auto
+# file_pattern: \.tiff?$    # optional; also mosaic_fun (default first), clip_buffer_cells (default 5)
+# Or, instead of tile_dir, one DTM file to clip/convert/reproject into output_dtm (keep
+# output_dtm, z_units, and clip_buffer_cells; file_pattern/mosaic_fun don't apply):
+# input_dtm: c:\work\data\site1\NP_2017\dtm_2017.tif
+# Or, instead of all of the above, use an already-mosaicked DTM (.flt, meters, target_crs) as-is:
+# existing_dtm: c:\work\data\site1\elev_2017.flt
+
+[align_dtm]
+# Same, for the DTM to be shifted/aligned to the reference (post-change).
+tile_dir: c:\work\data\site1\cascades_north_wali_2023\dtm_tiles
+output_dtm: c:\work\data\site1\elev_2023
+z_units: auto
+# Or, instead of tile_dir, one DTM file to clip/convert/reproject into output_dtm:
+# input_dtm: c:\work\data\site1\cascades_north_wali_2023\dtm_2023.tif
+# Or, instead of all of the above, use an already-mosaicked DTM (.flt, meters, target_crs) as-is:
+# existing_dtm: c:\work\data\site1\elev_2023.flt
+
+# Digital surface models, required for both surveys (Align uses canopy height for its canopy
+# classes, stable ground and the level of detection). Same three choices as the DTM sections,
+# with output_dsm/input_dsm/existing_dsm:
+#   tile_dir + output_dsm   -- DSM tiles (GeoTIFFs) to mosaic and clip to clip_polygon;
+#   input_dsm + output_dsm  -- one DSM file to clip, convert to meters, and reproject;
+#   existing_dsm            -- an already-mosaicked DSM (.flt, meters, target_crs), used as-is.
+# output_dsm must differ from input_dsm -- it's the processed copy written from it.
+[ref_dsm]
+tile_dir: c:\work\data\site1\NP_2017\dsm_tiles
+output_dsm: c:\work\data\site1\dsm_2017
+z_units: auto
+
+[align_dsm]
+input_dsm: c:\work\data\site1\cascades_north_wali_2023\dsm_2023.tif
+output_dsm: c:\work\data\site1\dsm_2023
+z_units: auto
+# existing_dsm: c:\work\data\site1\dsm_2023.flt
+
+[align]
+# align_supervisor.R's keywords (see param_specs there and align_supervisor_params_template.txt
+# for every one); the values shown are its defaults unless marked otherwise. Needs Align at
+# GridUtilities 8a08fa6 or later -- an older executable is stopped a few seconds into the run.
+
+# Maximum iterations in each of Align's global and tiled loops, and the change of the aligned
+# DEM (m: the 99th percentile on steep ground, and the predicted remaining change) below which a
+# loop stops; convergence 0 runs every iteration. 8 and 0.005 make the results independent of
+# the iteration count.
+iterations: 8
+convergence: 0.005
+
+# Tukey-fence multiplier used to identify and exclude outliers (e.g. landslide sites) from the
+# alignment calculation; k <= 0 filters more points as outliers.
+k: 1.5
+
+# Proportion of each iteration's calculated shift to actually apply (1.0 = apply it in full).
+dampener: 1.0
+
+# Output path (no extension) for the aligned DTM.
+outDTM: c:\work\data\site1\elev_2023aligned
+
+# x and y derivatives: CENTRAL differences (recommended) or SIDED (Align's default).
+derivatives: CENTRAL
+
+# Tiles in x (east-west) and y (north-south). "auto": Align chooses the tile count and prior
+# strength by block cross-validation (TILES FIT = JOINT, SELECT = AUTO), over square tiles from
+# max_tile_size down to min_tile_size. Numbers use exactly those tiles (with tile_select NONE,
+# or REPORT/CV to cross-validate around them).
+tileNx: auto
+tileNy: auto
+overlap: 0.5
+# Cross-validation (Align's defaults shown). min_tile_size is a judgement, not a fit: a shift
+# field finer than the scale of real change (a large slow landslide, widespread deposition) can
+# absorb it. The log says when the choice is the finest grid tried.
+# min_tile_size: 500           # m
+# max_tile_size: 8000          # m
+# cv_block: 1000               # m, held-out blocks
+# cv_buffer: 100               # m, left out of training around a held-out block
+# min_tile_points: 100000      # TILES MIN POINTS: below this a node is held by its neighbours
+# prior_points, prior_fraction, prior (NEIGHBOURS/GLOBAL): the tile prior (Align's default
+# PRIOR FRACTION 0.3 towards the neighbours, scaled by the cross-validation)
+
+# Radius (m) for slope and aspect: about the width of a shallow-landslide scar.
+radius: 15
+
+# Number of slope bins, maximum slope gradient to include in bins, and number of aspect bins.
+nslope: 10
+maxSlope: 1.5
+nAzimuth: 8
+
+# Level of detection from ground-return density: auto (with both ground-return rasters), TRUE or
+# FALSE. outExceed, outLod and outCenDif need it; LShunter reads all three (and the IQR raster
+# <outLod>_iqr), and the gradient raster Align writes next to the reference DTM,
+# <ref DTM>_grad<radius>m.
+densityLod: auto
+
+# Output paths (no extension) for the per-bin csv summary, the difference raster, and the
+# outlier-flagged raster. outOutlier's .flt output is also what run_align_pipeline.R checks for
+# to decide whether Align has already been run.
+outbins: c:\work\data\site1\outbins
+outDif: c:\work\data\site1\dif
+outOutlier: c:\work\data\site1\outlier_tiled
+# Density LoD outputs: signed significance S = -log10(p) (LShunter's recommended input), the
+# loss limit (also writes <outLod>_gain, _centre and _iqr), and dz minus the expected dz (for
+# patch depths and volumes). Optional: outDenOutlier, outCorDif, outDX/outDY/outDZ.
+outExceed: c:\work\data\site1\exceed
+outLod: c:\work\data\site1\lod
+outCenDif: c:\work\data\site1\cendif
+
+# Scratch folder for Align's intermediate files, and the folder containing the Align executable.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release\
+
+# Name of the Align executable (without extension) inside executable_dir.
+program_name: align

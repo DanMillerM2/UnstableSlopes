@@ -1,0 +1,74 @@
+# Parameter file for bldgrds_enforce.R
+#
+# One "keyword: value" pair per line. The order lines appear in is not significant -- every
+# line is self-labeled by its keyword. Blank lines and lines starting with "#" are ignored,
+# and a trailing "# comment" after a value is stripped. A value may contain a colon itself
+# (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
+# from its value, so that's safe.
+#
+# dem, channel_mask, channel_mask_dig, scratch_dir, and executable_dir have no default and must
+# be set below. Every other keyword falls back to the default noted in param_specs (in
+# bldgrds_enforce.R) if you delete or comment out its line here.
+#
+# Values below are transcribed from a working Skykomish-project reference run.
+
+# Optional: path to an already-written bldgrds "enforce" input file. When set, bldgrds_enforce.R
+# skips building an input file from the parameters below (mode 2) and instead hands this file
+# straight to bldgrds.exe (mode 1) -- dem, channel_mask, channel_mask_dig, scratch_dir,
+# attribute_list_file, and every other mode-2-only keyword below are then ignored.
+# executable_dir (below) still applies in mode 1, but only as a fallback used if this file has
+# no working "EXECUTABLE DIR:" line of its own. Leave as NOFILE (the default) for mode 2 -- the
+# normal case, and what every other keyword in this template file assumes.
+input_file: NOFILE
+
+# Input DEM (full path). Mode 2 only -- ignored if input_file (above) is set.
+dem: c:\work\data\skykomish\elev_3m.flt
+
+# Existing channel-network raster/shapefile to enforce (CHANNEL MASK: FILE). No new channel
+# initiation happens outside this layer -- NO NEW CHANNELS is always written by bldgrds_enforce.R.
+channel_mask: c:\work\data\skykomish\channel_network
+
+# Depth (DEM elevation units) to excavate/burn channel_mask into the DEM, and the radius used
+# when excavating it.
+channel_mask_dig: 15.0
+channel_mask_radius: 0.0
+
+# If TRUE, treat channel_mask as directional.
+channel_mask_directional: TRUE
+
+# If TRUE, seed channel initiation at every channel_mask cell, not just its ends.
+channel_mask_init_all: TRUE
+
+# Optional output node point shapefile -- supplying this turns on OUTPUT NODE POINT SHAPEFILE.
+# Leave as NOFILE if not wanted.
+node_shapefile: c:\work\data\skykomish\node_bldgrds_dem_a
+
+# Number of pieces to split each channel segment into for node_shapefile. Only meaningful
+# together with node_shapefile.
+node_splits: 4
+
+# --- Optional additional outputs. Leave as NOFILE if not wanted (all three were left unused,
+# but present as comments, in the Skykomish reference run this file is transcribed from). ---
+drainage_wing_raster: NOFILE
+hand_raster: NOFILE
+hand_flow_threshold: NOFILE
+hand_normalize: FALSE
+twi_raster: NOFILE
+twi_gradient_length_scale: NOFILE
+
+# Text file holding a standalone "ATTRIBUTE LIST:" / "END LIST:" block (see
+# bldgrds_enforce_attributes_example.txt for a ready-to-copy example transcribed from this same
+# Skykomish reference run, including a mean-annual-precipitation-dependent chain given via that
+# block's own MEAN ANNUAL PRECIP: FILE = ... entry -- there is no separate precip_raster keyword
+# anywhere in this parameter file). When NOFILE, this script falls back to
+# TWutils::bldgrds_default_attributes() -- a *different*, generic bare elevation/area default,
+# not the Skykomish reference; prefer attribute_list_file when you have a real project-specific
+# attribute list to match (as in this template's own case).
+attribute_list_file: NOFILE
+
+# Scratch directory for bldgrds' intermediate files, and the folder containing bldgrds.exe.
+scratch_dir: c:\work\scratch
+executable_dir: c:\work\sandbox\gridutilities\projects\bldgrds\x64\release\
+
+# If TRUE, allow overwriting an existing bldgrds input file in scratch_dir.
+overwrite: TRUE
