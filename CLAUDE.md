@@ -50,7 +50,9 @@ overall method:
 1. **Coregistration.qmd** — aligning two sequential lidar DTMs (least-squares horizontal/vertical
    shift, corrected for hillslope gradient and canopy-height change) and estimating the minimum
    level of detection (LoD) for elevation change via Tukey fences on the DEM-of-difference (DoD).
-2. **Quantiles.qmd** — theoretical LoD estimation from DTM error-propagation statistics.
+2. **Quantiles.md** — theoretical LoD estimation from DTM error-propagation statistics. Only the
+   rendered `gfm` output is tracked; its source `Quantiles.qmd` was removed in 5fc726d (recover it
+   with `git show 5fc726d^:Quantiles.qmd`).
 3. **MappingLandslides.qmd** — using DoD "k-values" (position relative to the Tukey-fence LoD) plus
    slope and accumulation-area thresholds to detect candidate landslide patches ("Program HuntLS"),
    match them to field-inventoried landslide points, and compare patch area/volume against the
@@ -66,14 +68,30 @@ overall method:
    `_blank` files are templates meant to be copied and filled in with a project's own
    `input_dir`/`output_dir` rather than edited in place.
 
-This checkout (branch `align_pipeline`) only has **Coregistration.qmd**, **MappingLandslides.qmd**,
-and **Quantiles.qmd** tracked at repo root — `Landslide_Density.qmd`, `Mosaic_Reproject_DTM.qmd`, and
-the `SusNRun_PointCloudWorkflow_blank(_*).qmd` files above (items 4-5) currently exist only on the
-`elise` branch (`git show elise:<file>` / `git ls-tree -r --name-only elise`), not on
-`align_pipeline` or `main`. Don't assume they're present in the working tree; check `git branch -a`
-before editing or referencing one of them. (The rendered `SusNRun_PointCloudWorkflow_blank_082626.html`
-and `..._sequential.html` sitting untracked at repo root are leftover renders from that branch's
-`.qmd`, not evidence the source is checked out here.)
+Of the method documents above, only **Coregistration.qmd** and **MappingLandslides.qmd** are tracked
+as `.qmd` on `main` (with `Quantiles.md`, above) — `Landslide_Density.qmd`, `Mosaic_Reproject_DTM.qmd`,
+and the `SusNRun_PointCloudWorkflow_blank(_*).qmd` files (items 4-5) exist only on the `elise`
+branch (`git show elise:<file>` / `git ls-tree -r --name-only elise`). Don't assume they're present
+in the working tree; check `git branch -a` before editing or referencing one of them. The rendered
+`SusNRun_PointCloudWorkflow_blank_082626.html` and `..._sequential.html` at repo root are tracked
+(committed in 3940764) but are renders of that branch's `.qmd`, not evidence the source is here;
+their code now lives on as `R/ground_returns.R`.
+
+Three further documents describe the `R/` pipeline rather than the method's theory:
+
+- **Align_LShunter_Review.qmd** — what Align and LShunter do, how they work together, how well they
+  meet the two goals (accurate elevation change; a defensible LoD), and improvements tried (its
+  rendered `.html` is gitignored).
+- **LandslidePipelines_Guide.qmd** — user guide to running the whole method through the
+  `landslide-pipelines` Claude Code skill, including setup on another computer (`.html` gitignored).
+- **PipelineReport.qmd** — the per-site report template rendered by `run_landslide_pipelines.R`;
+  deliberately untracked (gitignored), as it changes per study site.
+
+The `R/` pipeline, these documents and the skill were developed on branch `align_pipeline`
+(Sep-Nov 2026, merged into `main` with `--no-ff`, tagged `align-pipeline-v1`). Its commit messages
+name the matching Align/TWutils/LShunter versions (e.g. `(Align 2083edb, TWutils 9d80279)`); use
+`git log main^1..align-pipeline-v1 -- <file>` or `git log -S <keyword>` to trace why a script or
+keyword is the way it is.
 
 `references.bib` holds shared citations used via `[@key]` across the `.qmd` files.
 
@@ -285,9 +303,9 @@ Chunks rely on: `terra`, `sf`, `lasR` (lidar point-cloud processing), `data.tabl
 `ggplot2` / `ggExtra` / `patchwork` / `latex2exp` / `RColorBrewer` / `scales`, `stringr`, and a
 project-specific package, `TWutils`, which is not on CRAN and must already be installed/available
 in the R environment. `TWutils` is the current name; **`TerrainWorksUtils` is the same package under
-its old name**, not a second dependency — the rename is incomplete (per `..\TWutils\CLAUDE.md`) and
-`Quantiles.qmd` still has `library(TerrainWorksUtils)`/`TerrainWorksUtils::quantiles(...)` rather
-than the `TWutils::` form used everywhere else in this repo.
+its old name**, not a second dependency — the rename is incomplete (per `..\TWutils\CLAUDE.md`), and
+the removed `Quantiles.qmd` (see the document map) used `library(TerrainWorksUtils)`/
+`TerrainWorksUtils::quantiles(...)` rather than the `TWutils::` form used everywhere else here.
 
 ## Conventions specific to this repo
 
