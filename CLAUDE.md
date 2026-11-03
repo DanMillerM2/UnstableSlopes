@@ -88,7 +88,8 @@ Three further documents describe the `R/` pipeline rather than the method's theo
   deliberately untracked (gitignored), as it changes per study site.
 
 The `R/` pipeline, these documents and the skill were developed on branch `align_pipeline`
-(Sep-Nov 2026, merged into `main` with `--no-ff`, tagged `align-pipeline-v1`). Its commit messages
+(Sep-Nov 2026, merged into `main` with `--no-ff`, tagged `align-pipeline-v1`; the branch itself has
+since been deleted — the tag's second parent, `align-pipeline-v1^2`, is its last commit). Its commit messages
 name the matching Align/TWutils/LShunter versions (e.g. `(Align 2083edb, TWutils 9d80279)`); use
 `git log main^1..align-pipeline-v1 -- <file>` or `git log -S <keyword>` to trace why a script or
 keyword is the way it is.
@@ -340,8 +341,8 @@ the removed `Quantiles.qmd` (see the document map) used `library(TerrainWorksUti
   `..\GridUtilities\CLAUDE.md`. If a `TWutils` call here starts failing or behaving unexpectedly,
   confirm the executable at that path is up to date with the Fortran source before assuming the bug
   is in this repo's R code.
-- This repo's `align_pipeline` branch and `..\GridUtilities`'s current `align_Sep1` branch are the
-  same in-progress alignment work seen from opposite ends of the pipeline (this repo drives
-  `TWutils::align()`; `align_Sep1` is where the `align`/`alignSlope2` Fortran source itself is being
-  changed) — when editing `Coregistration.qmd` or `R/align_dtms.R`/`R/run_align_pipeline.R`, check
-  which branch of `GridUtilities` is actually checked out rather than assuming `master`.
+- The Align work here and in `..\GridUtilities` is the same alignment work seen from opposite ends
+  of the pipeline (this repo drives `TWutils::align()`; GridUtilities holds the `align`/`alignSlope2`
+  Fortran source, developed on feature branches such as `align_clean` rather than `master`) — when
+  editing `Coregistration.qmd` or `R/align_dtms.R`/`R/run_align_pipeline.R`/`R/align_supervisor.R`,
+  check which branch of `GridUtilities` is actually checked out rather than assuming `master`.

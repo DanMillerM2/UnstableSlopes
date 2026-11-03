@@ -74,7 +74,7 @@ or executable it can't find.
 
    | Repo | Branch | Holds |
    |---|---|---|
-   | UnstableSlopes (`DanMillerM2`) | `align_pipeline` | the R scripts, the skill, this guide |
+   | UnstableSlopes (`DanMillerM2`) | `main` | the R scripts, the skill, this guide |
    | TWutils (`DanMillerM2`) | `main` (c2290a4 or later) | the R package that writes the programs' input files |
    | GridUtilities (`teal-waters`) | `align_clean` (ab662ea or later) | Align, bldgrds |
    | LandslideUtilities (`DanMillerM2`) | `LShunter_update` | LShunter, LSstats |
