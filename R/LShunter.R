@@ -225,6 +225,39 @@ param_specs <- list(
   area_threshold    = list(type = "numeric", default = NA_real_, allow_na = TRUE),
   area_min_fraction = list(type = "numeric", default = NA_real_, allow_na = TRUE),
   out_area_z        = list(type = "character", default = "NOFILE"),
+  # DEPOSITS (LShunter 1.4.0+; exceedance input and out_table): patches of elevation gain
+  # downslope of the scars, each linked to its scar along runout paths traced on the reference
+  # DTM's D-infinity flow directions. dep_ref_dem is the reference DTM; dep_flow_dir its flow
+  # direction raster (bldgrds' ang_), built here by bldgrds (NO CHANNELS) when it is missing or
+  # older than dep_ref_dem -- dep_bldgrds_executable_dir is then required, and its contributing
+  # area goes to <dep_flow_dir>_accum. The other dep_ settings fall back to LShunter's defaults
+  # (NA): thresholds S 4 and 2 (gain); no minimum gradient; seeds below max_accum1 (out of
+  # channels), growth with no accumulation limit (into channels and onto the floodplain where
+  # contiguous with gain outside them); min_size; max_distance 500 m beyond the last coherent
+  # loss; spread 100 m; scour window 5 m, fraction 0.5. Outputs: <out_table>_deposits.csv,
+  # _unlinked.csv, _balance.csv, and rasters out_deposits/out_unlinked (default
+  # <out_patch>_deposits/_unlinked); out_corridor/out_paths are optional diagnostics.
+  dep_flow_dir       = list(type = "character", default = "NOFILE"),
+  dep_ref_dem        = list(type = "character", default = "NOFILE"),
+  dep_bldgrds_executable_dir = list(type = "character", default = "NOFILE"),
+  dep_aspect_length  = list(type = "numeric", default = 15),
+  dep_plan_length    = list(type = "numeric", default = 15),
+  dep_grad_length    = list(type = "numeric", default = 7.5),
+  dep_threshold1     = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_threshold2     = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_min1           = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_min2           = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_max_accum1     = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_max_accum2     = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_min_size       = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_max_distance   = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_spread         = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_scour_window   = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  dep_scour_fraction = list(type = "numeric", default = NA_real_, allow_na = TRUE),
+  out_deposits       = list(type = "character", default = "NOFILE"),
+  out_unlinked       = list(type = "character", default = "NOFILE"),
+  out_corridor       = list(type = "character", default = "NOFILE"),
+  out_paths          = list(type = "character", default = "NOFILE"),
 
   # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
   overwrite = list(type = "logical", default = TRUE)
@@ -314,11 +347,44 @@ if (use_existing_input_file) {
   # pipeline can be restarted without redoing an LShunter run that already completed (same
   # resumability convention used elsewhere in this repo, e.g. RIL.R's out_RIL skip).
   out_patch_flt <- if (grepl("\\.flt$", out_patch, ignore.case = TRUE)) out_patch else paste0(out_patch, ".flt")
-  # With a patch table asked for, the run is complete only once that is written too.
+  # With a patch table asked for, the run is complete only once that is written too; with
+  # deposits, once their balance table (the last table LShunter writes) is.
   out_table_csv <- if (is_nofile_text(out_table)) NULL else
     paste0(sub("\\.csv$", "", out_table, ignore.case = TRUE), ".csv")
+  deposits <- !is_nofile_text(dep_flow_dir) || !is_nofile_text(dep_ref_dem)
+  if (deposits && (is_nofile_text(dep_flow_dir) || is_nofile_text(dep_ref_dem))) {
+    stop("Deposits need both dep_flow_dir and dep_ref_dem -- check ", config_path, ".")
+  }
+  balance_csv <- if (deposits && !is.null(out_table_csv))
+    paste0(sub("\\.csv$", "", out_table_csv, ignore.case = TRUE), "_balance.csv") else NULL
 
-  if (!file.exists(out_patch_flt) || (!is.null(out_table_csv) && !file.exists(out_table_csv))) {
+  if (!file.exists(out_patch_flt) || (!is.null(out_table_csv) && !file.exists(out_table_csv)) ||
+      (!is.null(balance_csv) && !file.exists(balance_csv))) {
+
+    # Deposits: the reference DTM's flow directions, built with bldgrds (no channels) when
+    # missing or older than the DTM
+    if (deposits) {
+      flt <- function(f) if (grepl("\\.flt$", f, ignore.case = TRUE)) f else paste0(f, ".flt")
+      ang_flt <- flt(dep_flow_dir)
+      dem_flt <- flt(dep_ref_dem)
+      if (!file.exists(dem_flt)) stop("dep_ref_dem not found: ", dem_flt)
+      if (!file.exists(ang_flt) || file.mtime(ang_flt) < file.mtime(dem_flt)) {
+        if (is_nofile_text(dep_bldgrds_executable_dir)) {
+          stop("dep_flow_dir ", ang_flt, " is missing or older than the reference DTM, and no ",
+               "dep_bldgrds_executable_dir is set to build it.")
+        }
+        message("Building the reference DTM's flow directions with bldgrds: ", ang_flt)
+        TWutils::bldgrds_nochannels(raster = paste0(sub("\\.flt$", "", ang_flt, ignore.case = TRUE), "_accum"),
+                                    dem = dep_ref_dem,
+                                    aspect_length = dep_aspect_length,
+                                    plan_length = dep_plan_length,
+                                    grad_length = dep_grad_length,
+                                    scratch_dir = scratch_dir,
+                                    executable_dir = dep_bldgrds_executable_dir,
+                                    out_ang = dep_flow_dir)
+        if (!file.exists(ang_flt)) stop("bldgrds did not write the flow direction raster ", ang_flt)
+      }
+    }
 
     # TWutils::LShunter()/LShunterInput() check that exactly one of Outlier and Exceedance is
     # given, that Gradient is, that road_buffer comes with Roads, and that the optional patch
@@ -366,6 +432,23 @@ if (use_existing_input_file) {
                       AreaThreshold = na_null(area_threshold),
                       AreaMinFraction = na_null(area_min_fraction),
                       OutAreaZ = out_area_z,
+                      DepFlowDir = dep_flow_dir,
+                      DepRefDEM = dep_ref_dem,
+                      DepThreshold1 = na_null(dep_threshold1),
+                      DepThreshold2 = na_null(dep_threshold2),
+                      DepMin1 = na_null(dep_min1),
+                      DepMin2 = na_null(dep_min2),
+                      DepMax1 = na_null(dep_max_accum1),
+                      DepMax2 = na_null(dep_max_accum2),
+                      DepMinSize = na_null(dep_min_size),
+                      DepMaxDistance = na_null(dep_max_distance),
+                      DepSpread = na_null(dep_spread),
+                      DepScourWindow = na_null(dep_scour_window),
+                      DepScourFraction = na_null(dep_scour_fraction),
+                      OutDeposits = out_deposits,
+                      OutUnlinked = out_unlinked,
+                      OutCorridor = out_corridor,
+                      OutPaths = out_paths,
                       overwrite = overwrite,
                       Executable_dir = executable_dir)
 

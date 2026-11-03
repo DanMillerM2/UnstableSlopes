@@ -172,7 +172,11 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   (`OUTPUT RIL RASTER` of `ril_input`), and with both DSMs the two surveys' DSMs and original DTMs
   (`canopy_*`), writing `patch_<tag>` and `patch_<tag>_table.csv`; LSstats
   gets the patch raster and table; `@cendif`, `@exceed`, ... in `lsstats_rasters` stand for Align
-  outputs. The configs are regenerated every run; edit the site file, not them.
+  outputs. With `lshunter_deposits: TRUE` (LShunter 1.4.0) LShunter also gets the reference DTM
+  and `<run folder>\ang_<ref>` (its flow directions, which LShunter.R builds with RIL's bldgrds
+  executable) and writes `corridor_<tag>`; `lshunter_dep_*` keys pass through as `dep_*`, and the
+  deposits join the scars in `patch_<tag>_polygons.shp` (type `deposit`, with their scar).
+  The configs are regenerated every run; edit the site file, not them.
 - **run_landslide_pipelines.R** — driver for the whole method: runs `run_align_pipeline.R` and
   `ril_pipeline.R` concurrently (processx, logs in `<report_dir>/logs/`), then
   `lshunter_lsstats_pipeline.R`, checking first that LShunter's inputs are this run's Align
@@ -226,7 +230,20 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `out_table` set, the run counts as done only once the table exists. LShunter 1.3.0+ adds area
   seeds (`area_windows`, e.g. `5 10 20`, default NONE; `area_threshold`, `area_min_fraction`,
   `out_area_z`): seeds from evidence pooled over windows, which need the exceedance raster and
-  `noise_corr`. Supports
+  `noise_corr`. LShunter 1.4.0+ adds deposits (`dep_flow_dir` + `dep_ref_dem`, the reference DTM;
+  `dep_*` settings, `out_deposits`/`out_unlinked`/`out_corridor`/`out_paths`): gain patches
+  downslope of the scars, linked to them along runout paths traced on the reference DTM's
+  D-infinity flow directions (distance counted from the last coherent loss, so scour along a
+  debris-flow track doesn't use it up; `dep_max_distance` 500 m beyond it, `dep_spread` 100 m
+  either side), seeded out of channels and off the valley floor but free to grow into them; it
+  writes `<out_table stem>_deposits.csv` (with scar, travel, drop, reach angle), `_unlinked.csv`
+  (gain patches with no scar above them) and `_balance.csv` (each scar's volume against its
+  deposits', the net and their SDs), last. `dep_flow_dir` is built here with
+  `TWutils::bldgrds_nochannels(out_ang = )` when missing or older than `dep_ref_dem`
+  (`dep_bldgrds_executable_dir`); with deposits the run counts as done once `_balance.csv`
+  exists. The scars' sign-flip control then leaves out gain patches in a scar's corridor, and
+  `null_*` gives deposits false-discovery rates from simulated noise patches in the same
+  corridors. Supports
   both `LShunter()` modes like RIL.R (mode 1: existing input file via `input_file`). Note
   `LShunter()`'s current wrapper signature takes named, capitalized arguments (`Outlier`, `Accum`,
   `OutPatch`, `ScratchDir`, `Executable_dir`, plus `...` to `LShunterInput()`); MappingLandslides.qmd's
@@ -244,12 +261,18 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   subprocesses, each handed its own unmodified parameter file (so either stage may be mode 1 or
   2). Stops unless LShunter's output patch raster is LSstats's polygon raster; skips a stage whose
   final output exists, and stops (rather than skipping) if LSstats's csv is older than the patch
-  raster. With `polygons_params` (run_site.R always writes it) it then runs `patch_polygons.R`.
+  raster. With `polygons_params` (run_site.R always writes it) it then runs `patch_polygons.R`,
+  whose `deposit_raster`, if set, must be LShunter's deposit raster. With deposits,
+  LShunter is skipped only once its `_balance.csv` exists too.
 - **patch_polygons.R** — LShunter's patch raster as a polygon shapefile (`patch_<tag>_polygons.shp`
   in run_site.R's runs), one feature per patch label (dissolved, so diagonal-only contacts make
   multipart features), with the patch table's row (every column LShunter wrote, -9999 as null),
   perimeter and minimum-rotated-rectangle length and width, and from LSstats's per-polygon csvs
   the landform, distance to the floodplain edge, and min/median/max of each summarized raster.
+  With `deposit_raster`/`deposit_table` (LShunter's deposits) the deposits are features of the
+  same shapefile: field `type` is `scar` or `deposit`, `label` is the value in that type's raster,
+  a deposit's `scar` is its scar's label; fields both tables fill (`mean_dz`, `vol_m3`, ...) are
+  signed, and LSstats fields are null for deposits.
   Shapefile field names are 10 characters at most; `<out_shp>_fields.csv` maps each to its
   source column, units and meaning. Rewritten when older than any input. It refuses an `out_shp`
   sharing a stem with another file's `.prj`: `patch_x.shp` beside `patch_x.flt` would replace the

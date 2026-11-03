@@ -99,7 +99,11 @@ lshunter_settings <- c("threshold1", "threshold2", "min1", "min2", "accum", "max
                        "dist_channel", "min_patch_significance", "null_realizations",
                        "null_tile", "null_seed", "seed_den_min", "seed_den_window", "sign_flip",
                        "area_windows", "area_threshold", "area_min_fraction",
-                       "executable_dir")
+                       "executable_dir",
+                       # deposits (LShunter 1.4.0): lshunter_deposits TRUE turns them on
+                       "deposits", "dep_threshold1", "dep_threshold2", "dep_min1", "dep_min2",
+                       "dep_max_accum1", "dep_max_accum2", "dep_min_size", "dep_max_distance",
+                       "dep_spread", "dep_scour_window", "dep_scour_fraction")
 lsstats_settings <- c("rasters", "distance_raster", "radius", "out_distance_raster",
                       "executable_dir")
 # strip_noise.R (each survey's flight-pass overlaps; on unless noise_run: FALSE). noise_method is
@@ -302,9 +306,23 @@ lsh <- list(
   noise_corr = paste0(align_out$outbins, "_densityLodCorr.csv"),
   landform = win(no_ext(ril_raster)),
   out_table = out_table)
-for (k in setdiff(lshunter_settings, c("threshold1", "threshold2", "accum", "executable_dir"))) {
+deposits <- isTRUE(as.logical(get("lshunter_deposits", "FALSE")))
+for (k in setdiff(lshunter_settings, c("threshold1", "threshold2", "accum", "executable_dir", "deposits"))) {
   v <- get(paste0("lshunter_", k))
-  if (!is.null(v)) lsh[[k]] <- v
+  if (is.null(v)) next
+  if (startsWith(k, "dep_") && !deposits) {
+    message("Note: lshunter_", k, " is ignored without lshunter_deposits: TRUE")
+    next
+  }
+  lsh[[k]] <- v
+}
+# Deposits: runout paths on the reference DTM's flow directions (ang_<ref>, built by bldgrds with
+# RIL's bldgrds executable when missing or older than the DTM), and the corridor raster
+if (deposits) {
+  lsh$dep_flow_dir <- in_run(paste0("ang_", s$ref_label))
+  lsh$dep_ref_dem <- win(no_ext(s$ref_dtm))
+  lsh$dep_bldgrds_executable_dir <- s$ril_bldgrds_executable_dir
+  lsh$out_corridor <- in_run(paste0("corridor_", tag))
 }
 if (!is.null(lsh$seed_den_min)) {  # seed density: the two count rasters Align uses
   lsh$seed_den_ref <- count_raster("ref")
@@ -352,9 +370,14 @@ if (is_set(s$lsstats_distance_raster)) {
 }
 lss_params <- write_lines(kv(lss), "lsstats_params.txt", "LSstats.R parameters (mode 2)")
 
-poly_params <- write_lines(kv(list(patch_raster = out_patch, patch_table = out_table, lsstats_csv = lss$out_csv,
-                                   out_shp = in_run(paste0("patch_", tag, "_polygons.shp")))),
-                           "patch_polygons_params.txt", "patch_polygons.R parameters")
+# The scars and, with deposits, the deposits (type "deposit", with their scar) in one shapefile
+poly <- list(patch_raster = out_patch, patch_table = out_table, lsstats_csv = lss$out_csv)
+if (deposits) {
+  poly$deposit_raster <- paste0(out_patch, "_deposits")
+  poly$deposit_table <- in_run(paste0("patch_", tag, "_table_deposits.csv"))
+}
+poly$out_shp <- in_run(paste0("patch_", tag, "_polygons.shp"))
+poly_params <- write_lines(kv(poly), "patch_polygons_params.txt", "patch_polygons.R parameters")
 
 ls_cfg <- write_lines(kv(list(lshunter_params = lsh_params, lsstats_params = lss_params,
                               polygons_params = poly_params)),

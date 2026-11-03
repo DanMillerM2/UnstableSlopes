@@ -22,7 +22,7 @@ results:
 |---|---|---|
 | 1. Align and its inputs | `R/run_align_pipeline.R` → `R/align_supervisor.R` | aligned DTM, DoD, outlier and exceedance rasters, level of detection, gradient raster, `align_run\*.csv` |
 | 2. RIL (runs alongside 1) | `R/ril_pipeline.R` | landform raster |
-| 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files, and the patches as a polygon shapefile |
+| 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files, and the patches as a polygon shapefile; with `lshunter_deposits: TRUE`, the deposits below each scar (raster, table, polygons) and each scar's volume balance |
 | 4. Strip noise (runs alongside 3) | `R/strip_noise.R`, as Stage 4 of `R/run_align_pipeline.R` | each survey's noise between its own flight passes: strip offsets and a noise floor by canopy, slope and ground density |
 | Report | `PipelineReport.qmd` | one self-contained html file |
 
@@ -164,8 +164,11 @@ Without a site file, Claude asks, in one message, for anything it still needs:
 ## The patch polygons
 
 After LSstats, `R/patch_polygons.R` writes the candidate landslides as a polygon shapefile,
-`<run folder>\patch_<ref>_<align>_polygons.shp`, one feature per patch, for use in a GIS. Its
-attribute table holds everything known about each patch:
+`<run folder>\patch_<ref>_<align>_polygons.shp`, one feature per patch, for use in a GIS. With
+deposits on (see Deposits below), the deposits are features of the same shapefile: the field
+`type` is `scar` or `deposit`, and a deposit's `scar` field holds the label of the scar it came
+from, so selecting a scar and its deposits is one query. Its attribute table holds everything
+known about each patch:
 
 - from LShunter's patch table: cells and area, centroid, mean and deepest elevation change,
   volume with its SD and z, mean and maximum gradient, the most extreme S, shares of valley floor,
@@ -178,6 +181,33 @@ attribute table holds everything known about each patch:
 Shapefile field names are limited to 10 characters, so `<...>_polygons_fields.csv` beside it
 gives each field's source, units and meaning. Missing values (-9999) are null. The shapefile is
 rewritten whenever the patch raster, patch table or LSstats files are newer.
+
+## Deposits
+
+With `lshunter_deposits: TRUE` in the site file (LShunter 1.4.0 or later), LShunter also looks
+for the material each scar delivered downslope:
+
+- **Runout paths.** From every scar, flow is traced down the reference (older) DTM's flow
+  directions, which bldgrds computes once into `ang_<ref>` in the run folder. Distance along a
+  path counts from the last point of coherent loss -- the scar itself, or scour along a
+  debris-flow track -- so a long scoured track doesn't use up the allowance; a path ends
+  `lshunter_dep_max_distance` (500 m) beyond it, or where it enters another scar.
+- **Corridors.** Everything within `lshunter_dep_spread` (100 m) of a path, saved as
+  `corridor_<tag>` (each cell holds the scar it belongs to).
+- **Deposits.** Patches of significant gain (S of 4 to seed, 2 to grow, the reverse of the scars'
+  thresholds). Seeds must lie out of channels and off the valley floor; a deposit may then extend
+  into a narrow channel or onto the floodplain, but only where that is contiguous with gain
+  outside it. A gain patch is a deposit of the scar whose corridor holds most of its seed cells
+  (and only cells no higher than their path). Gain patches with no scar above them are kept
+  separately, as "unlinked": a check on the gain-side level of detection, and a list of gains
+  (fill, vegetation read as ground, slow deep-seated movement) worth a look.
+
+Outputs: `patch_<tag>_deposits` and `_unlinked` rasters, `patch_<tag>_table_deposits.csv` (every
+patch-table column, plus the scar, travel distance, drop, reach angle, and channel share),
+`_unlinked.csv`, `_balance.csv` (each scar's volume against its deposits', the net and their SDs
+from the correlated noise, and the deposit/scar ratio, near 1 to 1.3 where little left the
+slope); the deposits are also in `patch_<tag>_polygons.shp` (see below). With `lshunter_null_realizations`, each deposit's
+false-discovery rate comes from simulated noise patches that land in the same corridors.
 
 ## Afterwards
 

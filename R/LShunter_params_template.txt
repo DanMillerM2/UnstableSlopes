@@ -94,6 +94,29 @@ area_windows: NONE             # e.g. 5 10 20
 area_threshold: NA             # e.g. -4.5
 area_min_fraction: NA          # share of a window that must be floodable (0.5)
 out_area_z: NOFILE             # each point's most extreme Z_A
+# DEPOSITS (LShunter 1.4.0+; exceedance input and out_table): gain patches downslope of the scars,
+# each linked to its scar along runout paths traced on the reference DTM's flow directions. Leave
+# dep_flow_dir and dep_ref_dem at NOFILE to leave deposits out. dep_flow_dir is built by bldgrds (no
+# channels) when missing or older than dep_ref_dem. Outputs <out_table>_deposits.csv, _unlinked.csv,
+# _balance.csv, and rasters <out_patch>_deposits and _unlinked.
+dep_flow_dir: NOFILE           # e.g. c:\work\data\site1\run_17_23\ang_2017
+dep_ref_dem: NOFILE            # the reference DTM, on the exceedance raster's grid
+dep_bldgrds_executable_dir: NOFILE  # e.g. c:\work\sandbox\gridutilities\projects\bldgrds\x64\release
+dep_threshold1: NA             # S for deposit seeds (gain, > 0; 4)
+dep_threshold2: NA             # S for growth (2)
+dep_min1: NA                   # minimum gradient (tan) for seeds (none)
+dep_min2: NA                   # and for growth (none)
+dep_max_accum1: NA             # seeds stay below this accumulation: out of channels (max_accum1)
+dep_max_accum2: NA             # growth limit (none: into channels and onto the floodplain)
+dep_min_size: NA               # m2 (min_size)
+dep_max_distance: NA           # m along a path beyond the last coherent loss (500)
+dep_spread: NA                 # m, corridor half-width around a path (100)
+dep_scour_window: NA           # m, window for coherent loss along a path (5)
+dep_scour_fraction: NA         # share of the window at S <= threshold2 (0.5)
+out_deposits: NOFILE           # default <out_patch>_deposits
+out_unlinked: NOFILE           # default <out_patch>_unlinked
+out_corridor: NOFILE           # optional: each corridor point's scar
+out_paths: NOFILE              # optional: each path point's distance beyond the last coherent loss
 
 # If TRUE, allow overwriting an existing LShunter input file in scratch_dir.
 overwrite: TRUE

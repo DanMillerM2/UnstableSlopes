@@ -117,6 +117,28 @@ lshunter_min_size: 10                 # m2
 # lshunter_seed_den_min: 1            # returns/m2 in both surveys
 # lshunter_seed_den_window: 2
 lshunter_sign_flip: TRUE
+# Deposits (LShunter 1.4.0+): gain patches downslope of the scars, each linked to its scar. From
+# every scar, flow is traced down the reference DTM's flow directions (ang_<ref_label> in the run
+# folder, built by bldgrds -- ril_bldgrds_executable_dir -- when missing or older than ref_dtm);
+# distance counts from the last coherent loss (the scar, or scour along a debris-flow track), the
+# path ends dep_max_distance beyond it, and the corridor is dep_spread either side. Deposit seeds
+# stay out of channels (below dep_max_accum1) and off the valley floor; deposits may grow into
+# channels and onto the floodplain where contiguous with gain outside them. Writes
+# patch_<tag>_deposits/_unlinked rasters, patch_<tag>_table_deposits/_unlinked/_balance.csv,
+# corridor_<tag>, and adds the deposits to patch_<tag>_polygons.shp. The scars' sign-flip control then leaves out
+# gain patches in a scar's corridor.
+lshunter_deposits: TRUE
+# lshunter_dep_threshold1: 4          # S for deposit seeds (gain, > 0)
+# lshunter_dep_threshold2: 2          # S for growth
+# lshunter_dep_min1: -1               # minimum gradient (tan) for seeds; -1 none
+# lshunter_dep_min2: -1
+# lshunter_dep_max_accum1: 1000       # seeds below this accumulation (default lshunter_max_accum1)
+# lshunter_dep_max_accum2: 1e30       # growth limit (default none)
+# lshunter_dep_min_size: 10           # m2 (default lshunter_min_size)
+lshunter_dep_max_distance: 500        # m along a path beyond the last coherent loss
+lshunter_dep_spread: 100              # m either side of a path
+# lshunter_dep_scour_window: 5        # m, window for coherent loss along a path
+# lshunter_dep_scour_fraction: 0.5    # share of the window at S <= lshunter_threshold2
 lshunter_executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x64\release
 
 # ---- LSstats ----------------------------------------------------------------------------------------

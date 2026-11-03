@@ -11,7 +11,7 @@ This repo chains three pipelines and a report:
 |---|---|---|
 | 1. Align (and its inputs) | `R/run_align_pipeline.R` -> `R/align_supervisor.R` | aligned DTM, DoD (`outDif`, `<outDif>_0`), outlier raster, exceedance raster, LoD rasters (`<outLod>`, `_gain`, `_centre`, `_iqr`), centred difference, gradient raster `<ref DTM>_grad<radius>m`, `<outbins>_*.csv`, `align_run\*.csv` |
 | 2. RIL (independent of 1) | `R/ril_pipeline.R` | landform raster (codes 1-10 as LSstats names them: Floodplain, Bedrock_Hollow, Inner_Gorge, Steep_/Convergent, Divergent, Planar, Other) |
-| 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv` |
+| 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv`; with `lshunter_deposits: TRUE`, also `ang_<ref>` (bldgrds), `corridor_<tag>`, `patch_<tag>_deposits`/`_unlinked` rasters, `patch_<tag>_table_deposits.csv`/`_unlinked.csv`/`_balance.csv`, and the deposits in `patch_<tag>_polygons.shp` (field `type`: scar or deposit; a deposit's `scar` field links it) |
 | Report | `PipelineReport.qmd` (repo root, gitignored -- see section 6) | one self-contained html file |
 
 **Everything for a site goes in one site file** (`keyword: value` lines; template
@@ -79,7 +79,8 @@ quarto --version
   `align.exe` is caught a few seconds into the run -- the supervisor stops with "Align ... is
   older than this pipeline" and names what it didn't recognize. **LShunter**
   must be 1.1.0 or later (LandslideUtilities `master`, e37b98c or later; its log's first lines show
-  the version), and so must **LSstats** (patch volumes; earlier versions crash on a raster path
+  the version), and 1.4.0 or later with `lshunter_deposits: TRUE` (LandslideUtilities branch
+  `deposits` until merged), and so must **LSstats** (patch volumes; earlier versions crash on a raster path
   containing "DoD"). The fix for any of them is to rebuild in Visual Studio. Tell the user; don't try to
   work around it.
 - **Memory**: Align holds whole DEMs in memory (about 48 GB on a 370 M-cell site). Run one site at
@@ -148,6 +149,12 @@ When the run finishes, read these (all in the run folder), then write `<report_d
   LoD bins and fits) and `_densityLodCorr.csv` (noise correlogram, SDz);
 - LShunter's patch table `patch_<tag>_table.csv` and `_null.csv`, and its log in
   `<report_dir>\logs\` (candidate counts, sign-flip and simulated false-discovery counts);
+- with deposits, `patch_<tag>_table_deposits.csv` (each deposit's scar, volume ± SD, travel
+  distance beyond the last coherent loss, drop, reach angle, channel and valley-floor shares),
+  `_unlinked.csv` (gain patches with no scar above them: many of these means the gain thresholds
+  are low, or gains are vegetation or fill), and `_balance.csv` (per scar: its volume, its
+  deposits' volume, the net with SD from the correlated noise, the deposit/scar ratio, and the
+  scar its runout enters);
 - the LSstats csv files `lsstats_<tag>_<i>.csv` (with each polygon's Volume, SD_Volume and
   Z_Volume) and `_landforms_<i>.csv`;
 - the noise reference in `strip_noise\` (unless `noise_run: FALSE`): each survey's

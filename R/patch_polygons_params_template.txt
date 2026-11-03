@@ -8,3 +8,7 @@ patch_table: c:\work\data\site1\run_17_23\patch_2017_2023_table.csv # LShunter o
 lsstats_csv: c:\work\data\site1\run_17_23\lsstats_2017_2023         # LSstats out_csv base; NOFILE: no landform or raster summaries
 out_shp: c:\work\data\site1\run_17_23\patch_2017_2023_polygons.shp  # also writes <out_shp>_fields.csv;
 # not the patch raster's own name: the shapefile's .prj would replace the raster's
+# Optional (LShunter DEPOSITS): the deposits join the scars in the same shapefile (type "deposit",
+# with the label of their scar). run_site.R sets these when lshunter_deposits is TRUE.
+deposit_raster: NOFILE   # e.g. c:\work\data\site1\run_17_23\patch_2017_2023_deposits
+deposit_table: NOFILE    # e.g. c:\work\data\site1\run_17_23\patch_2017_2023_table_deposits.csv

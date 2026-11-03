@@ -152,6 +152,7 @@ ls_cfg <- read_keyword_file(cfg$lshunter_lsstats_config)
 lshunter_p <- read_keyword_file(ls_cfg$lshunter_params)
 lsstats_p  <- read_keyword_file(ls_cfg$lsstats_params)
 patch_shp  <- if (is_set(ls_cfg$polygons_params)) read_keyword_file(ls_cfg$polygons_params)$out_shp else "NOFILE"
+deposits_on <- !is_set(lshunter_p$input_file) && is_set(lshunter_p$dep_flow_dir)
 # LShunter's inputs that Align writes: the raster it hunts on (exceedance or outlier), the
 # gradient, and the optional patch-table inputs. In mode 1 they come from its input file.
 if (is_set(lshunter_p$input_file)) {
@@ -177,6 +178,11 @@ if (is_set(lshunter_p$input_file)) {
   ls_seed_align <- lshunter_p$seed_den_align
   ls_table      <- lshunter_p$out_table
   ls_patch      <- lshunter_p$out_patch
+}
+# A deposit table beside LShunter's patch table: <out_table>_deposits.csv etc.
+dep_file <- function(suffix) {
+  if (!deposits_on || !is_set(ls_table)) return("NOFILE")
+  paste0(sub("\\.csv$", "", ls_table, ignore.case = TRUE), suffix)
 }
 if (is_set(lsstats_p$input_file)) {
   landform_raster <- read_fortran_keyword(lsstats_p$input_file, "LANDFORM RASTER")
@@ -348,6 +354,14 @@ manifest <- list(
   lshunter_input     = flt_path(ls_input),
   lshunter_table     = if (is_set(ls_table)) paste0(sub("\\.csv$", "", ls_table, ignore.case = TRUE), ".csv") else "NOFILE",
   patch_polygons     = if (is_set(patch_shp)) paste0(sub("\\.shp$", "", patch_shp, ignore.case = TRUE), ".shp") else "NOFILE",
+  # Deposits (LShunter 1.4.0, mode 2 parameters): tables beside the patch table, rasters beside
+  # the patch raster and the corridor raster (the deposit polygons are in patch_polygons)
+  deposit_table      = dep_file("_deposits.csv"),
+  unlinked_table     = dep_file("_unlinked.csv"),
+  balance_table      = dep_file("_balance.csv"),
+  deposit_raster     = if (deposits_on) flt_path(if (is_set(lshunter_p$out_deposits)) lshunter_p$out_deposits else
+                         paste0(sub("\\.flt$", "", ls_patch, ignore.case = TRUE), "_deposits")) else "NOFILE",
+  corridor_raster    = if (deposits_on && is_set(lshunter_p$out_corridor)) flt_path(lshunter_p$out_corridor) else "NOFILE",
   landform_raster    = flt_path(landform_raster),
   lsstats_csv        = sub("\\.csv$", "", lsstats_csv, ignore.case = TRUE),
   lsstats_rasters    = paste(lsstats_rasters, collapse = "; "),

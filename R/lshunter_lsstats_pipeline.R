@@ -50,6 +50,11 @@
 ##                     as a polygon shapefile with each patch's table row, shape and LSstats
 ##                     summaries; its patch_raster must be LShunter's output patch raster.
 ##                     patch_polygons.R skips itself when its shapefile is newer than its inputs.
+##                     With LShunter's DEPOSITS, its deposit_raster (if set) must be LShunter's
+##                     deposit raster: the deposits join the scars in the same shapefile.
+##
+## With DEPOSITS in LShunter's parameters (dep_flow_dir, or a DEPOSITS: line in a mode-1 input
+## file), LShunter counts as done only once its balance table (<out_table>_balance.csv) exists.
 
 library(TWutils)
 
@@ -276,6 +281,31 @@ if (!is.null(polygons_params_path)) {
 
 out_patch_flt <- paste0(sub("\\.flt$", "", out_patch, ignore.case = TRUE), ".flt")
 out_csv_base  <- sub("\\.csv$", "", out_csv, ignore.case = TRUE)
+
+# Deposits (LShunter 1.4.0): LShunter is done once its balance table exists, and the deposit
+# polygons are made from its deposit raster (DEPOSITS OUTPUT, default <out_patch>_deposits).
+if (is_mode1(lshunter_params)) {
+  dep_line <- grep("^\\s*DEPOSITS\\s*:", readLines(lshunter_input_file, warn = FALSE),
+                   value = TRUE, ignore.case = TRUE)
+  deposits_on <- length(dep_line) > 0
+  dep_out <- if (deposits_on) regmatches(dep_line[1], regexec("OUTPUT\\s*=\\s*([^,#]+)", dep_line[1],
+                                                               ignore.case = TRUE))[[1]][2] else NA
+  lsh_table <- if (deposits_on) read_single_keyword(lshunter_input_file, "OUTPUT PATCH TABLE") else "NOFILE"
+} else {
+  deposits_on <- !is_nofile_text(lshunter_params[["dep_flow_dir"]])
+  dep_out <- if (is_nofile_text(lshunter_params[["out_deposits"]])) NA else lshunter_params[["out_deposits"]]
+  lsh_table <- if (is.null(lshunter_params[["out_table"]])) "NOFILE" else lshunter_params[["out_table"]]
+}
+dep_raster <- if (!deposits_on) NULL else if (is.na(dep_out)) paste0(sub("\\.flt$", "", out_patch, ignore.case = TRUE), "_deposits") else trimws(dep_out)
+balance_csv <- if (deposits_on) paste0(sub("\\.csv$", "", lsh_table, ignore.case = TRUE), "_balance.csv") else NULL
+if (!is.null(polygons_params_path)) {
+  dp_raster <- read_config(polygons_params_path)[["deposit_raster"]]
+  if (!is_nofile_text(dp_raster) && (!deposits_on || raster_key(dp_raster) != raster_key(dep_raster))) {
+    stop("patch_polygons.R's deposit_raster is not LShunter's deposit raster:\n",
+         "  patch_polygons deposit_raster: ", dp_raster, "\n  LShunter deposit raster:       ",
+         if (deposits_on) dep_raster else "(LShunter has no DEPOSITS)")
+  }
+}
 last_csv      <- paste0(out_csv_base, "_landforms_", num_rasters, ".csv")
 
 ## ---- Run one stage as its own Rscript subprocess ----------------------------------------------
@@ -297,12 +327,15 @@ run_stage <- function(label, script_path, param_path) {
 
 message("Patch raster linking LShunter -> LSstats: ", out_patch_flt)
 
-if (file.exists(out_patch_flt)) {
+if (file.exists(out_patch_flt) && (is.null(balance_csv) || file.exists(balance_csv))) {
   message("Patch raster already exists (", out_patch_flt, ") -- skipping LShunter.")
 } else {
   run_stage("LShunter", lshunter_script, lshunter_params_path)
   if (!file.exists(out_patch_flt)) {
     stop("LShunter finished but its patch raster was not written: ", out_patch_flt)
+  }
+  if (!is.null(balance_csv) && !file.exists(balance_csv)) {
+    stop("LShunter finished but its deposit balance table was not written: ", balance_csv)
   }
 }
 
