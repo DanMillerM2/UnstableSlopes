@@ -343,6 +343,7 @@ the removed `Quantiles.qmd` (see the document map) used `library(TerrainWorksUti
   is in this repo's R code.
 - The Align work here and in `..\GridUtilities` is the same alignment work seen from opposite ends
   of the pipeline (this repo drives `TWutils::align()`; GridUtilities holds the `align`/`alignSlope2`
-  Fortran source, developed on feature branches such as `align_clean` rather than `master`) — when
+  Fortran source; Align 1.1.0 was developed on `align_clean` and merged into `master`, tag
+  `align-1.1.0`, but new work may again be on a feature branch) — when
   editing `Coregistration.qmd` or `R/align_dtms.R`/`R/run_align_pipeline.R`/`R/align_supervisor.R`,
   check which branch of `GridUtilities` is actually checked out rather than assuming `master`.

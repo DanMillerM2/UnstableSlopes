@@ -76,7 +76,7 @@ or executable it can't find.
    |---|---|---|
    | UnstableSlopes (`DanMillerM2`) | `main` | the R scripts, the skill, this guide |
    | TWutils (`DanMillerM2`) | `main` (c2290a4 or later) | the R package that writes the programs' input files |
-   | GridUtilities (`teal-waters`) | `align_clean` (ab662ea or later) | Align, bldgrds |
+   | GridUtilities (`teal-waters`) | `master` (ab662ea or later) | Align, bldgrds |
    | LandslideUtilities (`DanMillerM2`) | `master` (2e777af or later) | LShunter, LSstats |
    | ChannelUtilities (`teal-waters`) | `master` | ValleyFloor, RIL |
    | modules (`teal-waters`) | `master` | Fortran modules shared by all of the above |

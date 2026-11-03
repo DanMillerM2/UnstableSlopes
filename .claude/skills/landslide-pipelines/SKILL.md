@@ -73,7 +73,7 @@ quarto --version
 - If `quarto` isn't found, the report can't render. RStudio has a copy that isn't on the PATH
   (`C:\Program Files\RStudio\resources\app\bin\quarto\bin`); ask the user to add it to the PATH
   (or install Quarto), or set `render_report: FALSE` in the site file until then.
-- **Align** must be built from GridUtilities `align_clean` 8a08fa6 or later (`Projects\align`,
+- **Align** must be built from GridUtilities `master`, 8a08fa6 or later (`Projects\align`,
   Release|x64); the options `align_matchSmoothness`, `align_suspectGround` and
   `align_exceedanceTrim` need 2083edb, 78b4911 and ab662ea or later respectively. An older
   `align.exe` is caught a few seconds into the run -- the supervisor stops with "Align ... is
