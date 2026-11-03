@@ -78,7 +78,7 @@ quarto --version
   `align_exceedanceTrim` need 2083edb, 78b4911 and ab662ea or later respectively. An older
   `align.exe` is caught a few seconds into the run -- the supervisor stops with "Align ... is
   older than this pipeline" and names what it didn't recognize. **LShunter**
-  must be 1.1.0 or later (LandslideUtilities `LShunter_update` e37b98c; its log's first lines show
+  must be 1.1.0 or later (LandslideUtilities `master`, e37b98c or later; its log's first lines show
   the version), and so must **LSstats** (patch volumes; earlier versions crash on a raster path
   containing "DoD"). The fix for any of them is to rebuild in Visual Studio. Tell the user; don't try to
   work around it.
