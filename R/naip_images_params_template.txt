@@ -1,0 +1,19 @@
+# naip_images.R parameters: NAIP aerial photos of each candidate landslide (p<label>_naip.jpg).
+# run_site.R writes this file (configs\naip_images_params.txt) when the site file sets naip_run: TRUE.
+#
+#   Rscript R/naip_images.R path/to/this_file.txt
+#
+# Imagery is read over the network from Microsoft Planetary Computer, ~5-10 s per patch per worker.
+
+patch_shp: c:\work\data\site1\run_17_23\patch_2017_2023_polygons.shp   # patch_polygons.R's out_shp
+out_dir: c:\work\data\site1\run_17_23\naip                           # images, naip_images.csv, naip_items.csv
+years: auto                 # auto, or NAIP years, e.g. 2017, 2023
+survey_years: 2017, 2023    # lidar survey years, for years: auto (latest NAIP in or before each)
+labels: ALL                 # ALL, patch labels (12, 40, 311), or a text file of labels
+# near_min_half_m: 45       # close-up: at least this half-width, else 0.75 x the patch's larger side + 20 m
+# wide_m: 350               # width of the wide view
+# panel_px: 280             # each panel's size in pixels
+# n_workers: 4              # patches read in parallel
+# stac_url: https://planetarycomputer.microsoft.com/api/stac/v1
+# collection: naip
+# token_url: https://planetarycomputer.microsoft.com/api/sas/v1/token/naip

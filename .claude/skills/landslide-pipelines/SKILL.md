@@ -11,7 +11,7 @@ This repo chains three pipelines and a report:
 |---|---|---|
 | 1. Align (and its inputs) | `R/run_align_pipeline.R` -> `R/align_supervisor.R` | aligned DTM, DoD (`outDif`, `<outDif>_0`), outlier raster, exceedance raster, LoD rasters (`<outLod>`, `_gain`, `_centre`, `_iqr`), centred difference, gradient raster `<ref DTM>_grad<radius>m`, `<outbins>_*.csv`, `align_run\*.csv` |
 | 2. RIL (independent of 1) | `R/ril_pipeline.R` | landform raster (codes 1-10 as LSstats names them: Floodplain, Bedrock_Hollow, Inner_Gorge, Steep_/Convergent, Divergent, Planar, Other) |
-| 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv` |
+| 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv`; optionally (`R/naip_images.R`, `naip_run: TRUE`) `naip\p<label>_naip.jpg` |
 | Report | `PipelineReport.qmd` (repo root, gitignored -- see section 6) | one self-contained html file |
 
 **Everything for a site goes in one site file** (`keyword: value` lines; template
@@ -182,7 +182,19 @@ includes the narrative.
 Give the user the report path (`<report_dir>\<study_name>_report.html`). It is self-contained
 and can be emailed as is; offer to publish it as a private claude.ai page if they want a link.
 Also give the patch polygons (`<run folder>\patch_<tag>_polygons.shp`, fields described in its
-`_fields.csv`) for use in a GIS.
+`_fields.csv`) for use in a GIS. With `naip_run: TRUE` in the site file (off by default; hours for
+a whole site, read over the network), `R/naip_images.R` also writes NAIP aerial photos of each
+patch to `<run folder>\naip\p<label>_naip.jpg` (index `naip_images.csv`); to review a sample
+instead, run it on its own with `labels:` set to those patches. A NAIP failure doesn't stop the
+pipeline; rerunning retries the patches without an image.
+
+To have the candidates reviewed by eye, offer `R/scar_review.R` (template
+`R/scar_review_params_template.txt`; `run_dir` is the run folder, NAIP optional with `naip: TRUE`).
+Publish its `out_dir` as a private claude.ai artifact: `index.html` as the page, `patches.json`
+and every `img/*.jpg` as files, with capabilities `{"db": {}, "user": {}}` (load the
+artifact-capabilities skill first). Labels are in the artifact's `labels` collection; weight each
+stratum's verdicts by `population` in patches.json to estimate rates for the whole run. A rebuilt
+sample republished to the same artifact keeps its labels only if the sample is unchanged.
 
 ## 6. If PipelineReport.qmd is missing
 

@@ -144,3 +144,16 @@ lsstats_executable_dir: c:\work\sandbox\landslideutilities\projects\LSstats\x64\
 # noise_max_tiles: 60
 # noise_res_m: 1.0                # per-pass TIN grid (m)
 # noise_n_workers: 8
+
+# ---- NAIP aerial photos of each patch: naip_images.R, prefixed naip_ ----------------------------
+# After the patch polygons, one jpg per patch in <run folder>\naip\ (p<label>_naip.jpg): for each
+# NAIP year a close-up and a wide view, the patch outlined. Leaf-on photos show canopy, not the
+# ground under it: most useful where the canopy opened (harvest, roads, fresh soil, debris tracks).
+# Read over the network from Microsoft Planetary Computer, ~5-10 s per patch per worker, so a whole
+# site takes hours; existing images are skipped. Off unless naip_run: TRUE.
+# naip_run: FALSE
+# naip_years: auto                # auto: latest NAIP in or before each survey year; or e.g. 2017, 2023
+# naip_survey_years: 2017, 2023   # default: ref_label, align_label when they're years
+# naip_labels: ALL                # ALL, patch labels (12, 40), or a text file of labels
+# naip_wide_m: 350
+# naip_n_workers: 4

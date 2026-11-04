@@ -25,6 +25,7 @@ results:
 | 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files, and the patches as a polygon shapefile |
 | 4. Strip noise (runs alongside 3) | `R/strip_noise.R`, as Stage 4 of `R/run_align_pipeline.R` | each survey's noise between its own flight passes: strip offsets and a noise floor by canopy, slope and ground density |
 | Report | `PipelineReport.qmd` | one self-contained html file |
+| Review (optional, afterwards) | `R/scar_review.R`, `R/naip_images.R` | a labelling page for a stratified sample of the candidates, with lidar panels and optional NAIP aerial photos |
 
 Step 4 is a check on the surveys, not an input to the results. It measures each survey's noise
 where two of its flight passes overlap (no real change between passes flown minutes apart). The
@@ -97,8 +98,8 @@ or executable it can't find.
    `LShunter` (1.1.0 or later) and `LSstats` (1.1.0 or later). Build from the pulled source, so
    each executable matches a commit.
 4. **Install the R packages**: TWutils (`R CMD INSTALL TWutils` from the `repos` folder, on
-   `main`), plus `terra`, `sf`, `lasR`, `lidR`, `future`, `future.apply`, `processx`, `ggplot2`
-   and `knitr`. An older TWutils stops Align at the start with "The installed TWutils is older
+   `main`), plus `terra`, `sf`, `lasR`, `lidR`, `future`, `future.apply`, `processx`, `ggplot2`,
+   `knitr` and `jsonlite`. An older TWutils stops Align at the start with "The installed TWutils is older
    than this pipeline", naming what's missing.
 5. **Put Quarto on the PATH**, so that `quarto --version` works in a new terminal. RStudio has a
    copy that isn't on the PATH (`C:\Program Files\RStudio\resources\app\bin\quarto\bin`); either
@@ -178,6 +179,114 @@ attribute table holds everything known about each patch:
 Shapefile field names are limited to 10 characters, so `<...>_polygons_fields.csv` beside it
 gives each field's source, units and meaning. Missing values (-9999) are null. The shapefile is
 rewritten whenever the patch raster, patch table or LSstats files are newer.
+
+## Reviewing the candidates
+
+LShunter's patches are candidates: some are landslide scars, others are real change of another
+kind (harvest, roads, channel erosion) or artifacts (vegetation classified as ground, gaps in
+ground returns, misalignment). `R/scar_review.R` builds a web page for judging a sample of them by
+eye. Its labels give the share of candidates that are scars, and are the ground truth for finding
+which patch attributes separate scars from the rest.
+
+### What the page shows
+
+One candidate at a time, in shuffled order:
+
+- **Eight lidar panels**: both surveys' hillshades (the newer one after Align), the elevation
+  change from -1 to +1 m, a 700 m context hillshade, both surveys' canopy height, and both surveys'
+  ground returns per m². The candidate is outlined in magenta, other candidates in dashed yellow.
+- **NAIP aerial photos** (optional): for each NAIP year, a close-up and a 350 m view, with the
+  flight date in each title. NAIP is flown with leaves on at 0.6-1 m, so it shows the canopy, not
+  the ground under it. It helps most where the canopy opened or was never closed: harvest units,
+  roads, fresh bare soil, debris tracks. Change after the latest flight doesn't show; Washington's
+  latest NAIP is 2023, so a 2025 survey is compared with 2023 photos.
+- **A verdict**: landslide scar, other real change, artifact, or can't tell (keys 1-4). For a
+  scar, how well the outline fits (matches, too large, too small, part of a bigger scar, several
+  merged, includes the deposit). For other change or an artifact, why (vegetation as ground,
+  ground-return gap, canopy change, misalignment, DTM seam, water, road, channel, logging, tree
+  throw, deposit, other). A note box for anything else.
+- **Patch statistics**, hidden until opened (key S) so they don't steer the verdict, with a link
+  to a satellite view.
+
+Each reviewer's labels are kept separately, so several people can review the same sample; the
+queue at the bottom shows how many others have labelled each candidate.
+
+### The sample
+
+The sample is stratified, so that rare kinds of candidate are seen often enough to judge. Each
+patch goes into one level of each **factor**; the strata are the combinations of levels, and
+`per_stratum` patches are drawn at random from each (all of them where there are fewer). A factor
+is a line of `level = condition` pairs, in terms of the patch shapefile's fields (listed in
+`<...>_polygons_fields.csv`). The first true condition wins, `otherwise` takes the rest, and a
+missing value counts as false. Without any factor lines the sample uses these two, six strata in
+all:
+
+```
+factor_fdr: sig = sim_fdr <= 0.05; nonsig = otherwise
+factor_canopy: loss = canopy_chg < -10; growth = canopy_chg > 5; mid = otherwise
+```
+
+That is, null-simulation false-discovery rate at most 5% or not, crossed with canopy height
+falling by more than 10 m, growing by more than 5 m, or neither. A `filter` line restricts the
+sample to patches meeting a condition (for example `filter: area_m2 >= 50`). The same shapefile,
+factors and seed always give the same sample, so a page rebuilt later keeps its labels.
+
+### Building and publishing the page
+
+1. Copy `R/scar_review_params_template.txt` and set at least the run folder and an output folder:
+
+   ```
+   run_dir: C:\Work\Data\Site2\run_2017_2025_gap2
+   out_dir: C:\Work\Data\Site2\run_2017_2025_gap2\scar_review
+   title: Site 2 scar review
+   per_stratum: 40
+   naip: TRUE
+   ```
+
+   Everything else is found from the run folder's configuration files: the patch shapefile and
+   raster, the elevation change, both surveys' DTMs, DSMs and ground-return counts, the aligned
+   DTM and the survey years. Each can also be given directly (see the template).
+
+2. Run it:
+
+   ```
+   Rscript R/scar_review.R C:\Work\Data\Site2\scar_review_params.txt
+   ```
+
+   The lidar panels take under a second per patch. NAIP photos are read over the network from
+   Microsoft Planetary Computer (no account needed), 5-10 seconds per patch per worker, so 240
+   patches take 10-20 minutes. Finished images are kept on a rerun, and a patch whose photos
+   failed to download gets none; rerunning retries it, and meanwhile the page simply leaves the
+   NAIP row out for that patch. With `naip: FALSE` (the default) the page has no NAIP row.
+
+3. Ask Claude to publish it:
+
+   > Publish the scar review in `C:\Work\Data\Site2\run_2017_2025_gap2\scar_review`.
+
+   The page saves labels only as a private claude.ai page that keeps a database of what reviewers
+   enter; opened from disk it shows the images but can't save. Claude publishes it and gives you
+   the link. It is private until you share it from the page's Share menu; each reviewer needs a
+   claude.ai account and edit access to save labels.
+
+### Using the labels
+
+Ask Claude to read the labels, for example:
+
+> Read the Site 2 scar review labels and estimate the share of candidates that are scars.
+
+Because the strata were sampled at different rates, each stratum's verdicts are weighted by its
+number of patches in the whole run (`population` in `patches.json`) to estimate rates for all
+candidates. The labels can then be compared with patch attributes -- canopy change, ground-return
+coverage in each survey, landform, size and shape, false-discovery rates -- to find thresholds
+that would drop artifacts without losing scars.
+
+### NAIP photos for every patch
+
+`R/naip_images.R` also runs on its own, for any patches in a patch shapefile (template
+`R/naip_images_params_template.txt`; `labels: ALL` or a list), writing `p<label>_naip.jpg` into
+any folder. In a site file, `naip_run: TRUE` makes the pipeline run it for every candidate after
+the patch polygons, into `<run folder>\naip\`. That takes hours for a large site, so it is off by
+default; a failure there is reported but doesn't stop the run.
 
 ## Afterwards
 

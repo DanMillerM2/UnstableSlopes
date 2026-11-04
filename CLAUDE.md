@@ -235,6 +235,31 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   source column, units and meaning. Rewritten when older than any input. It refuses an `out_shp`
   sharing a stem with another file's `.prj`: `patch_x.shp` beside `patch_x.flt` would replace the
   raster's `.prj`.
+- **naip_images.R** — NAIP aerial photos of each patch in patch_polygons.R's shapefile
+  (`p<label>_naip.jpg` in `out_dir`: per NAIP year a close-up, framed like the scar-review images,
+  and a `wide_m` view; `naip_images.csv` index with flight dates and status), read window by window
+  from Microsoft Planetary Computer's COGs (no account; it searches the STAC catalog itself).
+  `years: auto` takes the latest NAIP in or before each of `survey_years`. Planetary Computer SAS
+  tokens last ~15 min and reads can come back truncated, so it refreshes tokens every 8 min and
+  retries each window; a patch that still fails gets no image (rerun retries it) and the script
+  exits 2. Images newer than the shapefile are skipped; `n_workers` patches run in parallel.
+  lshunter_lsstats_pipeline.R runs it after the polygons when given `naip_params` (a failure only
+  warns); run_site.R writes that config only with `naip_run: TRUE` (`naip_` keywords; off by
+  default, ~5-10 s per patch per worker). Washington has no 2025 NAIP yet (2023 is the latest).
+- **scar_review.R** — a labelling page for one run (`out_dir`: `index.html` from
+  **scar_review_page.html** with `{{TITLE}}` filled in, `patches.json`, `img/p<label>.jpg`): a
+  stratified random sample of patch_polygons.R's patches (`factor_<name>: level = condition; ...;
+  level = otherwise`, R expressions over the shapefile's fields, first true wins, NA = false;
+  strata are the factors' combinations; `per_stratum`, `seed`, optional `filter`; default factors
+  sim_fdr <= 0.05 x canopy_chg < -10 / > 5, which reproduce the Site 2 sample), each drawn as 8
+  lidar panels (hillshades, centred difference, 700 m context, canopy height, ground returns/m2).
+  Inputs are read from `run_dir`'s configs (patch_polygons_params, lshunter_params,
+  align_pipeline) or given directly. `naip: TRUE` runs naip_images.R into `img/`; the page shows
+  the NAIP strip only for patches with `naip: true` in patches.json. The page saves labels only as
+  a claude.ai artifact with the `db` and `user` capabilities (collection `labels`, doc id
+  `p<label>__<uid>`: verdict, outline, reasons[], note, stratum); patches.json's `population`
+  weights a stratum's labels back to the whole run. Same shapefile, strata and seed give the same
+  sample, so a rebuilt page keeps its labels.
 - **bldgrds.R** — runs `TWutils::bldgrds()` (Fortran program bldgrds, see
   `..\GridUtilities\bldGrds2.f90`) to compute D-infinity flow direction and flow accumulation for a
   DEM and, unless `no_channels` is set, trace the channel network downstream into a node-list

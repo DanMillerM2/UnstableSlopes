@@ -50,6 +50,10 @@
 ##                     as a polygon shapefile with each patch's table row, shape and LSstats
 ##                     summaries; its patch_raster must be LShunter's output patch raster.
 ##                     patch_polygons.R skips itself when its shapefile is newer than its inputs.
+##   naip_params:      naip_images.R parameter file (optional, needs polygons_params): after the
+##                     polygons, NAIP aerial photos of each patch; its patch_shp must be
+##                     patch_polygons.R's out_shp. It reads imagery over the network and skips
+##                     patches that already have an image; a failure there is reported, not fatal.
 
 library(TWutils)
 
@@ -90,8 +94,9 @@ if (!file.exists(pipeline_config_path)) {
 lshunter_script <- file.path(get_script_dir(), "LShunter.R")
 lsstats_script  <- file.path(get_script_dir(), "LSstats.R")
 polygons_script <- file.path(get_script_dir(), "patch_polygons.R")
+naip_script     <- file.path(get_script_dir(), "naip_images.R")
 
-for (script_path in c(lshunter_script, lsstats_script, polygons_script)) {
+for (script_path in c(lshunter_script, lsstats_script, polygons_script, naip_script)) {
   if (!file.exists(script_path)) {
     stop("Cannot find ", basename(script_path), " next to this pipeline script (expected at ",
          script_path, ").")
@@ -125,7 +130,7 @@ read_config <- function(path) {
 }
 
 required_keys <- c("lshunter_params", "lsstats_params")
-optional_keys <- "polygons_params"
+optional_keys <- c("polygons_params", "naip_params")
 
 config <- read_config(pipeline_config_path)
 
@@ -137,6 +142,19 @@ if (length(unknown_keys) > 0) {
 polygons_params_path <- if (is_nofile_text(config[["polygons_params"]])) NULL else config[["polygons_params"]]
 if (!is.null(polygons_params_path) && !file.exists(polygons_params_path)) {
   stop("polygons_params not found: ", polygons_params_path)
+}
+naip_params_path <- if (is_nofile_text(config[["naip_params"]])) NULL else config[["naip_params"]]
+if (!is.null(naip_params_path)) {
+  if (!file.exists(naip_params_path)) stop("naip_params not found: ", naip_params_path)
+  if (is.null(polygons_params_path)) stop("naip_params needs polygons_params: NAIP images are drawn from the patch polygons.")
+  shp_key <- function(p) tolower(normalizePath(paste0(sub("\\.shp$", "", p, ignore.case = TRUE), ".shp"),
+                                               winslash = "/", mustWork = FALSE))
+  naip_shp <- read_config(naip_params_path)[["patch_shp"]]
+  poly_shp <- read_config(polygons_params_path)[["out_shp"]]
+  if (is_nofile_text(naip_shp) || shp_key(naip_shp) != shp_key(poly_shp)) {
+    stop("naip_images.R's patch_shp is not patch_polygons.R's out_shp:\n",
+         "  naip_images patch_shp:   ", naip_shp, "\n  patch_polygons out_shp: ", poly_shp)
+  }
 }
 
 for (key in required_keys) {
@@ -323,7 +341,20 @@ if (!is.null(polygons_params_path)) {
   if (status != 0) stop("patch_polygons.R failed (Rscript exit status ", status, "); parameters: ", polygons_params_path)
 }
 
+# NAIP imagery is a viewing aid read over the network: a failure is reported, not fatal
+naip_note <- NULL
+if (!is.null(naip_params_path)) {
+  message("\n==== NAIP images ====")
+  status <- system2("Rscript", args = shQuote(c(naip_script, naip_params_path)))
+  naip_dir <- read_config(naip_params_path)[["out_dir"]]
+  naip_note <- if (status == 0) paste0("\nNAIP images: ", naip_dir) else
+    paste0("\nNAIP images INCOMPLETE (naip_images.R exit status ", status, "; see ", file.path(naip_dir, "naip_images.csv"),
+           "); rerun the pipeline to retry the missing ones.")
+  if (status != 0) warning("naip_images.R failed or left patches without images (exit status ", status, ")")
+}
+
 message("\nPipeline complete. Patch raster: ", out_patch_flt,
         "\nLSstats csv files: ", out_csv_base, "_<i>.csv and ", out_csv_base,
         "_landforms_<i>.csv, i = 1..", num_rasters,
-        if (!is.null(polygons_params_path)) paste0("\nPatch polygons: ", read_config(polygons_params_path)[["out_shp"]]))
+        if (!is.null(polygons_params_path)) paste0("\nPatch polygons: ", read_config(polygons_params_path)[["out_shp"]]),
+        naip_note)

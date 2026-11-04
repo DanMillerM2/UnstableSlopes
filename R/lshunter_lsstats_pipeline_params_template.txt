@@ -23,3 +23,9 @@ lsstats_params: c:\work\data\postmortem\LSstats_params.txt
 # LSstats, the patch raster is written as a polygon shapefile with each patch's attributes; its
 # patch_raster must be LShunter's output patch raster.
 # polygons_params: c:\work\data\postmortem\patch_polygons_params.txt
+
+# Optional, needs polygons_params: naip_images.R's parameter file (see
+# naip_images_params_template.txt). After the polygons, NAIP aerial photos of each patch; its
+# patch_shp must be patch_polygons.R's out_shp. Read over the network (~5-10 s per patch per
+# worker); patches with an image are skipped, and a failure is reported but doesn't stop the pipeline.
+# naip_params: c:\work\data\postmortem\naip_images_params.txt

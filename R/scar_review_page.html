@@ -1,0 +1,404 @@
+<title>{{TITLE}}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a review bench. Figure on the left, verdict panel on the right, the queue as a strip of chips below. */
+:root {
+  --bg: #f3f4f1; --panel: #ffffff; --ink: #1d2320; --muted: #5d6762; --line: #d8ddd8; --chip: #e7eae5;
+  --accent: #23584f; --accent-ink: #ffffff; --focus: #2f7d70;
+  --scar: #a8432a; --change: #b7811c; --artifact: #4f6a86; --unsure: #8a8f8c;
+  --ok: #2e7d4f; --warn: #b5562b;
+  --sans: "Public Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #151917; --panel: #1d2220; --ink: #e6ebe7; --muted: #9ba59f; --line: #333b37; --chip: #2a312d;
+  --accent: #5fb3a3; --accent-ink: #0f1513; --focus: #7fd0bf;
+  --scar: #e0785c; --change: #e0b04f; --artifact: #8aa7c6; --unsure: #a3a8a5; --ok: #6cc290; --warn: #e48a5f; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #151917; --panel: #1d2220; --ink: #e6ebe7; --muted: #9ba59f; --line: #333b37; --chip: #2a312d;
+  --accent: #5fb3a3; --accent-ink: #0f1513; --focus: #7fd0bf;
+  --scar: #e0785c; --change: #e0b04f; --artifact: #8aa7c6; --unsure: #a3a8a5; --ok: #6cc290; --warn: #e48a5f; color-scheme: dark }
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--ink); font: 15px/1.5 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 14px 40px }
+.wrap { max-width: 1500px; margin: 0 auto; display: grid; gap: 14px }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px }
+h1 { font-size: 1.35rem; margin: 0; letter-spacing: -0.01em; text-wrap: balance }
+.sub { color: var(--muted); font-size: 0.88rem; margin: 0 }
+.bar { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; margin-left: auto }
+.progress { font: 500 0.85rem var(--mono); font-variant-numeric: tabular-nums; color: var(--muted) }
+.progress b { color: var(--ink) }
+select, button, textarea { font: inherit; color: inherit }
+select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px }
+.notice { border: 1px solid var(--warn); color: var(--ink); background: color-mix(in srgb, var(--warn) 10%, var(--panel));
+  padding: 8px 12px; border-radius: 6px; font-size: 0.9rem }
+.bench { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start }
+@media (max-width: 980px) { .bench { grid-template-columns: minmax(0, 1fr) } }
+figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px; min-width: 0 }
+.figimg { width: 100%; aspect-ratio: 1120 / 600; background: #fff; border-radius: 4px; display: block; object-fit: contain }
+.figimg.naip { aspect-ratio: 1120 / 300; margin-top: 8px }
+.figimg[hidden], .leg[hidden] { display: none }
+figcaption { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 8px; font-size: 0.78rem; color: var(--muted); align-items: center }
+.leg { display: flex; align-items: center; gap: 6px }
+.ramp { width: 90px; height: 10px; border-radius: 2px; border: 1px solid var(--line) }
+.sw { display: inline-block; width: 12px; height: 10px; border: 1px solid var(--line) }
+.line { display: inline-block; width: 18px; height: 0; border-top: 2px solid #ff00c8 }
+.line.dash { border-top: 2px dashed #e0b800 }
+aside { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px; display: grid; gap: 14px; min-width: 0 }
+.pid { display: flex; justify-content: space-between; align-items: baseline; gap: 8px }
+.pid h2 { margin: 0; font-size: 1.1rem; font-family: var(--mono); font-weight: 500 }
+.pid span { color: var(--muted); font-size: 0.82rem }
+.lbl { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; margin: 0 0 6px }
+.verdicts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+.v { border: 1.5px solid var(--line); background: var(--panel); border-radius: 7px; padding: 9px 10px; text-align: left; cursor: pointer;
+  display: grid; gap: 1px }
+.v strong { font-weight: 600; font-size: 0.93rem }
+.v small { color: var(--muted); font-size: 0.75rem; line-height: 1.3 }
+.v kbd { float: right; font: 0.7rem var(--mono); color: var(--muted) }
+.v:hover { border-color: var(--muted) }
+.v[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 14%, var(--panel)) }
+.v[aria-pressed="true"] strong { color: var(--c) }
+.chips { display: flex; flex-wrap: wrap; gap: 6px }
+.chip { border: 1px solid var(--line); background: var(--chip); border-radius: 999px; padding: 3px 10px; font-size: 0.8rem; cursor: pointer }
+.chip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent) }
+textarea { width: 100%; min-height: 64px; resize: vertical; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; font-size: 0.88rem }
+.nav { display: grid; grid-template-columns: 1fr 1fr; gap: 8px }
+.btn { border: 1px solid var(--line); background: var(--chip); border-radius: 7px; padding: 8px 10px; cursor: pointer; font-weight: 500 }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); grid-column: 1 / -1 }
+.btn:disabled { opacity: 0.45; cursor: default }
+.save { font-size: 0.8rem; color: var(--muted); min-height: 1.2em }
+.save.err { color: var(--warn) }
+.save.ok { color: var(--ok) }
+details summary { cursor: pointer; font-weight: 600; font-size: 0.88rem }
+dl.stats { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 10px 0 0; font-size: 0.82rem }
+dl.stats dt { color: var(--muted) }
+dl.stats dd { margin: 0; font-family: var(--mono); font-variant-numeric: tabular-nums; overflow-wrap: anywhere }
+.links { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.82rem; margin-top: 8px }
+a { color: var(--accent) }
+.queue { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; display: grid; gap: 10px }
+.qhead { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; font-size: 0.82rem; color: var(--muted) }
+.qhead .k { display: inline-flex; align-items: center; gap: 5px }
+.dot { width: 10px; height: 10px; border-radius: 2px; display: inline-block; background: var(--chip); border: 1px solid var(--line) }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 4px }
+.q { border: 1px solid var(--line); background: var(--chip); border-radius: 4px; padding: 3px 0; font: 0.7rem var(--mono); cursor: pointer;
+  font-variant-numeric: tabular-nums; position: relative }
+.q.cur { outline: 2px solid var(--ink); outline-offset: 1px }
+.q[data-v] { color: #fff; border-color: transparent }
+.q[data-v="scar"], .dot.scar { background: var(--scar) }
+.q[data-v="change"], .dot.change { background: var(--change) }
+.q[data-v="artifact"], .dot.artifact { background: var(--artifact) }
+.q[data-v="unsure"], .dot.unsure { background: var(--unsure) }
+.q .n { position: absolute; top: -5px; right: -4px; background: var(--ink); color: var(--bg); border-radius: 999px; font-size: 0.6rem; padding: 0 4px; line-height: 1.4 }
+.help { font-size: 0.8rem; color: var(--muted) }
+.help kbd { font: 0.75rem var(--mono); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; background: var(--chip); color: var(--ink) }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px }
+@media (prefers-reduced-motion: no-preference) { .v, .chip, .q { transition: background-color .12s, border-color .12s } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1 id="title">{{TITLE}}</h1>
+      <p class="sub" id="subtitle"></p>
+    </div>
+    <div class="bar">
+      <span class="progress" id="progress">Loading candidates…</span>
+      <label class="sub" for="filter">Show</label>
+      <select id="filter">
+        <option value="all">All candidates</option>
+        <option value="todo">Not yet labelled by me</option>
+        <option value="done">Labelled by me</option>
+      </select>
+    </div>
+  </header>
+
+  <div class="notice" id="notice" hidden></div>
+
+  <div class="bench">
+    <figure>
+      <img class="figimg" id="img" alt="Eight map panels for the current candidate">
+      <img class="figimg naip" id="naip" alt="" hidden>
+      <figcaption>
+        <span class="leg" id="naipLeg" hidden>Bottom row: NAIP aerial photos (leaf-on), close and wide; dates in each title. Change after the latest flight won't show.</span>
+        <span class="leg"><span class="line"></span>this candidate</span>
+        <span class="leg"><span class="line dash"></span>other loss candidates</span>
+        <span class="leg">loss<span class="ramp" style="background:linear-gradient(90deg,#8c1d18,#d7604d,#f4d6cc,#f7f7f7,#cfe0ee,#5e9ac7,#173f73)"></span>gain (±1 m)</span>
+        <span class="leg">canopy 0<span class="ramp" style="background:linear-gradient(90deg,#f3efe0,#c9d99a,#6fa457,#2f6b3a,#123b24)"></span>50 m</span>
+        <span class="leg">returns/m²
+          <span class="sw" style="background:#b2182b" title="none"></span>0
+          <span class="sw" style="background:#f1a340"></span>&lt;0.5
+          <span class="sw" style="background:#fee8a6"></span>&lt;1
+          <span class="sw" style="background:#c7e3c0"></span>&lt;3
+          <span class="sw" style="background:#4dac6b"></span>3+</span>
+      </figcaption>
+    </figure>
+
+    <aside>
+      <div class="pid"><h2 id="pid">–</h2><span id="pos"></span></div>
+
+      <div>
+        <p class="lbl">Verdict</p>
+        <div class="verdicts" id="verdicts">
+          <button class="v" style="--c:var(--scar)" data-v="scar" aria-pressed="false"><strong>Landslide scar <kbd>1</kbd></strong><small>Shallow landslide source area</small></button>
+          <button class="v" style="--c:var(--change)" data-v="change" aria-pressed="false"><strong>Other real change <kbd>2</kbd></strong><small>Ground changed, but not a landslide</small></button>
+          <button class="v" style="--c:var(--artifact)" data-v="artifact" aria-pressed="false"><strong>Artifact <kbd>3</kbd></strong><small>No real ground change</small></button>
+          <button class="v" style="--c:var(--unsure)" data-v="unsure" aria-pressed="false"><strong>Can't tell <kbd>4</kbd></strong><small>Need imagery or a field visit</small></button>
+        </div>
+      </div>
+
+      <div id="outlineBox" hidden>
+        <p class="lbl">Outline of the scar</p>
+        <div class="chips" data-field="outline" data-single="1">
+          <button class="chip" data-k="good">Matches</button>
+          <button class="chip" data-k="too_large">Too large</button>
+          <button class="chip" data-k="too_small">Too small</button>
+          <button class="chip" data-k="part">Part of a bigger scar</button>
+          <button class="chip" data-k="merged">Several scars merged</button>
+          <button class="chip" data-k="includes_runout">Includes deposit or runout</button>
+        </div>
+      </div>
+
+      <div id="reasonBox" hidden>
+        <p class="lbl">Why not a scar</p>
+        <div class="chips" data-field="reasons">
+          <button class="chip" data-k="vegetation">Vegetation as ground</button>
+          <button class="chip" data-k="return_gap">Ground-return gap</button>
+          <button class="chip" data-k="canopy_change">Canopy change</button>
+          <button class="chip" data-k="misalign">Misalignment</button>
+          <button class="chip" data-k="dtm_seam">DTM seam or edge</button>
+          <button class="chip" data-k="water">Water surface</button>
+          <button class="chip" data-k="road">Road or earthwork</button>
+          <button class="chip" data-k="channel">Channel or bank erosion</button>
+          <button class="chip" data-k="logging">Logging or slash</button>
+          <button class="chip" data-k="treethrow">Tree throw</button>
+          <button class="chip" data-k="deposit">Landslide deposit or runout</button>
+          <button class="chip" data-k="other">Other</button>
+        </div>
+      </div>
+
+      <div>
+        <label class="lbl" for="note" style="display:block">Note</label>
+        <textarea id="note" placeholder="Anything that would help explain this one"></textarea>
+      </div>
+
+      <div class="nav">
+        <button class="btn" id="prev">← Previous</button>
+        <button class="btn" id="next">Next →</button>
+        <button class="btn primary" id="nextTodo">Next unlabelled <span style="opacity:.75;font-weight:400">(N)</span></button>
+      </div>
+      <div class="save" id="save" role="status"></div>
+
+      <details id="statsBox">
+        <summary>Patch statistics <span class="help">(hidden by default so they don't steer the verdict)</span></summary>
+        <dl class="stats" id="stats"></dl>
+        <div class="links" id="links"></div>
+      </details>
+    </aside>
+  </div>
+
+  <section class="queue">
+    <div class="qhead">
+      <strong style="color:var(--ink)">Queue</strong>
+      <span class="k"><span class="dot scar"></span>scar</span>
+      <span class="k"><span class="dot change"></span>other change</span>
+      <span class="k"><span class="dot artifact"></span>artifact</span>
+      <span class="k"><span class="dot unsure"></span>can't tell</span>
+      <span class="k"><span class="dot"></span>not labelled by you</span>
+      <span class="k">number badge: other reviewers</span>
+    </div>
+    <div class="grid" id="grid"></div>
+    <p class="help">Keys: <kbd>1</kbd>–<kbd>4</kbd> verdict, <kbd>←</kbd> <kbd>→</kbd> previous / next, <kbd>N</kbd> next unlabelled, <kbd>S</kbd> statistics.
+      <span id="strataHelp"></span> Each reviewer&#39;s labels are kept separately.</p>
+  </section>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let P = [], meta = null, cur = 0;
+  let db = null, uid = null, canWrite = true;
+  const mine = new Map();          // patch id -> my label doc
+  const others = new Map();        // patch id -> number of other reviewers
+  const pending = new Map();       // doc id -> promise chain (one write at a time per doc)
+  let noteTimer = null;
+
+  const fmt = (v, d = 2) => (v === null || v === undefined || Number.isNaN(v)) ? "–" : Number(v).toFixed(d);
+  const pct = (v) => (v === null || v === undefined) ? "–" : Math.round(100 * v) + "%";
+  let RL = "ref", AL = "align";
+  const docId = (pid) => pid + "__" + uid;
+
+  function notice(text) { const n = $("notice"); n.textContent = text; n.hidden = !text; }
+  function saveMsg(text, cls) { const s = $("save"); s.textContent = text; s.className = "save" + (cls ? " " + cls : ""); }
+
+  function visible() {
+    const f = $("filter").value;
+    return P.map((p, i) => i).filter(i => f === "all" || (f === "todo") !== labelled(P[i].id));
+  }
+  const labelled = (pid) => !!(mine.get(pid) && mine.get(pid).verdict);
+
+  function renderProgress() {
+    const done = P.filter(p => labelled(p.id)).length;
+    const counts = { scar: 0, change: 0, artifact: 0, unsure: 0 };
+    for (const d of mine.values()) if (counts[d.verdict] !== undefined) counts[d.verdict]++;
+    $("progress").innerHTML = `<b>${done}</b> / ${P.length} labelled by you · ${counts.scar} scar · ${counts.change} other change · ${counts.artifact} artifact · ${counts.unsure} can't tell`;
+  }
+
+  function renderGrid() {
+    const g = $("grid"); const vis = new Set(visible());
+    g.textContent = "";
+    P.forEach((p, i) => {
+      if (!vis.has(i)) return;
+      const b = document.createElement("button");
+      b.className = "q" + (i === cur ? " cur" : ""); b.textContent = p.label; b.title = "Candidate " + p.label;
+      const d = mine.get(p.id); if (d && d.verdict) b.dataset.v = d.verdict;
+      const n = others.get(p.id); if (n) { const s = document.createElement("span"); s.className = "n"; s.textContent = n; b.appendChild(s); }
+      b.addEventListener("click", () => go(i));
+      g.appendChild(b);
+    });
+  }
+
+  function setChips(field, values) {
+    document.querySelectorAll(`.chips[data-field="${field}"] .chip`).forEach(c => c.setAttribute("aria-pressed", values.includes(c.dataset.k) ? "true" : "false"));
+  }
+
+  function renderPanel() {
+    const p = P[cur]; if (!p) return;
+    const d = mine.get(p.id) || {};
+    $("pid").textContent = "Candidate " + p.label;
+    $("pos").textContent = `${cur + 1} of ${P.length}`;
+    const img = $("img"); img.src = "img/" + p.id + ".jpg"; img.alt = "Map panels for candidate " + p.label;
+    // NAIP strip only for candidates that have an image; hidden again if it fails to load
+    const nimg = $("naip");
+    if (p.naip) { nimg.src = "img/" + p.id + "_naip.jpg"; nimg.alt = "NAIP aerial photos of candidate " + p.label; nimg.hidden = false; }
+    else { nimg.removeAttribute("src"); nimg.hidden = true; }
+    $("naipLeg").hidden = !p.naip;
+    document.querySelectorAll(".v").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === d.verdict ? "true" : "false"));
+    $("outlineBox").hidden = d.verdict !== "scar";
+    $("reasonBox").hidden = !(d.verdict === "change" || d.verdict === "artifact");
+    setChips("outline", d.outline ? [d.outline] : []);
+    setChips("reasons", d.reasons || []);
+    if (document.activeElement !== $("note")) $("note").value = d.note || "";
+    $("prev").disabled = cur === 0; $("next").disabled = cur === P.length - 1;
+    const rows = [
+      ["Area", fmt(p.area_m2, 1) + " m²"], ["Length × width", fmt(p.length_m, 0) + " × " + fmt(p.width_m, 0) + " m"],
+      ["Mean / max loss", fmt(p.mean_dz) + " / " + fmt(p.min_dz) + " m"], ["Volume", fmt(p.vol_m3, 1) + " ± " + fmt(p.sd_vol_m3, 1) + " m³"],
+      ["Mean gradient", fmt(p.grad_mean)], ["Landform", p.landform || "–"],
+      ["Null-sim FDR", fmt(p.sim_fdr, 3)], ["Sign-flip FDR", fmt(p.flip_fdr, 3)],
+      [`Canopy ${RL} / ${AL}`, fmt(p.canopy_ref, 1) + " / " + fmt(p.canopy_aln, 1) + " m"], ["Canopy change", fmt(p.canopy_chg, 1) + " m"],
+      [`Ground coverage ${RL} / ${AL}`, pct(p.cov_ref) + " / " + pct(p.cov_aln)],
+      ["Road flag", p.road_flag === null ? "–" : String(p.road_flag)], ["Distance to channel", p.dist_chan === null ? "–" : fmt(p.dist_chan, 0) + " m"],
+      ["Stratum", p.stratum], ["x, y (EPSG:2856)", fmt(p.x, 1) + ", " + fmt(p.y, 1)], ["Lat, lon", p.lat + ", " + p.lon]
+    ];
+    const dl = $("stats"); dl.textContent = "";
+    for (const [k, v] of rows) { const dt = document.createElement("dt"); dt.textContent = k; const dd = document.createElement("dd"); dd.textContent = v; dl.append(dt, dd); }
+    const L = $("links"); L.textContent = "";
+    const a = document.createElement("a"); a.href = `https://www.google.com/maps/@${p.lat},${p.lon},250m/data=!3m1!1e3`; a.target = "_blank"; a.rel = "noopener"; a.textContent = "Satellite view";
+    const c = document.createElement("a"); c.href = "#"; c.textContent = "Copy x, y";
+    c.addEventListener("click", (e) => { e.preventDefault(); const t = p.x + ", " + p.y;
+      navigator.clipboard.writeText(t).then(() => saveMsg("Copied " + t, "ok"), () => saveMsg("Copy failed. Coordinates: " + t, "err")); });
+    L.append(a, c);
+  }
+
+  function render() { renderProgress(); renderPanel(); renderGrid(); }
+  function go(i) { if (i < 0 || i >= P.length) return; flushNote(); cur = i; saveMsg(""); render(); }
+
+  function write(pid, patch) {
+    const p = P.find(x => x.id === pid);
+    const prev = mine.get(pid) || {};
+    const body = Object.assign({ patch: pid, label: p.label, stratum: p.stratum, uid, reasons: [], outline: null, note: "" }, prev, patch, { t: Date.now() });
+    mine.set(pid, body); render();
+    if (!db || !uid || !canWrite) { saveMsg("Not saved: this view can't store labels.", "err"); return; }
+    const id = docId(pid); saveMsg("Saving…");
+    const chain = (pending.get(id) || Promise.resolve()).then(() => db.collection("labels").doc(id).set(body))
+      .then(() => { if (pending.get(id) === chain) saveMsg("Saved", "ok"); })
+      .catch((e) => {
+        if (e && e.code === "invalid_argument") { canWrite = false; notice("You can view this page but not save labels. Ask the owner for Contributor access."); }
+        saveMsg("Not saved: " + (e && e.message ? e.message : "the store didn't answer") + ".", "err");
+      });
+    pending.set(id, chain);
+  }
+
+  function flushNote() {
+    if (!noteTimer) return; clearTimeout(noteTimer); noteTimer = null;
+    const p = P[cur]; const v = $("note").value; const d = mine.get(p.id);
+    if (d && d.note !== v) write(p.id, { note: v }); else if (!d && v.trim()) write(p.id, { note: v, verdict: null });
+  }
+
+  function setVerdict(v) {
+    const p = P[cur]; const d = mine.get(p.id) || {};
+    const patch = { verdict: v };
+    if (v !== "scar") patch.outline = null;
+    if (v === "scar" || v === "unsure") patch.reasons = [];
+    if (d.verdict === v) return;
+    write(p.id, patch);
+  }
+
+  document.querySelectorAll(".v").forEach(b => b.addEventListener("click", () => setVerdict(b.dataset.v)));
+  document.querySelectorAll(".chips").forEach(box => box.addEventListener("click", (e) => {
+    const c = e.target.closest(".chip"); if (!c) return;
+    const p = P[cur]; const d = mine.get(p.id); if (!d || !d.verdict) { saveMsg("Choose a verdict first.", "err"); return; }
+    const field = box.dataset.field;
+    if (box.dataset.single) write(p.id, { [field]: d[field] === c.dataset.k ? null : c.dataset.k });
+    else { const s = new Set(d[field] || []); s.has(c.dataset.k) ? s.delete(c.dataset.k) : s.add(c.dataset.k); write(p.id, { [field]: [...s] }); }
+  }));
+  $("note").addEventListener("input", () => { clearTimeout(noteTimer); noteTimer = setTimeout(flushNote, 800); });
+  $("note").addEventListener("blur", flushNote);
+  $("prev").addEventListener("click", () => go(cur - 1));
+  $("next").addEventListener("click", () => go(cur + 1));
+  function nextTodo() {
+    for (let k = 1; k <= P.length; k++) { const i = (cur + k) % P.length; if (!mine.has(P[i].id) || !mine.get(P[i].id).verdict) return go(i); }
+    saveMsg("Every candidate has your verdict.", "ok");
+  }
+  $("nextTodo").addEventListener("click", nextTodo);
+  $("filter").addEventListener("change", () => { try { localStorage.setItem("scar_filter", $("filter").value); } catch (e) {} renderGrid(); });
+  document.addEventListener("keydown", (e) => {
+    if (e.target.matches("textarea, input, select") || e.ctrlKey || e.metaKey || e.altKey) return;
+    const m = { "1": "scar", "2": "change", "3": "artifact", "4": "unsure" };
+    if (m[e.key]) { setVerdict(m[e.key]); e.preventDefault(); }
+    else if (e.key === "ArrowRight") { go(cur + 1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft") { go(cur - 1); e.preventDefault(); }
+    else if (e.key === "n" || e.key === "N") { nextTodo(); e.preventDefault(); }
+    else if (e.key === "s" || e.key === "S") { $("statsBox").open = !$("statsBox").open; e.preventDefault(); }
+  });
+
+  // Preload the next image so paging feels instant
+  const pre = new Image(), preN = new Image();
+  $("img").addEventListener("load", () => { const n = P[cur + 1]; if (n) { pre.src = "img/" + n.id + ".jpg"; if (n.naip) preN.src = "img/" + n.id + "_naip.jpg"; } });
+  $("naip").addEventListener("error", () => { $("naip").hidden = true; $("naipLeg").hidden = true; });
+
+  try { const f = localStorage.getItem("scar_filter"); if (f) $("filter").value = f; } catch (e) {}
+
+  fetch("patches.json").then(r => r.json()).then(j => {
+    meta = j; P = j.patches.slice().sort((a, b) => a.order - b.order);
+    RL = j.ref_label || RL; AL = j.align_label || AL;
+    if (j.subtitle) $("subtitle").textContent = j.subtitle;
+    const strata = (j.strata || []).join(" × ");
+    $("strataHelp").textContent = "Candidates are a stratified random sample" +
+      (j.filter ? ` of patches with ${j.filter}` : "") + `: up to ${j.per_stratum} from each combination of ` +
+      (strata || "the strata") + ", in shuffled order.";
+    render();
+    connect();
+  }).catch(() => { $("progress").textContent = "The candidate list didn't load. Reload the page."; });
+
+  async function connect() {
+    if (!window.claude || !window.claude.use) { notice("Labels can't be saved here. Open this page on claude.ai while signed in."); return; }
+    const [d, user] = await Promise.all([window.claude.use("db"), window.claude.use("user")]);
+    db = d; uid = user ? await user.id() : null;
+    if (user) { const cw = await user.can("data.write"); if (cw === false) canWrite = false; }
+    if (!db || !uid) { notice("Labels can't be saved in this view. Open the page on claude.ai while signed in."); return; }
+    if (!canWrite) notice("You can view this page but not save labels. Ask the owner for Contributor access.");
+    const timer = setTimeout(() => notice("Saved labels haven't loaded yet. New labels will still be saved when the connection returns."), 10000);
+    db.collection("labels").onSnapshot((snap) => {
+      if (!snap.metadata.fromCache) { clearTimeout(timer); if ($("notice").textContent.startsWith("Saved labels")) notice(""); }
+      others.clear();
+      for (const doc of snap.docs) {
+        const b = doc.data(); if (!b || !b.patch) continue;
+        if (b.uid === uid) { if (!pending.has(doc.id) || !mine.has(b.patch) || (mine.get(b.patch).t || 0) <= (b.t || 0)) mine.set(b.patch, b); }
+        else if (b.verdict) others.set(b.patch, (others.get(b.patch) || 0) + 1);
+      }
+      render();
+    }, (e) => { clearTimeout(timer); notice("Saved labels couldn't be loaded (" + e.code + "). Reload the page to try again."); });
+  }
+})();
+</script>

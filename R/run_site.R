@@ -11,6 +11,7 @@
 ##   lshunter_params.txt           LShunter.R
 ##   lsstats_params.txt            LSstats.R
 ##   patch_polygons_params.txt     patch_polygons.R (patch_<tag>_polygons.shp)
+##   naip_images_params.txt        naip_images.R (NAIP photos of each patch; only with naip_run: TRUE)
 ##   lshunter_lsstats_pipeline.txt lshunter_lsstats_pipeline.R
 ##   landslide_pipelines.txt       run_landslide_pipelines.R
 ##
@@ -110,10 +111,14 @@ noise_settings <- c("run", "method", "tile_fraction", "min_tiles", "max_tiles", 
                     "min_pair_cells", "canopy_breaks", "slope_breaks", "density_breaks",
                     "density_window_m", "bin_m", "range_m",
                     "slope_radius_m", "n_workers", "threads_per_worker")
+# naip_images.R (NAIP photos of each patch; off unless naip_run: TRUE). Every naip_<key> but run is its <key>.
+naip_settings <- c("run", "years", "survey_years", "labels", "out_dir", "near_min_half_m", "wide_m",
+                   "panel_px", "n_workers")
 
 known <- c(site_keys, paste0("ref_", survey_keys), paste0("align_", survey_keys),
            paste0("align_", align_settings), ril_keys, paste0("lshunter_", lshunter_settings),
-           paste0("lsstats_", lsstats_settings), paste0("noise_", noise_settings))
+           paste0("lsstats_", lsstats_settings), paste0("noise_", noise_settings),
+           paste0("naip_", naip_settings))
 unknown <- setdiff(names(s)[!startsWith(names(s), "ground_")], known)
 if (length(unknown)) {
   stop("Unrecognized keyword(s) in ", site_path, ": ", paste(unknown, collapse = ", "),
@@ -352,12 +357,31 @@ if (is_set(s$lsstats_distance_raster)) {
 }
 lss_params <- write_lines(kv(lss), "lsstats_params.txt", "LSstats.R parameters (mode 2)")
 
+out_shp <- in_run(paste0("patch_", tag, "_polygons.shp"))
 poly_params <- write_lines(kv(list(patch_raster = out_patch, patch_table = out_table, lsstats_csv = lss$out_csv,
-                                   out_shp = in_run(paste0("patch_", tag, "_polygons.shp")))),
+                                   out_shp = out_shp)),
                            "patch_polygons_params.txt", "patch_polygons.R parameters")
 
+naip_params <- NULL
+if (isTRUE(as.logical(get("naip_run", "FALSE")))) {
+  # survey years for years: auto -- the survey labels, when they are years
+  sy <- get("naip_survey_years")
+  if (is.null(sy) && all(grepl("^(19|20)[0-9]{2}$", c(s$ref_label, s$align_label)))) sy <- paste(s$ref_label, s$align_label, sep = ", ")
+  years <- get("naip_years", "auto")
+  if (tolower(years) == "auto" && is.null(sy)) {
+    stop("naip_run needs naip_survey_years (e.g. 2017, 2025) or naip_years, since the survey labels ",
+         s$ref_label, " and ", s$align_label, " aren't years.")
+  }
+  naip <- list(patch_shp = out_shp, out_dir = get("naip_out_dir", in_run("naip")), years = years, survey_years = sy)
+  for (k in setdiff(naip_settings, c("run", "years", "survey_years", "out_dir"))) {
+    v <- get(paste0("naip_", k))
+    if (!is.null(v)) naip[[k]] <- v
+  }
+  naip_params <- write_lines(kv(naip), "naip_images_params.txt", "naip_images.R parameters")
+}
+
 ls_cfg <- write_lines(kv(list(lshunter_params = lsh_params, lsstats_params = lss_params,
-                              polygons_params = poly_params)),
+                              polygons_params = poly_params, naip_params = naip_params)),
                       "lshunter_lsstats_pipeline.txt", "lshunter_lsstats_pipeline.R config")
 
 ## ---- 4. Driver --------------------------------------------------------------------------------------
@@ -374,7 +398,7 @@ driver_cfg <- write_lines(kv(list(
   "landslide_pipelines.txt", "run_landslide_pipelines.R config")
 
 message("Configs written to ", win(config_dir), ":\n  ",
-        paste(basename(c(align_cfg, ril_cfg, lsh_params, lss_params, poly_params, ls_cfg, driver_cfg)), collapse = "\n  "),
+        paste(basename(c(align_cfg, ril_cfg, lsh_params, lss_params, poly_params, naip_params, ls_cfg, driver_cfg)), collapse = "\n  "),
         "\nOutputs go to ", win(run_dir), " (tag ", tag, "); gradient raster ", gradient, ".")
 
 if (configs_only) quit(save = "no", status = 0)

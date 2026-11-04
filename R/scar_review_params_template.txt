@@ -1,0 +1,39 @@
+# scar_review.R parameters: a stratified sample of a run's candidate patches as a labelling page.
+#
+#   Rscript R/scar_review.R path/to/this_file.txt
+#
+# Then publish out_dir as a claude.ai artifact with the db and user capabilities (ask Claude Code:
+# the landslide-pipelines skill does it) to save labels; opened from disk the page can't save.
+# Rebuilding with the same shapefile, strata and seed gives the same sample, so labels carry over.
+
+run_dir: c:\work\data\site2\run_2017_2025_gap2     # a run_site.R run folder: inputs are read from its configs
+out_dir: c:\work\data\site2\run_2017_2025_gap2\scar_review
+# title: Site 2 scar review                        # default "Scar review, <ref>-<align>"
+# subtitle: Loss candidates from the 2017-2025 vendor-DTM run. Is each one a landslide scar?
+
+# ---- Sample -------------------------------------------------------------------------------------
+# Strata are the combinations of the factors' levels. Each factor_<name> is "level = condition; ...",
+# the first true condition wins, "otherwise" takes the rest; an NA condition counts as false.
+# Conditions are R expressions over patch_polygons.R's fields (see <patch shp>_fields.csv).
+# Without any factor_ lines: the two below.
+factor_fdr: sig = sim_fdr <= 0.05; nonsig = otherwise
+factor_canopy: loss = canopy_chg < -10; growth = canopy_chg > 5; mid = otherwise
+per_stratum: 40          # patches drawn from each stratum (all of them if fewer)
+seed: 2026
+# filter: mean_dz < 0    # only patches meeting this condition are sampled
+
+# ---- NAIP aerial photos (naip_images.R; read over the network, ~5-10 s per patch per worker) -----
+naip: FALSE              # TRUE adds a NAIP strip under each patch's lidar panels
+# naip_years: auto       # auto: latest NAIP in or before each survey year; or e.g. 2017, 2023
+# naip_survey_years: 2017, 2025   # default: the survey labels, when they're years
+# naip_n_workers: 4
+
+# ---- Inputs, if not from run_dir (each overrides the run folder's) -------------------------------
+# patch_shp:            patch_polygons.R's out_shp
+# patch_raster:         LShunter's out_patch
+# cendif:               Align's centred difference
+# ref_dtm, ref_dsm:     reference survey DTM and DSM
+# align_dtm, align_dsm: align survey's original DTM and its DSM
+# aligned_dtm:          Align's aligned DTM (outDTM)
+# ref_ground_count, align_ground_count: ground_returns.R's ground_count_ref_grid.flt
+# ref_label, align_label: survey labels, e.g. 2017 and 2025
