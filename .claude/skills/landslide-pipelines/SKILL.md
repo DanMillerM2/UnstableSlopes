@@ -79,8 +79,8 @@ quarto --version
   `align.exe` is caught a few seconds into the run -- the supervisor stops with "Align ... is
   older than this pipeline" and names what it didn't recognize. **LShunter**
   must be 1.1.0 or later (LandslideUtilities `master`, e37b98c or later; its log's first lines show
-  the version), and 1.4.0 or later with `lshunter_deposits: TRUE` (LandslideUtilities branch
-  `deposits` until merged), and so must **LSstats** (patch volumes; earlier versions crash on a raster path
+  the version), and 1.4.0 or later with `lshunter_deposits: TRUE` (LandslideUtilities `master`, tag
+  `lshunter-1.4.0`), and so must **LSstats** (patch volumes; earlier versions crash on a raster path
   containing "DoD"). The fix for any of them is to rebuild in Visual Studio. Tell the user; don't try to
   work around it.
 - **Memory**: Align holds whole DEMs in memory (about 48 GB on a 370 M-cell site). Run one site at

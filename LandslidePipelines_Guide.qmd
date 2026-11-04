@@ -243,7 +243,9 @@ queue at the bottom shows how many others have labelled each candidate.
 
 ### The sample
 
-The sample is stratified, so that rare kinds of candidate are seen often enough to judge. Each
+The sample is stratified, so that rare kinds of candidate are seen often enough to judge. Only scars are
+sampled: with deposits on, the patch shapefile also holds the deposits, which the page leaves out
+(as does `R/naip_images.R`). Each
 patch goes into one level of each **factor**; the strata are the combinations of levels, and
 `per_stratum` patches are drawn at random from each (all of them where there are fewer). A factor
 is a line of `level = condition` pairs, in terms of the patch shapefile's fields (listed in

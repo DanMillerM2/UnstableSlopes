@@ -89,7 +89,9 @@ Three further documents describe the `R/` pipeline rather than the method's theo
 
 The `R/` pipeline, these documents and the skill were developed on branch `align_pipeline`
 (Sep-Nov 2026, merged into `main` with `--no-ff`, tagged `align-pipeline-v1`; the branch itself has
-since been deleted — the tag's second parent, `align-pipeline-v1^2`, is its last commit). Its commit messages
+since been deleted — the tag's second parent, `align-pipeline-v1^2`, is its last commit). It was
+revived for the NAIP images and scar review page (a5cba7a, merged after LShunter 1.4.0's deposits,
+which were developed on branch `deposits`), then deleted again. Its commit messages
 name the matching Align/TWutils/LShunter versions (e.g. `(Align 2083edb, TWutils 9d80279)`); use
 `git log main^1..align-pipeline-v1 -- <file>` or `git log -S <keyword>` to trace why a script or
 keyword is the way it is.
@@ -277,7 +279,7 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   source column, units and meaning. Rewritten when older than any input. It refuses an `out_shp`
   sharing a stem with another file's `.prj`: `patch_x.shp` beside `patch_x.flt` would replace the
   raster's `.prj`.
-- **naip_images.R** — NAIP aerial photos of each patch in patch_polygons.R's shapefile
+- **naip_images.R** — NAIP aerial photos of each scar in patch_polygons.R's shapefile (deposits are left out: their labels can repeat the scars')
   (`p<label>_naip.jpg` in `out_dir`: per NAIP year a close-up, framed like the scar-review images,
   and a `wide_m` view; `naip_images.csv` index with flight dates and status), read window by window
   from Microsoft Planetary Computer's COGs (no account; it searches the STAC catalog itself).
@@ -290,7 +292,7 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   default, ~5-10 s per patch per worker). Washington has no 2025 NAIP yet (2023 is the latest).
 - **scar_review.R** — a labelling page for one run (`out_dir`: `index.html` from
   **scar_review_page.html** with `{{TITLE}}` filled in, `patches.json`, `img/p<label>.jpg`): a
-  stratified random sample of patch_polygons.R's patches (`factor_<name>: level = condition; ...;
+  stratified random sample of patch_polygons.R's scars (deposits left out) (`factor_<name>: level = condition; ...;
   level = otherwise`, R expressions over the shapefile's fields, first true wins, NA = false;
   strata are the factors' combinations; `per_stratum`, `seed`, optional `filter`; default factors
   sim_fdr <= 0.05 x canopy_chg < -10 / > 5, which reproduce the Site 2 sample), each drawn as 8

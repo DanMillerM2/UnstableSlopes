@@ -113,6 +113,10 @@ dir.create(img_dir, recursive = TRUE, showWarnings = FALSE)
 ## ---- Strata and sample -----------------------------------------------------------------------------
 poly <- st_read(inp$patch_shp, quiet = TRUE)
 if (!"label" %in% names(poly)) stop(inp$patch_shp, " has no 'label' field (expected patch_polygons.R's shapefile)")
+# With LShunter's DEPOSITS the shapefile also holds deposits (type "deposit"), whose labels can
+# repeat the scars' (each numbers its own raster) -- images and label ids use the label, so the
+# sample, its populations and the dashed neighbours are scars only
+if ("type" %in% names(poly)) poly <- poly[!is.na(poly$type) & poly$type == "scar", ]
 for (nm in names(poly)) if (is.numeric(poly[[nm]])) poly[[nm]][!is.na(poly[[nm]]) & poly[[nm]] <= -9998] <- NA
 dat <- st_drop_geometry(poly)
 cond <- function(expr, what) {

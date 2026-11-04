@@ -73,6 +73,9 @@ dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 ## ---- Patches -----------------------------------------------------------------------------------
 poly <- st_read(shp, quiet = TRUE)
 if (!"label" %in% names(poly)) stop(shp, " has no 'label' field (expected patch_polygons.R's shapefile)")
+# With LShunter's DEPOSITS the shapefile also holds deposits (type "deposit"), whose labels can
+# repeat the scars' (each numbers its own raster) -- images are named by label, so scars only
+if ("type" %in% names(poly)) poly <- poly[!is.na(poly$type) & poly$type == "scar", ]
 if (is.na(st_crs(poly))) stop(shp, " has no CRS (.prj)")
 sel <- if (toupper(p$labels) == "ALL") {
   poly$label
