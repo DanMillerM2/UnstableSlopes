@@ -135,7 +135,8 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   such as `FCode = 39000`) is rasterized onto the reference DTM grid as
   `water_mask_ref_grid.flt` in the run folder (rebuilt when its source changes) and becomes
   Align's `waterMask` — lakes only: rivers move between surveys, so river polygons match neither
-  survey's channel; and, by default (`extra_counts: water=9` unless `[defaults]` or a set sets
+  survey's channel (run_site.R asks Align for `outWaterMask`, `watermask_<tag>`, unless
+  `align_outWaterMask: FALSE`); and, by default (`extra_counts: water=9` unless `[defaults]` or a set sets
   `extra_counts: NONE`), each set's `water_count_ref_grid.flt` becomes Align's
   `refWater`/`alignWater` (WATER POINTS), which is how rivers are found.
 - **align_supervisor.R** — runs Align once (needs GridUtilities 8a08fa6+). With `tileNx`/`tileNy:
@@ -291,12 +292,19 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   warns); run_site.R writes that config only with `naip_run: TRUE` (`naip_` keywords; off by
   default, ~5-10 s per patch per worker). Washington has no 2025 NAIP yet (2023 is the latest).
 - **scar_review.R** — a labelling page for one run (`out_dir`: `index.html` from
-  **scar_review_page.html** with `{{TITLE}}` filled in, `patches.json`, `img/p<label>.jpg`): a
+  **scar_review_page.html** with `{{TITLE}}` filled in and the sample embedded as `{{PATCHES}}`, so
+  it also opens from disk, where browsers block `fetch()`; `patches.json`, `img/p<label>.jpg`): a
   stratified random sample of patch_polygons.R's scars (deposits left out) (`factor_<name>: level = condition; ...;
   level = otherwise`, R expressions over the shapefile's fields, first true wins, NA = false;
   strata are the factors' combinations; `per_stratum`, `seed`, optional `filter`; default factors
   sim_fdr <= 0.05 x canopy_chg < -10 / > 5, which reproduce the Site 2 sample), each drawn as 8
   lidar panels (hillshades, centred difference, 700 m context, canopy height, ground returns/m2).
+  The ground-return panels mask what Align leaves out: each survey's coverage gaps (Align's rule,
+  `coverage_min`/`coverage_block`, grown into adjacent cells without returns because a 50 m block
+  can straddle a missing tile's edge) in grey, and water in blue (Align's `outWaterMask` codes 1-3,
+  and each survey's `water_count_ref_grid` at `water_min_density`); `gap_ref`/`gap_aln`/`water` in
+  patches.json are each patch's share. Lidar images are redrawn when older than the shapefile or
+  the script.
   Inputs are read from `run_dir`'s configs (patch_polygons_params, lshunter_params,
   align_pipeline) or given directly. `naip: TRUE` runs naip_images.R into `img/`; the page shows
   the NAIP strip only for patches with `naip: true` in patches.json. The page saves labels only as

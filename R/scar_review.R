@@ -8,7 +8,7 @@
 ## attributes separate scars from the rest.
 ##
 ## Writes, in out_dir:
-##   index.html          the page (scar_review_page.html with the title filled in)
+##   index.html          the page (scar_review_page.html with the title and the sample filled in)
 ##   patches.json        the sample: every patch's attributes, its stratum, the stratum
 ##                       populations (for weighting estimates back to the whole run), the strata
 ##                       definitions, and whether it has a NAIP image
@@ -71,7 +71,9 @@ is_set <- function(x) !is.null(x) && !is.na(x) && nzchar(x) && !toupper(x) %in% 
 input_keys <- c("patch_shp", "patch_raster", "cendif", "ref_dtm", "aligned_dtm", "align_dtm", "ref_dsm",
                 "align_dsm", "ref_ground_count", "align_ground_count", "ref_label", "align_label")
 p <- read_kv(config_path)
-known <- c("run_dir", "out_dir", input_keys, "title", "subtitle", "filter", "per_stratum", "seed",
+mask_keys <- c("water_mask", "ref_water_count", "align_water_count", "coverage_min", "coverage_block",
+               "water_min_density", "water_window")
+known <- c("run_dir", "out_dir", input_keys, mask_keys, "title", "subtitle", "filter", "per_stratum", "seed",
            "naip", "naip_years", "naip_survey_years", "naip_n_workers")
 unknown <- setdiff(names(p)[!startsWith(names(p), "factor_")], known)
 if (length(unknown)) stop("Unrecognized parameter(s) in ", config_path, ": ", paste(unknown, collapse = ", "))
@@ -91,7 +93,10 @@ if (is_set(p$run_dir)) {
     align_dsm = lsh$canopy_align_dsm, aligned_dtm = alp[["align.outDTM"]],
     ref_ground_count = if (is_set(alp[["ref_set.output_dir"]])) file.path(alp[["ref_set.output_dir"]], "ground_count_ref_grid.flt"),
     align_ground_count = if (is_set(alp[["align_set.output_dir"]])) file.path(alp[["align_set.output_dir"]], "ground_count_ref_grid.flt"),
-    ref_label = alp[["strip_noise.ref_label"]], align_label = alp[["strip_noise.align_label"]])
+    ref_label = alp[["strip_noise.ref_label"]], align_label = alp[["strip_noise.align_label"]],
+    water_mask = alp[["align.outWaterMask"]], coverage_min = alp[["align.coverageMin"]],
+    coverage_block = alp[["align.coverageBlock"]], water_min_density = alp[["align.waterMinDensity"]],
+    water_window = alp[["align.waterWindow"]])
 }
 inp <- list()
 for (k in input_keys) inp[[k]] <- if (is_set(p[[k]])) p[[k]] else from_run[[k]]
@@ -105,6 +110,27 @@ for (k in setdiff(input_keys, c("patch_shp", "ref_label", "align_label"))) {
 inp$patch_shp <- paste0(sub("\\.shp$", "", inp$patch_shp, ignore.case = TRUE), ".shp")
 if (!file.exists(inp$patch_shp)) stop("patch_shp not found: ", inp$patch_shp)
 rl <- inp$ref_label; al <- inp$align_label
+
+## Masks, as Align draws them (Align 1.1.0+ leaves these cells out of everything): coverage gaps --
+## blocks of coverage_block m (counted from the reference DTM's top-left corner) where a survey has
+## fewer than coverage_min ground returns per m2 (missing or snow-covered tiles) -- per survey; and
+## water, from Align's water mask (codes 1-3: polygons, water returns, flat open water) and from each
+## survey's water-return counts (water_count_ref_grid beside the ground counts; at least
+## water_min_density returns/m2 over a (2 * water_window + 1)-cell square). Run first with an older
+## Align, the coverage gaps and the water counts still show.
+opt <- function(k, default = NULL) { v <- if (is_set(p[[k]])) p[[k]] else from_run[[k]]; if (is_set(v)) v else default }
+cov_min <- as.numeric(opt("coverage_min", 0.02)); cov_block <- as.numeric(opt("coverage_block", 50))
+wat_min <- as.numeric(opt("water_min_density", 0.1)); wat_win <- as.integer(opt("water_window", 1))
+wmask_f <- opt("water_mask")
+if (!is.null(wmask_f)) { wmask_f <- flt(wmask_f); if (!file.exists(wmask_f)) { message("Water mask not found, not used: ", wmask_f); wmask_f <- NULL } }
+wcount_f <- list()
+for (sv in c("ref", "align")) {
+  f <- opt(paste0(sv, "_water_count"), file.path(dirname(inp[[paste0(sv, "_ground_count")]]), "water_count_ref_grid.flt"))
+  f <- flt(f); if (file.exists(f)) wcount_f[[sv]] <- f
+}
+message("Masks: coverage gaps (< ", cov_min, " returns/m2 per ", cov_block, " m block)",
+        if (!is.null(wmask_f)) paste0("; Align's water mask ", wmask_f),
+        if (length(wcount_f)) paste0("; water returns (", paste(names(wcount_f), collapse = ", "), ")"))
 
 out_dir <- p$out_dir
 img_dir <- file.path(out_dir, "img")
@@ -166,7 +192,48 @@ e1 <- rast(inp$ref_dtm); e2a <- rast(inp$aligned_dtm); s1 <- rast(inp$ref_dsm)
 e2 <- rast(inp$align_dtm); s2 <- rast(inp$align_dsm)
 cd <- rast(inp$cendif); pr <- rast(inp$patch_raster)
 g1 <- rast(inp$ref_ground_count); g2 <- rast(inp$align_ground_count)
+wm <- if (!is.null(wmask_f)) rast(wmask_f)
+wc <- lapply(wcount_f, rast)
 pv <- vect(poly)
+
+## Coverage gap and water masks over a window (1 = masked, 0 = not, NA off the DTM), on tmpl's grid
+cs <- res(e1)[1]; bsz <- max(1L, as.integer(round(cov_block / cs))); bw <- bsz * cs; oe <- ext(e1)
+grab <- function(r, x) extend(crop(r, x), x)
+gap_mask <- function(g, w, tmpl) {
+  bx <- ext(xmin(oe) + floor((w$xmin - xmin(oe)) / bw) * bw, xmin(oe) + ceiling((w$xmax - xmin(oe)) / bw) * bw,
+            ymax(oe) - ceiling((ymax(oe) - w$ymin) / bw) * bw, ymax(oe) - floor((ymax(oe) - w$ymax) / bw) * bw)
+  bx <- intersect(bx, oe)
+  valid <- !is.na(grab(e1, bx)); n <- grab(g, bx)
+  s <- aggregate(ifel(valid & !is.na(n), n, 0), bsz, sum); nv <- aggregate(valid, bsz, sum)
+  low <- ifel(nv > 0 & s / (nv * cs^2) < cov_min, 1, 0)
+  m <- resample(low, tmpl, "near"); m[is.na(tmpl)] <- NA
+  # A block straddling a tile edge can pass on the returns in its covered part, so the gap grows
+  # into the cells with no returns over a 5 x 5 window that it touches (a missing tile's edge is
+  # straight; dense canopy next to a gap, also without returns, can't be told from it either)
+  if (global(m, "max", na.rm = TRUE)[[1]] == 1) {
+    n <- on_tmpl(g, tmpl); n[is.na(n)] <- 0
+    empty <- focal(n, 5, sum, na.rm = TRUE) == 0
+    pa <- patches(ifel(m == 1 | empty, 1, NA), directions = 8)
+    keep <- unique(as.vector(values(mask(pa, ifel(m == 1, 1, NA)), na.rm = TRUE)))
+    m <- ifel(!is.na(pa) & pa %in% keep, 1, m)
+  }
+  m
+}
+# r on tmpl's grid (a window at the DTM's edge is cut to it, so crop(r, w) can be larger)
+on_tmpl <- function(r, tmpl) { x <- grab(r, ext(tmpl))
+  if (!compareGeom(x, tmpl, stopOnError = FALSE)) x <- resample(x, tmpl, "near"); x }
+water_mask <- function(w, tmpl) {
+  m <- ifel(is.na(tmpl), NA, 0)
+  if (!is.null(wm)) { a <- on_tmpl(wm, tmpl); m <- ifel(!is.na(a) & a >= 1 & a <= 3, 1, m) }
+  k <- 2L * wat_win + 1L
+  for (r in wc) {
+    n <- grab(r, extend(ext(tmpl), k * cs)); n[is.na(n)] <- 0
+    d <- on_tmpl(focal(n, k, sum) / (k * k * cs^2), tmpl)
+    m <- ifel(!is.na(d) & d >= wat_min, 1, m)
+  }
+  m[is.na(tmpl)] <- NA; m
+}
+masked <- function(m, col) { x <- ifel(m == 1, 1, NA); if (!all(is.na(values(x)))) plot(x, col = col, legend = FALSE, axes = FALSE, add = TRUE) }
 
 hshade <- function(x) { sl <- terrain(x, "slope", unit = "radians"); as <- terrain(x, "aspect", unit = "radians")
   mean(shade(sl, as, angle = 40, direction = c(225, 270, 315, 360))) }
@@ -192,9 +259,14 @@ for (k in seq_along(pick)) {
   npm <- global(pm, "sum", na.rm = TRUE)[[1]]
   cov1 <- global(n1 >= 1 & pm, "sum", na.rm = TRUE)[[1]] / npm
   cov2 <- global(n2 >= 1 & pm, "sum", na.rm = TRUE)[[1]] / npm
+  # masks: each survey's coverage gaps and water (both surveys'), and their share of the patch
+  gm1 <- gap_mask(g1, w, tmpl); gm2 <- gap_mask(g2, w, tmpl); wtr <- water_mask(w, tmpl)
+  share <- function(m) global(m == 1 & pm, "sum", na.rm = TRUE)[[1]] / npm
+  gap1 <- share(gm1); gap2 <- share(gm2); wshare <- share(wtr)
 
   f <- file.path(img_dir, sprintf("p%d.jpg", lab))
-  if (!(file.exists(f) && file.mtime(f) > file.mtime(inp$patch_shp))) {
+  # redrawn when older than the shapefile or than this script (a change to the panels)
+  if (!(file.exists(f) && file.mtime(f) > max(file.mtime(inp$patch_shp), file.mtime(file.path(script_dir, "scar_review.R"))))) {
     hs1 <- crop(hshade(crop(e1, wb)), w); hs2 <- crop(hshade(crop(e2a, wb)), w)
     dz <- clamp(crop(cd, w), -1, 1, values = TRUE)
     c1 <- clamp(crop(s1, w) - tmpl, 0, 50, values = TRUE)
@@ -222,8 +294,11 @@ for (k in seq_along(pick)) {
     sbar(200, xy = "bottomleft", type = "bar", divs = 2, below = "m", cex = 1)
     plot(c1, col = canpal, range = c(0, 50), legend = FALSE, axes = FALSE, mar = m, main = paste(rl, "canopy height, 0-50 m")); out()
     plot(c2, col = canpal, range = c(0, 50), legend = FALSE, axes = FALSE, mar = m, main = paste(al, "canopy height, 0-50 m")); out()
-    plot(d1, col = grnpal, breaks = gb, legend = FALSE, axes = FALSE, mar = m, main = paste(rl, "ground returns per m2")); out()
-    plot(d2, col = grnpal, breaks = gb, legend = FALSE, axes = FALSE, mar = m, main = paste(al, "ground returns per m2")); out()
+    # coverage gaps grey and water blue over the density: no returns there isn't thin ground cover
+    plot(d1, col = grnpal, breaks = gb, legend = FALSE, axes = FALSE, mar = m, main = paste(rl, "ground returns per m2"))
+    masked(gm1, "#9a9a9a"); masked(wtr, "#4a90d9"); out()
+    plot(d2, col = grnpal, breaks = gb, legend = FALSE, axes = FALSE, mar = m, main = paste(al, "ground returns per m2"))
+    masked(gm2, "#9a9a9a"); masked(wtr, "#4a90d9"); out()
     dev.off()
     file.rename(tmp, f); made <- made + 1
   }
@@ -236,6 +311,7 @@ for (k in seq_along(pick)) {
     sd_vol_m3 = num_or_na(pp$sd_vol_m3), grad_mean = num_or_na(pp$grad_mean), sim_fdr = num_or_na(pp$sim_fdr),
     flip_fdr = num_or_na(pp$flip_fdr), canopy_ref = num_or_na(pp$canopy_ref), canopy_aln = num_or_na(pp$canopy_aln),
     canopy_chg = num_or_na(pp$canopy_chg), cov_ref = round(cov1, 2), cov_aln = round(cov2, 2),
+    gap_ref = round(gap1, 2), gap_aln = round(gap2, 2), water = round(wshare, 2),
     landform = num_or_na(pp$landform), road_flag = num_or_na(pp$road_flag), dist_chan = num_or_na(pp$dist_chan))
   if (k %% 20 == 0) message(sprintf("%d / %d patches (%.0f s)", k, length(pick), as.numeric(difftime(Sys.time(), t0, units = "secs"))))
 }
@@ -273,13 +349,17 @@ meta <- list(title = title, subtitle = subtitle, ref_label = rl, align_label = a
              patch_shp = normalizePath(inp$patch_shp, winslash = "/"), filter = if (is_set(p$filter)) p$filter else NULL,
              per_stratum = per, strata = strata_desc, population = as.list(pop), n_total = nrow(poly),
              naip = naip_on, patches = x)
-write_json(meta, file.path(out_dir, "patches.json"), auto_unbox = TRUE, digits = NA, na = "null", null = "null")
+meta_json <- toJSON(meta, auto_unbox = TRUE, digits = NA, na = "null", null = "null")
+writeLines(meta_json, file.path(out_dir, "patches.json"), useBytes = TRUE)
 
 tpl <- file.path(script_dir, "scar_review_page.html")
 if (!file.exists(tpl)) stop("Page template not found: ", tpl)
 html <- readLines(tpl, warn = FALSE, encoding = "UTF-8")
 esc <- function(s) gsub("<", "&lt;", gsub("&", "&amp;", s, fixed = TRUE), fixed = TRUE)
 html <- gsub("{{TITLE}}", esc(title), html, fixed = TRUE)
+# The sample also goes in the page, so it loads from disk (browsers block fetch() on file://);
+# "</" is escaped so a value can't close the script element
+html <- gsub("{{PATCHES}}", gsub("</", "<\\/", meta_json, fixed = TRUE), html, fixed = TRUE)
 con <- file(file.path(out_dir, "index.html"), open = "w", encoding = "UTF-8"); writeLines(html, con); close(con)
 
 message(sprintf("Scar review: %d patches in %s (index.html, patches.json, img/)%s", nrow(x), out_dir,

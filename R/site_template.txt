@@ -77,7 +77,7 @@ align_executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release
 # (blocks of 50 m with < 0.02 ground returns/m2 in either survey); align_coverage: FALSE keeps them.
 # align_coverageMin: 0.02             # ground returns/m2 in each survey, per block
 # align_coverageBlock: 50             # m
-# align_outWaterMask: TRUE            # watermask_<tag>: why cells were left out (1-4)
+# align_outWaterMask: TRUE            # the default: watermask_<tag>, why cells were left out (1-5); FALSE: none
 # align_waterMinDensity: 0.1          # water returns/m2 (WATER POINTS); align_waterWindow: 1
 # align_waterMaskBuffer: 2            # m around the water polygons
 

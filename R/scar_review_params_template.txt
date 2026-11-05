@@ -37,3 +37,11 @@ naip: FALSE              # TRUE adds a NAIP strip under each patch's lidar panel
 # aligned_dtm:          Align's aligned DTM (outDTM)
 # ref_ground_count, align_ground_count: ground_returns.R's ground_count_ref_grid.flt
 # ref_label, align_label: survey labels, e.g. 2017 and 2025
+# water_mask:           Align's outWaterMask (codes 1-3 shown as water)
+# ref_water_count, align_water_count: water_count_ref_grid.flt (default: beside the ground counts)
+
+# ---- Masks on the ground-return panels (defaults: Align's settings in run_dir's configs) -----------
+# coverage_min: 0.02     # coverage gap: a block with fewer ground returns/m2 in that survey (grey)
+# coverage_block: 50     # m
+# water_min_density: 0.1 # water returns/m2 over a (2 * water_window + 1)-cell square (blue)
+# water_window: 1

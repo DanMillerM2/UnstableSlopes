@@ -193,6 +193,8 @@ extra_out <- c(outCorDif = "difcor_", outDenOutlier = "denoutlier_", outDX = "dx
                outDZ = "dz_", outWaterMask = "watermask_", outSigma = "sigma_")
 for (k in names(extra_out)) {
   v <- get(paste0("align_", k))
+  # the water mask (why cells were left out) is on unless FALSE: scar_review.R and the report use it
+  if (is.null(v) && k == "outWaterMask") v <- "TRUE"
   if (!is.null(v) && isTRUE(as.logical(v))) align_out[[k]] <- in_run(paste0(extra_out[[k]], tag))
 }
 radius <- as.numeric(get("align_radius", "15"))

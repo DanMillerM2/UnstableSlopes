@@ -130,7 +130,9 @@ a { color: var(--accent) }
           <span class="sw" style="background:#f1a340"></span>&lt;0.5
           <span class="sw" style="background:#fee8a6"></span>&lt;1
           <span class="sw" style="background:#c7e3c0"></span>&lt;3
-          <span class="sw" style="background:#4dac6b"></span>3+</span>
+          <span class="sw" style="background:#4dac6b"></span>3+
+          <span class="sw" style="background:#9a9a9a"></span>gap (no tiles)
+          <span class="sw" style="background:#4a90d9"></span>water</span>
       </figcaption>
     </figure>
 
@@ -213,6 +215,7 @@ a { color: var(--accent) }
   </section>
 </div>
 
+<script type="application/json" id="patches-data">{{PATCHES}}</script>
 <script>
 (() => {
   const $ = (id) => document.getElementById(id);
@@ -287,6 +290,7 @@ a { color: var(--accent) }
       ["Null-sim FDR", fmt(p.sim_fdr, 3)], ["Sign-flip FDR", fmt(p.flip_fdr, 3)],
       [`Canopy ${RL} / ${AL}`, fmt(p.canopy_ref, 1) + " / " + fmt(p.canopy_aln, 1) + " m"], ["Canopy change", fmt(p.canopy_chg, 1) + " m"],
       [`Ground coverage ${RL} / ${AL}`, pct(p.cov_ref) + " / " + pct(p.cov_aln)],
+      [`In a coverage gap ${RL} / ${AL}`, pct(p.gap_ref) + " / " + pct(p.gap_aln)], ["Water", pct(p.water)],
       ["Road flag", p.road_flag === null ? "–" : String(p.road_flag)], ["Distance to channel", p.dist_chan === null ? "–" : fmt(p.dist_chan, 0) + " m"],
       ["Stratum", p.stratum], ["x, y (EPSG:2856)", fmt(p.x, 1) + ", " + fmt(p.y, 1)], ["Lat, lon", p.lat + ", " + p.lon]
     ];
@@ -369,7 +373,14 @@ a { color: var(--accent) }
 
   try { const f = localStorage.getItem("scar_filter"); if (f) $("filter").value = f; } catch (e) {}
 
-  fetch("patches.json").then(r => r.json()).then(j => {
+  // The sample is embedded by scar_review.R (browsers block fetch() on a page opened from disk);
+  // patches.json is the fallback for a page without it
+  const embedded = document.getElementById("patches-data");
+  let inline = null;
+  try { inline = JSON.parse(embedded.textContent); } catch (e) {}
+  (inline && inline.patches
+    ? Promise.resolve(inline)
+    : fetch("patches.json").then(r => r.json())).then(j => {
     meta = j; P = j.patches.slice().sort((a, b) => a.order - b.order);
     RL = j.ref_label || RL; AL = j.align_label || AL;
     if (j.subtitle) $("subtitle").textContent = j.subtitle;
