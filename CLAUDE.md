@@ -84,8 +84,9 @@ Three further documents describe the `R/` pipeline rather than the method's theo
   rendered `.html` is gitignored).
 - **LandslidePipelines_Guide.qmd** — user guide to running the whole method through the
   `landslide-pipelines` Claude Code skill, including setup on another computer (`.html` gitignored).
-- **PipelineReport.qmd** — the per-site report template rendered by `run_landslide_pipelines.R`;
-  deliberately untracked (gitignored), as it changes per study site.
+- **PipelineReport.qmd** — the report template `run_landslide_pipelines.R` renders for every site;
+  tracked (since 1f66259) so every run starts from the same template. Site-specific content goes
+  in that site's `narrative.md`, not here; commit only edits meant for every site's report.
 
 The `R/` pipeline, these documents and the skill were developed on branch `align_pipeline`
 (Sep-Nov 2026, merged into `main` with `--no-ff`, tagged `align-pipeline-v1`; the branch itself has

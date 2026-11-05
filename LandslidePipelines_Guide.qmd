@@ -166,8 +166,9 @@ Without a site file, Claude asks, in one message, for anything it still needs:
 
 ## What happens next
 
-1. **Checks.** Claude runs the prerequisite checks. If `PipelineReport.qmd` is missing (it is
-   gitignored, so a fresh checkout has none) it writes the report template and shows it to you.
+1. **Checks.** Claude runs the prerequisite checks. The report template, `PipelineReport.qmd`, is
+   tracked in git, so every checkout renders the same report format; if it is missing, Claude
+   restores it from git.
 2. **Site file.** It writes (or checks) the site file and runs `run_site.R --configs-only`. Align
    uses its defaults unless the file says otherwise: tiles chosen by cross-validation, iterations
    stopping once the aligned DEM changes by less than 5 mm, central derivatives and the

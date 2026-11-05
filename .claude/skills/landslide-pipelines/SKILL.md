@@ -12,7 +12,7 @@ This repo chains three pipelines and a report:
 | 1. Align (and its inputs) | `R/run_align_pipeline.R` -> `R/align_supervisor.R` | aligned DTM, DoD (`outDif`, `<outDif>_0`), outlier raster, exceedance raster, LoD rasters (`<outLod>`, `_gain`, `_centre`, `_iqr`), centred difference, gradient raster `<ref DTM>_grad<radius>m`, `<outbins>_*.csv`, `align_run\*.csv` |
 | 2. RIL (independent of 1) | `R/ril_pipeline.R` | landform raster (codes 1-10 as LSstats names them: Floodplain, Bedrock_Hollow, Inner_Gorge, Steep_/Convergent, Divergent, Planar, Other) |
 | 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv`; with `lshunter_deposits: TRUE`, also `ang_<ref>` (bldgrds), `corridor_<tag>`, `patch_<tag>_deposits`/`_unlinked` rasters, `patch_<tag>_table_deposits.csv`/`_unlinked.csv`/`_balance.csv`, and the deposits in `patch_<tag>_polygons.shp` (field `type`: scar or deposit; a deposit's `scar` field links it); optionally (`R/naip_images.R`, `naip_run: TRUE`) `naip\p<label>_naip.jpg` |
-| Report | `PipelineReport.qmd` (repo root, gitignored -- see section 6) | one self-contained html file |
+| Report | `PipelineReport.qmd` (repo root, tracked -- see section 6) | one self-contained html file |
 
 **Everything for a site goes in one site file** (`keyword: value` lines; template
 `R/site_template.txt`). `R/run_site.R <site file>` writes each pipeline's config into
@@ -205,9 +205,11 @@ sample republished to the same artifact keeps its labels only if the sample is u
 
 ## 6. If PipelineReport.qmd is missing
 
-The report template is gitignored, so a fresh checkout has none, and the driver's render then
-fails. Before the first run on a machine, check for `PipelineReport.qmd` at the repo root; if it
-isn't there, write it, then show it to the user:
+The report template is tracked, so every checkout has the same one; don't edit it for one site
+(site-specific content goes in `narrative.md`), and commit only changes meant for every site's
+report. If it is missing anyway (deleted, or an old checkout), the driver's render fails: restore
+it with `git checkout -- PipelineReport.qmd`. Only if git has no copy, write it to this spec, then
+show it to the user:
 
 - Quarto html, `embed-resources: true`, one parameter `manifest` (the driver passes
   `-P manifest:<report_dir>/pipeline_manifest.txt`). Read the manifest's `key: value` lines
