@@ -23,16 +23,16 @@ results:
 | 1. Align and its inputs | `R/run_align_pipeline.R` → `R/align_supervisor.R` | aligned DTM, DoD, outlier and exceedance rasters, level of detection, gradient raster, `align_run\*.csv` |
 | 2. RIL (runs alongside 1) | `R/ril_pipeline.R` | landform raster |
 | 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files, and the patches as a polygon shapefile; with `lshunter_deposits: TRUE`, the deposits below each scar (raster, table, polygons) and each scar's volume balance |
-| 4. Strip noise (runs alongside 3) | `R/strip_noise.R`, as Stage 4 of `R/run_align_pipeline.R` | each survey's noise between its own flight passes: strip offsets and a noise floor by canopy, slope and ground density |
+| 4. Strip noise (optional, off by default; runs alongside 3) | `R/strip_noise.R`, as Stage 4 of `R/run_align_pipeline.R` | each survey's noise between its own flight passes: strip offsets and a noise floor by canopy, slope and ground density |
 | Report | `PipelineReport.qmd` | one self-contained html file |
 | Review (optional, afterwards) | `R/scar_review.R`, `R/naip_images.R` | a labelling page for a stratified sample of the candidates, with lidar panels and optional NAIP aerial photos |
 
-Step 4 is a check on the surveys, not an input to the results. It measures each survey's noise
-where two of its flight passes overlap (no real change between passes flown minutes apart). The
-report shows the offsets between passes -- above about 0.1 m is a systematic strip error, which
-appears in the change map along flight lines -- and the pass noise as a floor under Align's level
-of detection. It adds about 50 minutes of computing per site; `noise_run: FALSE` in the site file
-skips it.
+Step 4 is a diagnostic of the surveys, not an input to the results, and runs only with
+`noise_run: TRUE` in the site file. It measures each survey's noise where two of its flight passes
+overlap (no real change between passes flown minutes apart). The report then shows the offsets
+between passes -- above about 0.1 m is a systematic strip error, which appears in the change map
+along flight lines -- and the pass noise as a floor under Align's level of detection. It adds
+about 40 minutes of computing per survey (Site 1), which is why it is off unless asked for.
 
 Every input for a site goes in **one site file** of `keyword: value` lines (template
 `R/site_template.txt`). `R/run_site.R` reads it, writes each pipeline's configuration file, and
@@ -45,22 +45,42 @@ interpretation from the outputs, and renders the report.
 Keywords are grouped by prefix: `site_` (names, folders, polygon, CRS), `ref_` and `align_` for
 the two surveys (label, LAZ, DTM and DSM), `ground_` (ground-return counts), `align_` (Align
 settings), `ril_` (the RIL chain's three Fortran input files), `lshunter_`, `lsstats_` and
-`noise_` (strip noise; all optional).
+`noise_` (strip noise, off unless `noise_run: TRUE`), and `naip_` (NAIP photos of every patch;
+off unless `naip_run: TRUE`).
 Anything left out takes its default, and an unknown keyword stops the run. Everything that links
 one program to the next is filled in: Align's output names come from the run folder and the
 survey labels; LShunter reads Align's exceedance raster, gradient, centred difference, IQR raster
 and noise correlogram, and RIL's landform raster; LSstats reads LShunter's patch raster and patch
 table. In `lsstats_rasters`, `@cendif`, `@exceed`, `@dif`, `@outlier`, `@lod`, `@gradient` and
 `@aligned` stand for this run's Align outputs. For Site 2 the file is
-`C:\Work\Data\Site2\site2_2017_2025.txt`.
+`C:\Work\Data\Site2\Site2_2017_2025.txt` (Site 1: `C:\Work\Data\Site1\Site1_2017_2023.txt`).
 
 ```
-Rscript R/run_site.R C:\Work\Data\Site2\site2_2017_2025.txt --configs-only   # check only
-Rscript R/run_site.R C:\Work\Data\Site2\site2_2017_2025.txt                  # run everything
+Rscript R/run_site.R C:\Work\Data\Site2\Site2_2017_2025.txt --configs-only   # check only
+Rscript R/run_site.R C:\Work\Data\Site2\Site2_2017_2025.txt                  # run everything
 ```
 
 Outputs go to `<site_dir>\<site_run_name>\`, the generated configurations to its `configs\`
-folder. The configurations are rewritten on every run, so change settings in the site file.
+folder. The configurations are rewritten on every run, so change settings in the site file. Give
+each survey its DTM and DSM tile folders (`ref_dtm_tile_dir`, `ref_dsm_tile_dir`, ...) and put the
+mosaics (`ref_dtm`, `ref_dsm`, ...) in the run folder, so that a new run builds its own; the
+ground-return counts go in each survey's `ground_dir` (e.g. `<survey>\grnd_den`) and are reused by
+later runs on the same reference DTM.
+
+**Water and gaps in coverage** are left out of Align, and so out of the change maps and the
+candidates, by default:
+
+- lakes, from `site_water_polygons` (with `site_water_layer` and `site_water_where`, e.g.
+  `FCode = 39000`, for a geodatabase). Lakes only: rivers move between surveys, so they come from
+- the surveys' own water returns (LAS class 9, counted beside the ground returns), and flat open
+  water;
+- coverage gaps: 50 m blocks where either survey has fewer than 0.02 ground returns per m²
+  (missing or snow-covered tiles; `align_coverage: FALSE` keeps them).
+
+Align writes `watermask_<tag>` in the run folder, saying why each cell was left out (1 water
+polygon, 2 water returns, 3 flat water, 4 no coverage; `align_outWaterMask: FALSE` turns it off).
+A 50 m block straddling the edge of a missing tile can still pass the coverage rule, so a strip of
+up to 50 m along such an edge stays in.
 
 A site file holds full paths: the data, the RIL input files (which name their own DEM, scratch
 and output paths) and the executable folders (`align_executable_dir`,
@@ -78,7 +98,7 @@ or executable it can't find.
    | UnstableSlopes (`DanMillerM2`) | `main` | the R scripts, the skill, this guide |
    | TWutils (`DanMillerM2`) | `main` (c2290a4 or later) | the R package that writes the programs' input files |
    | GridUtilities (`teal-waters`) | `master` (ab662ea or later) | Align, bldgrds |
-   | LandslideUtilities (`DanMillerM2`) | `master` (2e777af or later) | LShunter, LSstats |
+   | LandslideUtilities (`DanMillerM2`) | `master` (tag `lshunter-1.4.0` or later) | LShunter, LSstats |
    | ChannelUtilities (`teal-waters`) | `master` | ValleyFloor, RIL |
    | modules (`teal-waters`) | `master` | Fortran modules shared by all of the above |
 
@@ -94,9 +114,11 @@ or executable it can't find.
    with another Intel Fortran version, point that file at its MKL.
 3. **Build the executables** in Visual Studio, Release|x64: `align` (GridUtilities 8a08fa6 or
    later; ab662ea or later for the optional `align_exceedanceTrim`, 78b4911 for
-   `align_suspectGround`, 2083edb for `align_matchSmoothness`), `bldgrds`, `ValleyFloor`, `RIL`,
-   `LShunter` (1.1.0 or later) and `LSstats` (1.1.0 or later). Build from the pulled source, so
-   each executable matches a commit.
+   `align_suspectGround`, 2083edb for `align_matchSmoothness`; Align 1.1.0, tag `align-1.1.0`, for
+   the water and coverage masks), `bldgrds`, `ValleyFloor`, `RIL`, `LShunter` (1.1.0 or later;
+   1.4.0 for deposits) and `LSstats` (1.1.0 or later). Build from the pulled source, so each
+   executable matches a commit; an executable older than its source is the first thing to suspect
+   when a run behaves unexpectedly.
 4. **Install the R packages**: TWutils (`R CMD INSTALL TWutils` from the `repos` folder, on
    `main`), plus `terra`, `sf`, `lasR`, `lidR`, `future`, `future.apply`, `processx`, `ggplot2`,
    `knitr` and `jsonlite`. An older TWutils stops Align at the start with "The installed TWutils is older
@@ -122,7 +144,7 @@ claude
 
 Then type `/landslide-pipelines`, or ask in your own words. With a site file:
 
-> Run the landslide pipelines for `C:\Work\Data\Site2\site2_2017_2025.txt`.
+> Run the landslide pipelines for `C:\Work\Data\Site2\Site2_2017_2025.txt`.
 
 Or without one:
 
@@ -135,7 +157,9 @@ Without a site file, Claude asks, in one message, for anything it still needs:
 - study name, output folder, study-area polygon and target CRS (default EPSG:2856);
 - for each survey (older reference, newer to align): DTM tiles or file, LAZ tiles, and DSM tiles
   or file. All three are required: the LAZ tiles give the density-based level of detection, the
-  exceedance raster and the strip noise, and Align uses both DSMs for canopy height;
+  exceedance raster, the water returns and coverage gaps (and the strip noise, if run), and Align
+  uses both DSMs for canopy height;
+- a lake polygon layer, if there is one;
 - the complete DTM for RIL, and the bldgrds, ValleyFloor and RIL input files to copy;
 - LShunter and LSstats settings (thresholds, flow-accumulation raster, rasters to summarize);
 - executable folders, if they aren't the defaults.
@@ -149,16 +173,20 @@ Without a site file, Claude asks, in one message, for anything it still needs:
    stopping once the aligned DEM changes by less than 5 mm, central derivatives and the
    density-based level of detection. Claude shows you the site file, the Align settings and
    LShunter's inputs and thresholds before running.
-3. **Run.** The driver runs in the background. Large sites take hours, mostly for counting
-   ground returns; Align itself takes about 25 minutes on a 370-million-cell site. Run one site
-   at a time: Align holds whole DEMs in memory (about 48 GB). Claude reports each Align milestone
-   (global fit converged, tiles chosen, tile loop converged) and stops with the cause if a step
-   fails. After Align, LShunter/LSstats and the strip noise run side by side.
+3. **Run.** The driver runs in the background. A rebuild from tiles takes a few hours: at Site 1
+   (390 million cells) the ground-return counts took about 35 minutes for the two surveys, Align
+   39 minutes, LShunter with deposits 21 and LSstats 7. Run one site's Align at a time: Align
+   holds whole DEMs in memory (about 48 GB). Claude reports each Align milestone (global fit
+   converged, tiles chosen, tile loop converged) and stops with the cause if a step fails. After
+   Align, LShunter and LSstats run (beside the strip noise, if it is on). Don't edit the R
+   scripts while a run is using them: R reads a script as it runs, so an edit can break the
+   running copy.
 4. **Interpretation.** Claude reads the run's tables and writes `<report_dir>\narrative.md`: the
    tiles chosen and how clear the choice was, convergence, RMSE and the level of detection, the
    pattern of shifts, the candidate landslides with volumes ± SD against the sign-flip control,
-   their landforms, the strip offsets and how much of the noise each survey explains on its own,
-   and caveats. Every number comes from the output files.
+   their landforms, the deposits, how much was left out as water or for missing coverage, (with
+   strip noise) the strip offsets and how much of the noise each survey explains on its own, and
+   caveats. Every number comes from the output files.
 5. **Report.** `run_site.R` is rerun; it skips every finished step and renders
    `<report_dir>\<study_name>_report.html`. The file is self-contained and can be emailed as is.
 
@@ -225,6 +253,9 @@ One candidate at a time, in shuffled order:
 - **Eight lidar panels**: both surveys' hillshades (the newer one after Align), the elevation
   change from -1 to +1 m, a 700 m context hillshade, both surveys' canopy height, and both surveys'
   ground returns per m². The candidate is outlined in magenta, other candidates in dashed yellow.
+  On the ground-return panels, what Align leaves out is masked: each survey's coverage gaps
+  (missing tiles) in grey, and water in blue, so that no returns there isn't read as thin ground
+  cover. The patch statistics give each candidate's share in a gap and in water.
 - **NAIP aerial photos** (optional): for each NAIP year, a close-up and a 350 m view, with the
   flight date in each title. NAIP is flown with leaves on at 0.6-1 m, so it shows the canopy, not
   the ground under it. It helps most where the canopy opened or was never closed: harvest units,
@@ -259,7 +290,10 @@ factor_canopy: loss = canopy_chg < -10; growth = canopy_chg > 5; mid = otherwise
 ```
 
 That is, null-simulation false-discovery rate at most 5% or not, crossed with canopy height
-falling by more than 10 m, growing by more than 5 m, or neither. A `filter` line restricts the
+falling by more than 10 m, growing by more than 5 m, or neither. `sim_fdr` exists only when the
+run used the null simulation (`lshunter_null_realizations`); without it, stratify on the
+sign-flip control's rate instead (`factor_fdr: sig = flip_fdr <= 0.05; nonsig = otherwise`), as
+the Site 1 and Site 2 rebuilds of November 2026 do. A `filter` line restricts the
 sample to patches meeting a condition (for example `filter: area_m2 >= 50`). The same shapefile,
 factors and seed always give the same sample, so a page rebuilt later keeps its labels.
 
@@ -268,24 +302,26 @@ factors and seed always give the same sample, so a page rebuilt later keeps its 
 1. Copy `R/scar_review_params_template.txt` and set at least the run folder and an output folder:
 
    ```
-   run_dir: C:\Work\Data\Site2\run_2017_2025_gap2
-   out_dir: C:\Work\Data\Site2\run_2017_2025_gap2\scar_review
+   run_dir: C:\Work\Data\Site2\run_17_25
+   out_dir: C:\Work\Data\Site2\run_17_25\scar_review
    title: Site 2 scar review
    per_stratum: 40
    naip: TRUE
    ```
 
    Everything else is found from the run folder's configuration files: the patch shapefile and
-   raster, the elevation change, both surveys' DTMs, DSMs and ground-return counts, the aligned
-   DTM and the survey years. Each can also be given directly (see the template).
+   raster, the elevation change, both surveys' DTMs, DSMs, ground- and water-return counts,
+   Align's water mask, the aligned DTM and the survey years. Each can also be given directly (see
+   the template).
 
 2. Run it:
 
    ```
-   Rscript R/scar_review.R C:\Work\Data\Site2\scar_review_params.txt
+   Rscript R/scar_review.R C:\Work\Data\Site2\scar_review_params_site2.txt
    ```
 
-   The lidar panels take under a second per patch. NAIP photos are read over the network from
+   The lidar panels take one to two seconds per patch, and are redrawn when the shapefile or
+   `scar_review.R` is newer. NAIP photos are read over the network from
    Microsoft Planetary Computer (no account needed), 5-10 seconds per patch per worker, so 240
    patches take 10-20 minutes. Finished images are kept on a rerun, and a patch whose photos
    failed to download gets none; rerunning retries it, and meanwhile the page simply leaves the
@@ -293,10 +329,12 @@ factors and seed always give the same sample, so a page rebuilt later keeps its 
 
 3. Ask Claude to publish it:
 
-   > Publish the scar review in `C:\Work\Data\Site2\run_2017_2025_gap2\scar_review`.
+   > Publish the scar review in `C:\Work\Data\Site2\run_17_25\scar_review`.
 
    The page saves labels only as a private claude.ai page that keeps a database of what reviewers
-   enter; opened from disk it shows the images but can't save. Claude publishes it and gives you
+   enter; opened from disk (`index.html`, which holds the sample) it shows every candidate but
+   can't save. A new sample (after a rerun) has new candidates, so publish it as a new page, or
+   accept that labels on the old page no longer match. Claude publishes it and gives you
    the link. It is private until you share it from the page's Share menu; each reviewer needs a
    claude.ai account and edit access to save labels.
 

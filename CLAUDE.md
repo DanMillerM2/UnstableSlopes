@@ -336,7 +336,8 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   merged), else GPS-time gaps, else none (no independent reference; the summary says so). Pass
   tallies come from ground_returns.R's `pass_tally.csv` or are made for the sampled tiles. The
   pipeline runs it as run_align_pipeline.R's Stage 4 (`[strip_noise]` section; run_site.R's
-  `noise_` keywords, on unless `noise_run: FALSE`; outputs in `<run folder>\strip_noise\`), after
+  `noise_` keywords; an optional diagnostic, off unless `noise_run: TRUE`; outputs in
+  `<run folder>\strip_noise\`), after
   Align and beside LShunter (`--no-strip-noise` / `--strip-noise-only`), and the report's "Noise
   reference" section shows each survey's checks, strip offsets, class table, and the pass-noise
   floor (each survey's single-pass noise read at its ground density, from `ref_ground_count`/

@@ -5,8 +5,8 @@
 ## surveys, writes the configuration files the pipelines already use into
 ## <site_dir>\<site_run_name>\configs\, and runs run_landslide_pipelines.R on them:
 ##
-##   align_pipeline.txt            run_align_pipeline.R (ground returns, mosaics, Align, and
-##                                 strip_noise.R's flight-pass noise per survey: noise_ keywords)
+##   align_pipeline.txt            run_align_pipeline.R (ground returns, mosaics, Align, and with
+##                                 noise_run: TRUE strip_noise.R's flight-pass noise: noise_ keywords)
 ##   ril_pipeline.txt              ril_pipeline.R (bldgrds, ValleyFloor, RIL)
 ##   lshunter_params.txt           LShunter.R
 ##   lsstats_params.txt            LSstats.R
@@ -107,7 +107,8 @@ lshunter_settings <- c("threshold1", "threshold2", "min1", "min2", "accum", "max
                        "dep_spread", "dep_scour_window", "dep_scour_fraction")
 lsstats_settings <- c("rasters", "distance_raster", "radius", "out_distance_raster",
                       "executable_dir")
-# strip_noise.R (each survey's flight-pass overlaps; on unless noise_run: FALSE). noise_method is
+# strip_noise.R (each survey's flight-pass overlaps; an optional diagnostic, off unless
+# noise_run: TRUE). noise_method is
 # strip_noise.R's noise_method; every other noise_<key> is its <key>.
 noise_settings <- c("run", "method", "tile_fraction", "min_tiles", "max_tiles", "seed", "res_m",
                     "max_edge_m", "buffer_m", "ground_classes", "z_units", "pass_gap_s",
@@ -263,7 +264,7 @@ for (k in setdiff(align_settings, names(extra_out))) {
 }
 align_section <- c(align_section, align_out, list(scratch_dir = s$scratch_dir))
 
-noise_section <- list(run = get("noise_run", "TRUE"), output_dir = in_run("strip_noise"),
+noise_section <- list(run = get("noise_run", "FALSE"), output_dir = in_run("strip_noise"),
                       ref_label = s$ref_label, align_label = s$align_label)
 for (k in setdiff(noise_settings, "run")) {
   v <- get(paste0("noise_", k))

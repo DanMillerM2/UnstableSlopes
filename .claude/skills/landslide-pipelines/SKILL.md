@@ -157,7 +157,7 @@ When the run finishes, read these (all in the run folder), then write `<report_d
   scar its runout enters);
 - the LSstats csv files `lsstats_<tag>_<i>.csv` (with each polygon's Volume, SD_Volume and
   Z_Volume) and `_landforms_<i>.csv`;
-- the noise reference in `strip_noise\` (unless `noise_run: FALSE`): each survey's
+- the noise reference in `strip_noise\` (only with `noise_run: TRUE`; off by default): each survey's
   `<label>_noise_summary.txt` (pass method, and why others were rejected), `_classes.csv`,
   `_density_classes.csv` and `_pairs.csv` (strip offsets), and the report's pass-noise floor
   table.
@@ -171,7 +171,7 @@ Cover, briefly:
   with other runs), and the level of detection: how the loss limit varies with slope, canopy and
   ground-return density;
 - the spatial pattern of node shifts, and the nodes held by their neighbours (too few points);
-- the noise reference: which pass method each survey used (say plainly when it is none -- the LoD
+- with strip noise run, the noise reference: which pass method each survey used (say plainly when it is none -- the LoD
   then rests on stable ground alone), strip offsets (above about 0.1 m is a systematic strip
   error), and the pass-noise floor's share of the observed variance by canopy and density: the
   floor is each survey's own noise, a lower bound and not a prediction of the DoD noise, so don't
@@ -223,7 +223,7 @@ isn't there, write it, then show it to the user:
   count and `_fields.csv`); landforms (`landform_raster`, the LSstats csvs);
   Interpretation (include `narrative_md` if it exists, else a note that it hasn't been written);
   run details (`created`, `config`, `elapsed_min`, `log_dir`).
-- Noise reference section, from `strip_noise_dir` (`NOFILE` when `noise_run: FALSE`: one note),
+- Noise reference section, from `strip_noise_dir` (`NOFILE` without `noise_run: TRUE`, so by default: one note),
   with files named `<label>_noise_*` for `noise_ref_label` and `noise_align_label`. Say first that
   each survey's noise is measured between its own flight passes (no real change), so it is a floor
   under the level of detection, not a prediction of it. Per survey: the `_summary.txt` lines as
