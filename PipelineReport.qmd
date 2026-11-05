@@ -1,0 +1,351 @@
+---
+title: "Landslide pipeline report"
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    code-fold: true
+    fig-width: 8
+    fig-height: 6
+execute:
+  echo: false
+  warning: false
+  message: false
+params:
+  manifest: ""
+---
+
+```{r setup}
+library(terra)
+library(knitr)
+
+m_lines <- readLines(params$manifest, warn = FALSE)
+m_lines <- m_lines[nzchar(trimws(m_lines))]
+pos <- regexpr(":", m_lines, fixed = TRUE)
+mf <- setNames(trimws(substring(m_lines, pos + 1)), trimws(substring(m_lines, 1, pos - 1)))
+
+get <- function(key) if (key %in% names(mf)) mf[[key]] else "NOFILE"
+has <- function(path) !is.na(path) && nzchar(path) && toupper(path) != "NOFILE" && file.exists(path)
+flt <- function(path) if (grepl("\\.flt$", path, ignore.case = TRUE)) path else paste0(path, ".flt")
+note <- function(...) cat("\n\n*", ..., "*\n\n", sep = "")
+
+# Downsample to about max_cells for display, so the html stays emailable.
+show_rast <- function(path, max_cells = 1.5e6) {
+  r <- rast(path)
+  f <- ceiling(sqrt(ncell(r) / max_cells))
+  if (f > 1) r <- aggregate(r, f, fun = "mean", na.rm = TRUE)
+  r
+}
+# LSstats csvs start with a "Raster file: ..." line before the header.
+read_csv <- function(path) {
+  lines <- readLines(path, warn = FALSE)
+  if (length(lines) && grepl("^\\s*Raster file:", lines[1])) lines <- lines[-1]
+  utils::read.csv(text = lines, check.names = FALSE, strip.white = TRUE)
+}
+table_or_note <- function(path, what, n = Inf) {
+  if (has(path)) {
+    d <- read_csv(path)
+    print(kable(utils::head(d, n), digits = 4))
+  } else note(what, " not available (", basename(path), ").")
+}
+div_pal <- grDevices::hcl.colors(101, "Blue-Red 3", rev = TRUE)
+```
+
+**Study:** `r get("study_name")`
+**Created:** `r get("created")`
+
+## Study area and inputs
+
+```{r inputs, results = "asis"}
+keys <- c("clip_polygon", "target_crs", "ref_dtm", "align_dtm", "ref_dsm", "align_dsm", "ril_dem")
+print(kable(data.frame(Item = keys, Value = vapply(keys, get, ""), row.names = NULL)))
+if (!has(get("ref_dsm")) || !has(get("align_dsm"))) note("No DSM pair: Align ran without canopy terms.")
+```
+
+```{r area-map, fig.cap = "Reference DTM (hillshade) and study polygon."}
+ref_dtm <- flt(get("ref_dtm"))
+hs <- NULL
+if (has(ref_dtm)) {
+  dem <- show_rast(ref_dtm)
+  hs <- shade(terrain(dem, "slope", unit = "radians"), terrain(dem, "aspect", unit = "radians"))
+  plot(hs, col = grey(0:100 / 100), legend = FALSE, mar = c(2, 2, 1, 4))
+  if (has(get("clip_polygon"))) plot(project(vect(get("clip_polygon")), crs(dem)), add = TRUE, border = "red", lwd = 2)
+}
+```
+
+## Alignment
+
+```{r align-tables, results = "asis"}
+run_dir <- get("align_run_dir")
+cat("\n### Run summary\n\n")
+f <- file.path(run_dir, "align_run.csv")
+if (has(f)) {
+  d <- read_csv(f)
+  print(kable(data.frame(Field = names(d), Value = vapply(d[1, ], as.character, "")), row.names = FALSE))
+} else note("align_run.csv not available.")
+cat("\n### Convergence by iteration\n\n")
+table_or_note(file.path(run_dir, "align_iterations.csv"), "Iteration table")
+cat("\n### Tile and prior selection (block cross-validation)\n\n")
+table_or_note(file.path(run_dir, "align_select.csv"), "Cross-validation table")
+```
+
+```{r node-map, fig.cap = "Joint-fit node shifts relative to the global solution (mm)."}
+f <- file.path(run_dir, "align_nodes.csv")
+if (has(f)) {
+  d <- read_csv(f)
+  nm <- tolower(names(d))
+  xi <- which(nm %in% c("x", "x_m", "xmap"))[1]; yi <- which(nm %in% c("y", "y_m", "ymap"))[1]
+  dx <- grep("^(dx|shift_x|x_shift)", nm)[1]; dy <- grep("^(dy|shift_y|y_shift)", nm)[1]
+  dz <- grep("^(dz|shift_z|z_shift)", nm)[1]
+  if (!is.na(xi) && !is.na(yi)) {
+    z <- if (!is.na(dz)) d[[dz]] else rep(0, nrow(d))
+    lim <- max(abs(z), na.rm = TRUE); if (!is.finite(lim) || lim == 0) lim <- 1
+    cols <- div_pal[round(50 * z / lim) + 51]
+    if (!is.null(hs)) plot(hs, col = grey(0:100 / 100), legend = FALSE, mar = c(2, 2, 1, 4))
+    else plot(d[[xi]], d[[yi]], type = "n", asp = 1, xlab = "x", ylab = "y")
+    points(d[[xi]], d[[yi]], pch = 21, bg = cols, cex = 1.4)
+    if (!is.na(dx) && !is.na(dy)) {
+      s <- 0.05 * diff(range(d[[xi]])) / max(sqrt(d[[dx]]^2 + d[[dy]]^2), 1e-9, na.rm = TRUE)
+      arrows(d[[xi]], d[[yi]], d[[xi]] + s * d[[dx]], d[[yi]] + s * d[[dy]], length = 0.05)
+    }
+    legend("bottomright", bg = "white", title = "vertical (mm)", pch = 21, pt.bg = div_pal[c(1, 51, 101)],
+           legend = signif(c(-lim, 0, lim), 2))
+  } else print(kable(utils::head(d, 30), digits = 3))
+}
+```
+
+## Difference maps
+
+```{r dif-maps, fig.height = 10, results = "asis"}
+d0 <- flt(get("out_dif_0")); d1 <- flt(get("out_dif"))
+if (has(d0) && has(d1)) {
+  r0 <- show_rast(d0); r1 <- show_rast(d1)
+  lim <- as.numeric(global(abs(r1), quantile, probs = 0.99, na.rm = TRUE))
+  par(mfrow = c(2, 1))
+  plot(clamp(r0, -lim, lim), col = div_pal, range = c(-lim, lim), main = "Before alignment (m)")
+  plot(clamp(r1, -lim, lim), col = div_pal, range = c(-lim, lim), main = "After alignment (m)")
+} else note("Difference rasters not available.")
+```
+
+```{r exceed-map, results = "asis", fig.cap = "Exceedance S (negative: significant loss)."}
+ex <- get("out_exceed")
+if (has(ex)) {
+  plot(clamp(show_rast(ex), -6, 6), col = div_pal, range = c(-6, 6))
+} else note("No exceedance raster.")
+```
+
+## Level of detection
+
+```{r lod-maps, fig.height = 10, results = "asis"}
+lod <- get("out_lod")
+if (has(lod)) {
+  iqr <- sub("\\.flt$", "_iqr.flt", lod, ignore.case = TRUE)
+  par(mfrow = c(if (has(iqr)) 2 else 1, 1))
+  plot(show_rast(lod), main = "Loss level of detection (m)")
+  if (has(iqr)) plot(show_rast(iqr), main = "IQR (m)")
+} else note("No LoD raster.")
+```
+
+```{r lod-tables, results = "asis"}
+bins <- get("out_bins")
+cat("\n### Fence fit\n\n")
+table_or_note(paste0(bins, "_finalCoef.csv"), "Fence coefficients")
+table_or_note(paste0(bins, "_fitFinal.csv"), "Final fit by bin", 40)
+cat("\n### Density level of detection\n\n")
+table_or_note(paste0(bins, "_densityLod.csv"), "Density LoD table", 40)
+table_or_note(paste0(bins, "_densityLodCorr.csv"), "Noise correlogram", 40)
+```
+
+## Noise reference from flight-pass overlaps
+
+Each survey's own noise, measured where two of its flight passes overlap: each pass's ground
+points are triangulated alone and the surfaces differenced. Passes flown minutes apart hold no
+real change, so this measures each survey's own noise independently of the DoD: a floor under the
+level of detection, not the whole of it. IQRs and tails are of the difference between two
+single-pass surfaces.
+
+```{r noise, results = "asis"}
+nd <- get("strip_noise_dir")
+noise_cls <- list()
+if (!has(nd)) {
+  note("No noise reference: strip_noise.R was not run (noise_run: FALSE).")
+} else {
+  labs <- c(ref = get("noise_ref_label"), align = get("noise_align_label"))
+  for (sv in names(labs)) {
+    nf <- function(x) file.path(nd, paste0(labs[[sv]], "_noise_", x))
+    cat("\n### Survey ", labs[[sv]], "\n\n", sep = "")
+    if (has(nf("summary.txt"))) cat(paste0("- ", readLines(nf("summary.txt"), warn = FALSE)), sep = "\n")
+    else note("No summary (", basename(nf("summary.txt")), ").")
+    cat("\n")
+    if (has(nf("pairs.csv"))) {
+      pr <- utils::read.csv(nf("pairs.csv")); off <- abs(pr$median_m)
+      print(kable(data.frame(`Pass pairs` = nrow(pr), `Cells (M)` = round(sum(pr$cells) / 1e6, 1),
+                             `Median offset (m)` = median(off), `90th percentile (m)` = unname(quantile(off, 0.9)),
+                             `Max (m)` = max(off), check.names = FALSE), digits = 3,
+                  caption = "Vertical offset between overlapping passes (absolute median difference per tile and pair)"))
+      if (max(off) > 0.1) note("Some passes are offset by more than 0.1 m: a systematic strip error in this survey, ",
+                               "which shows in the DoD as offsets along flight lines, not as random noise.")
+    }
+    d <- tryCatch(utils::read.csv(nf("classes.csv")), error = function(e) NULL)
+    if (!is.null(d) && "iqr_m" %in% names(d) && nrow(d)) noise_cls[[sv]] <- d
+  }
+  if (length(noise_cls) == 2) {
+    a <- noise_cls$ref; b <- noise_cls$align
+    tb <- merge(a[, c("canopy", "slope", "cells", "iqr_m", "gt10", "gt20")],
+                b[, c("canopy", "slope", "cells", "iqr_m", "gt10", "gt20")], by = c("canopy", "slope"),
+                suffixes = paste0(" ", labs), sort = FALSE)
+    tb <- tb[order(match(tb$canopy, a$canopy), match(tb$slope, a$slope)), ]   # strip_noise.R's class order
+    cat("\n### Pass differences by class\n\n")
+    print(kable(tb, digits = c(0, 0, 0, 3, 5, 6, 0, 3, 5, 6), row.names = FALSE,
+                caption = "Cells, IQR (m), and share beyond 10 and 20 IQRs, by canopy height (m) and gradient"))
+  }
+}
+```
+
+```{r noise-floor, results = "asis"}
+# Pass-noise floor: each survey's single-pass noise against ground density (IQR^2 = a + b/d, fitted
+# on its pass pairs as 2a + b (1/d_a + 1/d_b)), read at the survey's own density at each cell
+cdp <- get("out_cendif")
+lod_iqr <- if (has(get("out_lod"))) sub("\\.flt$", "_iqr.flt", get("out_lod"), ignore.case = TRUE) else "NOFILE"
+dcl <- if (has(nd)) lapply(c(ref = get("noise_ref_label"), align = get("noise_align_label")), function(l)
+  tryCatch(utils::read.csv(file.path(nd, paste0(l, "_noise_density_classes.csv"))), error = function(e) NULL)) else list()
+need <- c(cdp, lod_iqr, get("ref_dtm"), get("align_dtm"), get("ref_dsm"), get("align_dsm"),
+          get("ref_ground_count"), get("align_ground_count"))
+if (length(dcl) == 2 && all(vapply(dcl, function(d) !is.null(d) && "inv_density_sum" %in% names(d), TRUE)) &&
+    all(vapply(need, has, TRUE))) {
+  cat("\n### Pass-noise floor against Align's level of detection\n\n")
+  brk <- function(l) sort(unique(as.numeric(unlist(regmatches(l, gregexpr("[0-9.]+", l))))))
+  lab <- function(b, pre) c(paste0(pre, "<", b[1]), if (length(b) > 1) paste0(pre, b[-length(b)], "-", b[-1]), paste0(pre, ">=", b[length(b)]))
+  cb <- brk(dcl$ref$canopy); sb <- brk(dcl$ref$slope)
+  smp <- spatSample(rast(cdp), 1e6, method = "regular", xy = TRUE, na.rm = TRUE)
+  xy <- as.matrix(smp[, c("x", "y")])
+  ex <- function(p) extract(rast(p), xy, method = "simple")[[1]]
+  h1 <- ex(get("ref_dsm")) - ex(get("ref_dtm")); h2 <- ex(get("align_dsm")) - ex(get("align_dtm"))
+  g <- if (has(get("out_gradient"))) ex(get("out_gradient")) else rep(0, nrow(smp))
+  dz <- smp[[3]]; ai <- ex(lod_iqr)
+  # Ground returns per m2 of each survey, over 5 x 5 count cells
+  den <- lapply(c(get("ref_ground_count"), get("align_ground_count")), function(p) {
+    cr <- rast(p); rc <- rowColFromCell(cr, cellFromXY(cr, xy)); tot <- 0
+    for (dr in -2:2) for (dc in -2:2) { v <- cr[cellFromRowCol(cr, rc[, 1] + dr, rc[, 2] + dc)][[1]]; tot <- tot + ifelse(is.na(v), 0, v) }
+    tot / (25 * prod(res(cr)))
+  })
+  c1 <- findInterval(h1, cb); c2 <- findInterval(h2, cb); gs <- findInterval(g, sb)
+  key <- paste(lab(cb, "")[c1 + 1], lab(sb, "g")[gs + 1])
+  floor_iqr <- function(d, k) {      # one survey's single-pass IQR at density d, class key k
+    f <- do.call(rbind, lapply(split(d, paste(d$canopy, d$slope)), function(x) {
+      x <- x[x$cells >= 5000, ]
+      if (nrow(x) < 2) return(NULL)
+      cf <- coef(lm(I(iqr_m^2) ~ inv_density_sum, data = x, weights = cells))
+      data.frame(key = paste(x$canopy[1], x$slope[1]), a = max(cf[1] / 2, 0), b = max(cf[2], 0))
+    }))
+    j <- match(k, f$key)
+    function(dens) sqrt(f$a[j] + f$b[j] / pmax(dens, 0.05))
+  }
+  fl <- sqrt(floor_iqr(dcl$ref, key)(den[[1]])^2 + floor_iqr(dcl$align, key)(den[[2]])^2)
+  dmin <- pmin(den[[1]], den[[2]])
+  db <- c(0.25, 0.75, 2, 4)
+  dlab <- lab(db, "")
+  ok <- !is.na(dz) & !is.na(ai) & ai > 0 & !is.na(fl) & !is.na(c1) & !is.na(c2) & c1 == c2
+  grp <- paste(c1, findInterval(dmin, db))
+  x <- do.call(rbind, lapply(split(which(ok), grp[ok], drop = TRUE), function(i) {
+    if (length(i) < 300) return(NULL)
+    data.frame(canopy = lab(cb, "")[c1[i[1]] + 1], density = dlab[findInterval(dmin[i[1]], db) + 1], cells = length(i),
+               iqr_obs = IQR(dz[i]), align = median(ai[i]), floor = median(fl[i]),
+               share = min(median(fl[i])^2 / IQR(dz[i])^2, 1))
+  }))
+  x <- x[order(match(x$canopy, lab(cb, "")), match(x$density, dlab)), ]
+  print(kable(x, digits = c(0, 0, 0, 3, 3, 3, 2), row.names = FALSE,
+              col.names = c("Canopy (m)", "Sparser survey's ground returns / m2", "Cells sampled", "Observed IQR (m)",
+                            "Align's IQR (m)", "Pass-noise floor (m)", "Floor's share of observed variance"),
+              caption = "Align's centred difference on cells whose canopy class is the same in both surveys (all gradients)"))
+  note("The floor is the noise each survey has on its own -- measured between its flight passes and read at its ground ",
+       "density at the cell -- combined for the two surveys. It is a lower bound, not a prediction: the rest of the ",
+       "observed IQR is what differs between the surveys (ground classification, DTM gridding, sensor, season, ",
+       "alignment) and real change, and that part also grows as ground returns thin. Align's IQR is the level of ",
+       "detection; where the floor's share is small, more points would not lower it, while more consistent processing ",
+       "of the two surveys might.")
+} else if (has(nd)) {
+  note("Pass-noise floor skipped: it needs strip_noise.R's density classes, the centred difference, Align's IQR raster, ",
+       "both DTMs and DSMs, and both ground-count rasters.")
+}
+```
+
+## Candidate landslides
+
+```{r patch-map, results = "asis", fig.cap = "Candidate landslide patches over the reference hillshade."}
+pr <- get("patch_raster")
+if (has(pr)) {
+  p <- rast(pr)
+  f <- ceiling(sqrt(ncell(p) / 1.5e6))
+  if (f > 1) p <- aggregate(p, f, fun = "max", na.rm = TRUE)
+  p <- classify(p, cbind(0, NA))
+  if (!is.null(hs)) plot(hs, col = grey(0:100 / 100), legend = FALSE, mar = c(2, 2, 1, 4))
+  plot(p > 0, col = "red", legend = FALSE, add = !is.null(hs))
+} else note("No patch raster.")
+```
+
+```{r patch-table, results = "asis"}
+tb <- get("lshunter_table")
+if (has(tb)) {
+  d <- read_csv(tb)
+  cat("\n", nrow(d), " patches in the patch table.\n\n", sep = "")
+  num <- d[vapply(d, is.numeric, TRUE)]
+  if (ncol(num)) {
+    s <- t(vapply(num, function(v) c(min = min(v, na.rm = TRUE), median = stats::median(v, na.rm = TRUE),
+                                     mean = mean(v, na.rm = TRUE), max = max(v, na.rm = TRUE),
+                                     total = sum(v, na.rm = TRUE)), numeric(5)))
+    print(kable(s, digits = 3))
+  }
+  shp <- get("patch_polygons")
+  if (has(shp)) {
+    cat("\nPolygons: `", shp, "` (", nrow(vect(shp, what = "attributes")), " features; every field is described in `",
+        basename(sub("\\.shp$", "_fields.csv", shp, ignore.case = TRUE)), "`).\n\n", sep = "")
+  }
+  nul <- sub("\\.csv$", "_null.csv", tb, ignore.case = TRUE)
+  if (has(nul)) { cat("\n### Null simulation\n\n"); table_or_note(nul, "Null table", 30) }
+} else note("No LShunter patch table.")
+```
+
+## Landforms
+
+```{r landform-map, results = "asis", fig.cap = "Landform classes."}
+lf <- get("landform_raster")
+if (has(lf)) {
+  r <- rast(lf)
+  f <- ceiling(sqrt(ncell(r) / 1.5e6))
+  if (f > 1) r <- aggregate(r, f, fun = "modal", na.rm = TRUE)
+  if (has(get("clip_polygon"))) r <- crop(r, project(vect(get("clip_polygon")), crs(r)))
+  plot(as.factor(r), col = grDevices::hcl.colors(10, "Dark 3"))
+} else note("No landform raster.")
+```
+
+```{r lsstats, results = "asis"}
+base <- get("lsstats_csv")
+rl <- trimws(strsplit(get("lsstats_rasters"), ";")[[1]])
+found <- FALSE
+for (i in seq_along(rl)) {
+  lfc <- paste0(base, "_landforms_", i, ".csv")
+  if (has(lfc)) {
+    found <- TRUE
+    src <- sub("^\\s*Raster file:\\s*", "", readLines(lfc, n = 1, warn = FALSE))
+    cat("\n### ", basename(if (nzchar(src)) src else rl[i]), " by landform\n\n", sep = "")
+    print(kable(read_csv(lfc), digits = 3))
+  }
+}
+if (!found) note("No LSstats landform summaries.")
+```
+
+## Interpretation
+
+```{r narrative, results = "asis"}
+nm <- get("narrative_md")
+if (has(nm)) cat(readLines(nm, warn = FALSE), sep = "\n") else note("The interpretation hasn't been written yet.")
+```
+
+## Run details
+
+```{r details, results = "asis"}
+keys <- c("created", "config", "elapsed_min", "log_dir")
+print(kable(data.frame(Item = keys, Value = vapply(keys, get, ""), row.names = NULL)))
+```
