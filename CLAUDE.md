@@ -84,6 +84,13 @@ Three further documents describe the `R/` pipeline rather than the method's theo
   rendered `.html` is gitignored).
 - **LandslidePipelines_Guide.qmd** — user guide to running the whole method through the
   `landslide-pipelines` Claude Code skill, including setup on another computer (`.html` gitignored).
+  **Keep it current, and keep the user's wording.** Whenever a change to the pipeline (the `R/`
+  scripts, their keywords and defaults, the site file, the skill, the report, or the versions of
+  the programs it needs) would alter anything the guide presents, update the guide in the same
+  change. The guide's wording, structure and tone are the user's: update only the facts the
+  change affects, edited in place, keeping the surrounding wording, headings and order, and add
+  new material in the guide's existing style. Don't reorganize or rewrite sections unless asked,
+  and say which passages changed.
 - **PipelineReport.qmd** — the report template `run_landslide_pipelines.R` renders for every site;
   tracked (since 1f66259) so every run starts from the same template. Site-specific content goes
   in that site's `narrative.md`, not here; commit only edits meant for every site's report.
