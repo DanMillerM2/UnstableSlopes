@@ -189,7 +189,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   seed-density count rasters; writes `pipeline_manifest.txt` and renders **PipelineReport.qmd** (repo root,
   `embed-resources: true`) to `<report_dir>/<study_name>_report.html`, including
   `narrative.md` as its Interpretation section. The report reads only the manifest's outputs, so
-  a rerun (every pipeline skipping) just re-renders. `.claude/skills/landslide-pipelines/` is the
+  a rerun (every pipeline skipping) just re-renders, keeping the previous run's logs and the
+  manifest's `created`/`elapsed_min` (no output file created or changed; each pipeline logs to
+  `<pipeline>.log.new`, renamed into place only when the run did something or failed). `.claude/skills/landslide-pipelines/` is the
   Claude Code skill that drives this end to end.
 - **mosaic_dtm.R** — mosaics the GeoTIFF DTM tiles that intersect a polygon (or, with
   `input_file` in place of `tile_dir`, takes one raster as the only tile) — as a GDAL VRT, with the

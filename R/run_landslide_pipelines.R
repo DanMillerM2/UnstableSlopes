@@ -22,7 +22,12 @@
 ##
 ## Resumability: every pipeline skips the outputs it already has (see each one's header), so
 ## rerunning this script after a failure, or just to re-render the report (e.g. after editing
-## the narrative file), redoes only what's missing.
+## the narrative file), redoes only what's missing. A rerun in which every pipeline skipped --
+## no file in the run folder (outside the report and configs folders) or in the RIL, LShunter
+## and LSstats output folders was created or changed -- keeps the previous run's logs and the
+## manifest's `created` and `elapsed_min`, so re-rendering doesn't replace them with logs and
+## times of a run that did nothing. Each pipeline writes <pipeline>.log.new, renamed over
+## <pipeline>.log when the run did something (or when that pipeline failed).
 ##
 ## The report reads <report_dir>/pipeline_manifest.txt, written here: every output path the
 ## report needs, plus the path of an optional narrative file (narrative_md, default
@@ -263,11 +268,37 @@ report_dir <- if (is_set(cfg$report_dir)) cfg$report_dir else
 log_dir <- file.path(report_dir, "logs")
 dir.create(log_dir, showWarnings = FALSE, recursive = TRUE)
 narrative_md <- if (is_set(cfg$narrative_md)) cfg$narrative_md else file.path(report_dir, "narrative.md")
+manifest_path <- file.path(report_dir, "pipeline_manifest.txt")
+
+# Size and modification time of every file the pipelines write: the run folder (recursively,
+# leaving out the report folder and run_site.R's configs folder, which are rewritten on every
+# run) and, not recursively, the folders of RIL's, LShunter's and LSstats's outputs (the RIL
+# chain's databases sit beside its raster, in the site folder). Comparing two snapshots tells a
+# rerun in which every pipeline skipped from one that changed something.
+output_snapshot <- function() {
+  norm <- function(p) normalizePath(p, winslash = "/", mustWork = FALSE)
+  run_dir <- norm(dirname(al$outOutlier))
+  skip <- paste0(norm(c(report_dir, file.path(run_dir, "configs"))), "/")
+  files <- list.files(run_dir, recursive = TRUE, full.names = TRUE, all.files = TRUE)
+  for (d in unique(norm(dirname(c(ril_raster, ls_patch, lsstats_csv))))) {
+    if (d != run_dir) files <- c(files, list.files(d, full.names = TRUE, all.files = TRUE, no.. = TRUE))
+  }
+  files <- unique(norm(files))
+  files <- files[!Reduce(`|`, lapply(skip, function(s) startsWith(tolower(files), tolower(s))), FALSE)]
+  info <- file.info(files, extra_cols = FALSE)
+  info <- info[!info$isdir, , drop = FALSE]
+  setNames(paste(info$size, format(info$mtime, "%Y-%m-%d %H:%M:%OS3")), rownames(info))
+}
+outputs_before <- output_snapshot()
 
 ## ---- Run the pipelines ------------------------------------------------------------------------
 
+# Each pipeline logs to <label>.log.new; the previous run's <label>.log stays until this run is
+# known to have done something (see keep_logs below).
+started_logs <- character(0)
 start_pipeline <- function(script, config, label, flags = character(0)) {
-  log <- file.path(log_dir, paste0(label, ".log"))
+  log <- file.path(log_dir, paste0(label, ".log.new"))
+  started_logs <<- c(started_logs, log)
   message("\n==== Starting ", label, " (", script, ")\n  log: ", log)
   proc <- processx::process$new("Rscript", c(file.path(script_dir, script), config, flags),
                                 stdout = log, stderr = "2>&1", cleanup = TRUE)
@@ -294,8 +325,11 @@ finish <- function(r) {
   status <- r$proc$get_exit_status()
   elapsed <- as.numeric(difftime(Sys.time(), r$start, units = "mins"))
   if (status != 0) {
-    stop(r$label, " failed (exit status ", status, "); last lines of ", r$log, ":\n",
-         paste(tail(readLines(r$log, warn = FALSE), 15), collapse = "\n"), call. = FALSE)
+    # A failed run's logs (this pipeline's and any that ran beside it) replace the previous ones
+    for (new_log in started_logs[file.exists(started_logs)]) file.rename(new_log, sub("\\.new$", "", new_log))
+    log <- sub("\\.new$", "", r$log)
+    stop(r$label, " failed (exit status ", status, "); last lines of ", log, ":\n",
+         paste(tail(readLines(log, warn = FALSE), 15), collapse = "\n"), call. = FALSE)
   }
   message("==== ", r$label, " finished in ", round(elapsed, 1), " min ====")
   elapsed
@@ -323,11 +357,29 @@ elapsed <- c(elapsed, wait_all(c(
   if (strip_noise_on) list(start_pipeline("run_align_pipeline.R", cfg$align_pipeline_config, "strip_noise",
                                           "--strip-noise-only")))))
 
+# If every pipeline skipped, keep the previous run's logs and its created/elapsed_min (when a
+# previous manifest has them); otherwise this run's logs replace the previous ones.
+outputs_after <- output_snapshot()
+prev_manifest <- if (file.exists(manifest_path)) {
+  m <- readLines(manifest_path, warn = FALSE)
+  setNames(trimws(sub("^[^:]*:", "", m)), trimws(sub(":.*$", "", m)))
+} else character(0)
+keep_previous <- identical(outputs_before, outputs_after) &&
+  all(c("created", "elapsed_min") %in% names(prev_manifest))
+for (new_log in started_logs) {
+  log <- sub("\\.new$", "", new_log)
+  if (keep_previous && file.exists(log)) unlink(new_log) else file.rename(new_log, log)
+}
+if (keep_previous) {
+  message("\nEvery pipeline skipped: keeping the previous run's logs and times (created ",
+          prev_manifest[["created"]], ").")
+}
+
 ## ---- Manifest and report ----------------------------------------------------------------------
 
 manifest <- list(
   study_name         = study_name,
-  created            = format(Sys.time(), "%Y-%m-%d %H:%M"),
+  created            = if (keep_previous) prev_manifest[["created"]] else format(Sys.time(), "%Y-%m-%d %H:%M"),
   config             = normalizePath(config_path, winslash = "/"),
   clip_polygon       = if (is_set(align_cfg$study_area$clip_polygon)) align_cfg$study_area$clip_polygon else "NOFILE",
   target_crs         = if (is_set(align_cfg$study_area$target_crs)) align_cfg$study_area$target_crs else "EPSG:2856",
@@ -372,9 +424,9 @@ manifest <- list(
   align_ground_count = if (is.na(g <- grnd_path(align_cfg$align_set))) "NOFILE" else g,
   narrative_md       = narrative_md,
   log_dir            = log_dir,
-  elapsed_min        = paste(names(elapsed), round(elapsed, 1), sep = "=", collapse = "; ")
+  elapsed_min        = if (keep_previous) prev_manifest[["elapsed_min"]] else
+                         paste(names(elapsed), round(elapsed, 1), sep = "=", collapse = "; ")
 )
-manifest_path <- file.path(report_dir, "pipeline_manifest.txt")
 writeLines(paste0(names(manifest), ": ", unlist(manifest)), manifest_path)
 message("\nManifest: ", manifest_path)
 
