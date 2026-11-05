@@ -52,8 +52,7 @@ table_or_note <- function(path, what, n = Inf) {
 div_pal <- grDevices::hcl.colors(101, "Blue-Red 3", rev = TRUE)
 ```
 
-**Study:** `r get("study_name")`
-**Created:** `r get("created")`
+**Study:** `r get("study_name")` **Created:** `r get("created")`
 
 ## Study area and inputs
 
@@ -159,11 +158,7 @@ table_or_note(paste0(bins, "_densityLodCorr.csv"), "Noise correlogram", 40)
 
 ## Noise reference from flight-pass overlaps
 
-Each survey's own noise, measured where two of its flight passes overlap: each pass's ground
-points are triangulated alone and the surfaces differenced. Passes flown minutes apart hold no
-real change, so this measures each survey's own noise independently of the DoD: a floor under the
-level of detection, not the whole of it. IQRs and tails are of the difference between two
-single-pass surfaces.
+Each survey's own noise, measured where two of its flight passes overlap: each pass's ground points are triangulated alone and the surfaces differenced. Passes flown minutes apart hold no real change, so this measures each survey's own noise independently of the DoD: a floor under the level of detection, not the whole of it. IQRs and tails are of the difference between two single-pass surfaces.
 
 ```{r noise, results = "asis"}
 nd <- get("strip_noise_dir")
