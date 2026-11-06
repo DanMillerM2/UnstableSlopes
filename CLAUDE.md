@@ -149,7 +149,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `refWater`/`alignWater` (WATER POINTS), which is how rivers are found.
 - **align_supervisor.R** — runs Align once (needs Align 1.2.0+, GridUtilities f568852+, which no
   longer requires the outlier raster: the method relies solely on the exceedance raster
-  `outExceed`, and `outOutlier` is optional and read by nothing downstream). With `tileNx`/`tileNy:
+  `outExceed`, and `outOutlier` is optional and read by nothing downstream; Align 1.3.0+ writes
+  `outDif` and `<outDif>_0` wherever both DTMs have data, not only inside the ground-return mask,
+  so they line up cell for cell with the exceedance and patch rasters). With `tileNx`/`tileNy:
   auto` (default) Align itself chooses the tile count and prior by block cross-validation
   (`TILES FIT = JOINT, SELECT = AUTO`; `min_tile_size`, `max_tile_size`, `cv_block`, `cv_buffer`);
   defaults follow Align's CLAUDE.md: `iterations` 8 with `convergence` 0.005 (change of the aligned

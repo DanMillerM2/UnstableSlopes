@@ -77,7 +77,9 @@ quarto --version
 - **Align** must be 1.2.0 or later, built from GridUtilities `master`, f568852 or later
   (`Projects\align`, Release|x64): the pipeline no longer asks for the outlier raster, which
   older versions require -- the supervisor then stops with "it requires OUTPUT OUTLIER RASTER
-  (Align before 1.2.0)". The options `align_matchSmoothness`, `align_suspectGround` and
+  (Align before 1.2.0)". Build 1.3.0 or later so the difference rasters (`dif_<tag>`, `_0`) have
+  a value wherever both DTMs do, cell for cell with the exceedance and patch rasters (1.2.0
+  leaves them nodata where either survey has no ground returns). The options `align_matchSmoothness`, `align_suspectGround` and
   `align_exceedanceTrim` need 2083edb, 78b4911 and ab662ea or later respectively. An older
   `align.exe` is caught a few seconds into the run -- the supervisor stops with "Align ... is
   older than this pipeline" and names what it didn't recognize. **LShunter**

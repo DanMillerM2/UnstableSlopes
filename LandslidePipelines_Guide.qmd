@@ -112,8 +112,9 @@ or executable it can't find.
    RIL's project includes Intel MKL's `lapack.f90` from
    `C:\Program Files (x86)\IntelSWTools\compilers_and_libraries_2020.4.311\...`, so on a computer
    with another Intel Fortran version, point that file at its MKL.
-3. **Build the executables** in Visual Studio, Release|x64: `align` (Align 1.2.0, GridUtilities
-   f568852 or later, which no longer requires the outlier raster; ab662ea or later for the optional `align_exceedanceTrim`, 78b4911 for
+3. **Build the executables** in Visual Studio, Release|x64: `align` (Align 1.3.0 or later, from
+   GridUtilities `master`; 1.2.0, f568852, no longer requires the outlier raster, and 1.3.0 fills
+   the difference rasters wherever both DTMs have data; ab662ea or later for the optional `align_exceedanceTrim`, 78b4911 for
    `align_suspectGround`, 2083edb for `align_matchSmoothness`; Align 1.1.0, tag `align-1.1.0`, for
    the water and coverage masks), `bldgrds`, `ValleyFloor`, `RIL`, `LShunter` (1.1.0 or later;
    1.4.0 for deposits) and `LSstats` (1.1.0 or later). Build from the pulled source, so each
