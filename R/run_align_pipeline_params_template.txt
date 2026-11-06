@@ -172,13 +172,12 @@ nAzimuth: 8
 # <ref DTM>_grad<radius>m.
 densityLod: auto
 
-# Output paths (no extension) for the per-bin csv summary, the difference raster, and the
-# outlier-flagged raster. outOutlier's .flt output is also what run_align_pipeline.R checks for
-# to decide whether Align has already been run.
+# Output paths (no extension) for the per-bin csv summary and the difference raster. The
+# aligned DEM's (outDTM's) .flt is what run_align_pipeline.R checks for to decide whether Align
+# has already been run.
 outbins: c:\work\data\site1\outbins
 outDif: c:\work\data\site1\dif
-outOutlier: c:\work\data\site1\outlier_tiled
-# Density LoD outputs: signed significance S = -log10(p) (LShunter's recommended input), the
+# Density LoD outputs: signed significance S = -log10(p) (required: the change raster LShunter uses), the
 # loss limit (also writes <outLod>_gain, _centre and _iqr), and dz minus the expected dz (for
 # patch depths and volumes). Optional: outDenOutlier, outCorDif, outDX/outDY/outDZ.
 outExceed: c:\work\data\site1\exceed

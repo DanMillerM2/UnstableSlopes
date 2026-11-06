@@ -25,7 +25,7 @@ landform_raster: c:\work\data\postmortem\landform_2006
 
 # Rasters to summarize over each polygon and landform class, comma-separated. They're numbered
 # 1, 2, ... in the order given, and that number is the <i> in the output csv names.
-rasters: c:\work\data\postmortem\grad_huntls, c:\work\data\postmortem\outlier_2006_2023
+rasters: c:\work\data\postmortem\grad_huntls, c:\work\data\postmortem\exceed_2006_2023
 
 # Base name for the output csv files. LSstats writes <out_csv>_<i>.csv (one row per landslide
 # polygon) and <out_csv>_landforms_<i>.csv (one row per landform class) for each raster.

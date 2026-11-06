@@ -19,7 +19,8 @@
 ## the run folder and the survey labels; LShunter reads Align's exceedance raster, gradient,
 ## centred difference, IQR raster and noise correlogram, and RIL's landform raster; LSstats reads
 ## LShunter's patch raster and patch table and RIL's landforms. In lsstats_rasters, @cendif,
-## @exceed, @dif, @dif0, @outlier, @lod, @gradient and @aligned stand for this run's Align outputs.
+## @exceed, @dif, @dif0, @lod, @gradient and @aligned stand for this run's Align outputs. Align
+## writes no outlier raster: the exceedance raster is the change raster the method uses.
 ## The RIL chain's method parameters stay in its three Fortran input files, which the site file
 ## names.
 ##
@@ -185,7 +186,6 @@ tag <- paste0(s$ref_label, "_", s$align_label)
 align_out <- list(
   outDTM     = in_run(paste0("elev_", s$align_label, "aligned")),
   outDif     = in_run(paste0("dif_", tag)),
-  outOutlier = in_run(paste0("outlier_", tag)),
   outbins    = in_run(paste0("outbins_", tag)),
   outExceed  = in_run(paste0("exceed_", tag)),
   outLod     = in_run(paste0("lod_", tag)),
@@ -348,7 +348,7 @@ lsh_params <- write_lines(kv(lsh), "lshunter_params.txt", "LShunter.R parameters
 
 align_token <- c(`@cendif` = align_out$outCenDif, `@exceed` = align_out$outExceed,
                  `@dif` = align_out$outDif, `@dif0` = paste0(align_out$outDif, "_0"),
-                 `@outlier` = align_out$outOutlier, `@lod` = align_out$outLod,
+                 `@lod` = align_out$outLod,
                  `@gradient` = gradient, `@aligned` = align_out$outDTM)
 rasters <- trimws(strsplit(s$lsstats_rasters, ",", fixed = TRUE)[[1]])
 rasters <- rasters[nzchar(rasters)]

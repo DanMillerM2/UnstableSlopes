@@ -6,7 +6,7 @@
 # (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
 # from its value, so that's safe.
 #
-# refDTM, alignDTM, refGrnd, alignGrnd, outDTM, outbins, outDif, outOutlier, scratch_dir, and
+# refDTM, alignDTM, refGrnd, alignGrnd, outDTM, outbins, outDif, scratch_dir, and
 # executable_dir have no default and must be set below. Every other keyword falls back to the
 # default noted in param_specs (in align_dtms.R) if you delete or comment out its line here.
 
@@ -53,12 +53,12 @@ nslope: 7
 maxSlope: 1.0
 nAzimuth: 8
 
-# Output paths (no extension) for the per-bin csv summary, the difference raster, and the
-# outlier-flagged raster. outOutlier's .flt output is also what align_dtms.R checks for to
-# decide whether Align has already been run.
+# Output paths (no extension) for the per-bin csv summary and the difference raster. The
+# aligned DTM's (outDTM's) .flt is what align_dtms.R checks for to decide whether Align has
+# already been run. outOutlier (the fence outlier raster) is optional since Align 1.2.0.
 outbins: c:\work\data\site1\outbins
 outDif: c:\work\data\site1\dif
-outOutlier: c:\work\data\site1\outlier_tiled
+# outOutlier: NOFILE
 
 # Scratch folder for Align's intermediate files, and the folder containing the Align executable.
 scratch_dir: c:\work\scratch

@@ -10,8 +10,8 @@
 ##
 ## Links checked before anything runs (each pipeline only knows its own files, so a mismatch
 ## would silently use some other, stale raster):
-##   - LShunter's input raster must be Align's: its exceedance raster [align] outExceed, or its
-##     outlier raster outOutlier (or outDenOutlier);
+##   - LShunter's input raster must be Align's exceedance raster, [align] outExceed (the only
+##     change raster the pipeline uses; Align writes no outlier raster);
 ##   - LShunter's gradient must be the one Align writes, <reference DTM>_grad<radius>m;
 ##   - LShunter's optional patch-table inputs, when used, must be Align's (cen_dif = outCenDif,
 ##     iqr = <outLod>_iqr, noise_corr = <outbins>_densityLodCorr.csv) and the seed-density
@@ -44,7 +44,7 @@
 ##   ril_pipeline_config:     ril_pipeline.R config (required)
 ##   lshunter_lsstats_config: lshunter_lsstats_pipeline.R config (required)
 ##   report_dir:              folder for the report, manifest, and logs (default: a "report"
-##                            folder next to outOutlier)
+##                            folder next to outDTM, the aligned DEM)
 ##   narrative_md:            Markdown file included in the report (default
 ##                            <report_dir>/narrative.md; leaving it absent is fine)
 ##   render_report:           TRUE (default) or FALSE
@@ -137,7 +137,7 @@ progress_interval_s <- if (is.null(cfg$progress_interval_s)) 30 else as.numeric(
 
 align_cfg <- read_keyword_file(cfg$align_pipeline_config)
 al <- align_cfg[["align"]]
-for (key in c("outDTM", "outDif", "outOutlier", "outbins")) {
+for (key in c("outDTM", "outDif", "outExceed", "outbins")) {
   if (!is_set(al[[key]])) stop("[align] ", key, " is not set in ", cfg$align_pipeline_config)
 }
 section_raster <- function(section, kind) {
@@ -158,12 +158,11 @@ lshunter_p <- read_keyword_file(ls_cfg$lshunter_params)
 lsstats_p  <- read_keyword_file(ls_cfg$lsstats_params)
 patch_shp  <- if (is_set(ls_cfg$polygons_params)) read_keyword_file(ls_cfg$polygons_params)$out_shp else "NOFILE"
 deposits_on <- !is_set(lshunter_p$input_file) && is_set(lshunter_p$dep_flow_dir)
-# LShunter's inputs that Align writes: the raster it hunts on (exceedance or outlier), the
+# LShunter's inputs that Align writes: the raster it hunts on (the exceedance raster), the
 # gradient, and the optional patch-table inputs. In mode 1 they come from its input file.
 if (is_set(lshunter_p$input_file)) {
   ls_in <- lshunter_p$input_file
   ls_exceedance <- read_fortran_field(ls_in, "EXCEEDANCE RASTER")
-  ls_outlier    <- read_fortran_field(ls_in, "OUTLIER")
   ls_gradient   <- read_fortran_field(ls_in, "GRADIENT", "FILE")
   ls_cendif     <- read_fortran_field(ls_in, "CENTERED DIFFERENCE RASTER")
   ls_iqr        <- read_fortran_field(ls_in, "IQR RASTER")
@@ -174,7 +173,6 @@ if (is_set(lshunter_p$input_file)) {
   ls_patch      <- read_fortran_keyword(ls_in, "OUTPUT PATCH RASTER")
 } else {
   ls_exceedance <- lshunter_p$exceedance
-  ls_outlier    <- lshunter_p$outlier
   ls_gradient   <- lshunter_p$gradient
   ls_cendif     <- lshunter_p$cen_dif
   ls_iqr        <- lshunter_p$iqr
@@ -215,20 +213,13 @@ check_link <- function(ls_path, al_path, label) {
          "\n  align:    ", if (is_set(al_path)) al_path else "(not set in [align])", call. = FALSE)
   }
 }
-if (is_set(ls_exceedance)) {
-  check_link(ls_exceedance, al$outExceed, "exceedance raster ([align] outExceed)")
-  ls_input <- ls_exceedance
-} else if (is_set(ls_outlier)) {
-  # Align's fence outlier raster, or its density-LoD outlier raster.
-  if (is_set(al$outDenOutlier) && raster_key(ls_outlier) == raster_key(al$outDenOutlier)) {
-    check_link(ls_outlier, al$outDenOutlier, "outlier raster")
-  } else {
-    check_link(ls_outlier, al$outOutlier, "outlier raster ([align] outOutlier)")
-  }
-  ls_input <- ls_outlier
-} else {
-  stop("LShunter has neither an exceedance nor an outlier raster: ", ls_cfg$lshunter_params)
+# The method relies solely on Align's exceedance raster: LShunter must hunt on it.
+if (!is_set(ls_exceedance)) {
+  stop("LShunter has no exceedance raster (Align's outExceed), the only change raster the ",
+       "pipeline uses: ", ls_cfg$lshunter_params)
 }
+check_link(ls_exceedance, al$outExceed, "exceedance raster ([align] outExceed)")
+ls_input <- ls_exceedance
 
 # The gradient must be the one Align writes, so patches use Align's slope and length scale.
 align_radius <- if (is_set(al$radius)) as.numeric(al$radius) else 15
@@ -264,7 +255,7 @@ if (raster_key(landform_raster) != raster_key(ril_raster)) {
 }
 
 report_dir <- if (is_set(cfg$report_dir)) cfg$report_dir else
-  file.path(dirname(al$outOutlier), "report")
+  file.path(dirname(al$outDTM), "report")
 log_dir <- file.path(report_dir, "logs")
 dir.create(log_dir, showWarnings = FALSE, recursive = TRUE)
 narrative_md <- if (is_set(cfg$narrative_md)) cfg$narrative_md else file.path(report_dir, "narrative.md")
@@ -277,7 +268,7 @@ manifest_path <- file.path(report_dir, "pipeline_manifest.txt")
 # rerun in which every pipeline skipped from one that changed something.
 output_snapshot <- function() {
   norm <- function(p) normalizePath(p, winslash = "/", mustWork = FALSE)
-  run_dir <- norm(dirname(al$outOutlier))
+  run_dir <- norm(dirname(al$outDTM))
   skip <- paste0(norm(c(report_dir, file.path(run_dir, "configs"))), "/")
   files <- list.files(run_dir, recursive = TRUE, full.names = TRUE, all.files = TRUE)
   for (d in unique(norm(dirname(c(ril_raster, ls_patch, lsstats_csv))))) {
@@ -390,7 +381,6 @@ manifest <- list(
   out_dtm            = flt_path(al$outDTM),
   out_dif            = flt_path(al$outDif),
   out_dif_0          = flt_path(paste0(sub("\\.flt$", "", al$outDif, ignore.case = TRUE), "_0")),
-  out_outlier        = flt_path(al$outOutlier),
   out_bins           = sub("\\.csv$", "", al$outbins, ignore.case = TRUE),
   out_exceed         = if (is_set(al$outExceed)) flt_path(al$outExceed) else "NOFILE",
   out_lod            = if (is_set(al$outLod)) flt_path(al$outLod) else "NOFILE",
@@ -399,7 +389,7 @@ manifest <- list(
                          section_raster(align_cfg$ref_dtm, "dtm"),
                          if (is_set(al$radius)) as.numeric(al$radius) else 15)),
   k                  = if (is_set(al$k)) al$k else "1.5",
-  align_run_dir      = file.path(dirname(al$outOutlier), "align_run"),
+  align_run_dir      = file.path(dirname(al$outDTM), "align_run"),
   ril_dem            = ril_dem,
   ril_raster         = flt_path(ril_raster),
   patch_raster       = flt_path(ls_patch),
@@ -417,7 +407,7 @@ manifest <- list(
   landform_raster    = flt_path(landform_raster),
   lsstats_csv        = sub("\\.csv$", "", lsstats_csv, ignore.case = TRUE),
   lsstats_rasters    = paste(lsstats_rasters, collapse = "; "),
-  strip_noise_dir    = if (strip_noise_on) (sn$output_dir %||% file.path(dirname(al$outOutlier), "strip_noise")) else "NOFILE",
+  strip_noise_dir    = if (strip_noise_on) (sn$output_dir %||% file.path(dirname(al$outDTM), "strip_noise")) else "NOFILE",
   noise_ref_label    = sn$ref_label %||% "ref",
   noise_align_label  = sn$align_label %||% "align",
   ref_ground_count   = if (is.na(g <- grnd_path(align_cfg$ref_set))) "NOFILE" else g,

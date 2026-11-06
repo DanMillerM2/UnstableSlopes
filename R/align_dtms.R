@@ -4,7 +4,9 @@
 ## Runs the Fortran program Align (part of the Netstream suite) via the local TWutils package to
 ## co-register one DTM ("align") to another ("ref"), estimating a horizontal/vertical shift
 ## (corrected for hillslope gradient and canopy-height change) and writing the aligned DTM plus
-## the difference/outlier diagnostics used to derive a minimum level of detection (LoD).
+## the difference diagnostics used to derive a minimum level of detection (LoD). The outlier
+## raster is optional (Align 1.2.0+ writes it only when outOutlier is set); for change, use the
+## exceedance raster, which align_supervisor.R/run_align_pipeline.R produce with the density LoD.
 ##
 ## Requires: TWutils (local package -- must already be installed/available in the R environment)
 ##
@@ -21,7 +23,7 @@ library(TWutils)
 ##
 ## Every workflow input (refDTM, alignDTM, refGrnd, alignGrnd, refDSM, alignDSM, iterations, k,
 ## dampener, outDTM, tileNx, tileNy, overlap, radius, nslope, maxSlope, nAzimuth, outbins,
-## outDif, outOutlier, scratch_dir, executable_dir, program_name) is read from a plain-text
+## outDif, outOutlier (optional), scratch_dir, executable_dir, program_name) is read from a plain-text
 ## parameter file using "keyword: value" lines, one per line -- e.g.:
 ##
 ##   refDTM: c:\work\data\site1\elev_2017.flt
@@ -34,9 +36,9 @@ library(TWutils)
 ## and their defaults. Blank lines and lines starting with "#" are ignored, and a trailing
 ## "# comment" after a value is stripped. A value may itself contain a colon (e.g. a Windows
 ## drive letter, "c:\...") -- only the FIRST colon on a line splits the keyword from its value,
-## so that's safe. refDTM, alignDTM, refGrnd, alignGrnd, outDTM, outbins, outDif, outOutlier,
+## so that's safe. refDTM, alignDTM, refGrnd, alignGrnd, outDTM, outbins, outDif,
 ## scratch_dir, and executable_dir have no default and must be present in the file; every other
-## keyword falls back to the default shown below if omitted.
+## keyword (including the optional outOutlier) falls back to the default shown below if omitted.
 
 # Resolves the folder this script itself lives in (from Rscript's "--file=" argument), so the
 # fallback config_path below is found by this script's location on disk rather than by the
@@ -149,12 +151,12 @@ param_specs <- list(
   maxSlope  = list(type = "numeric", default = 1),
   nAzimuth  = list(type = "integer", default = 8),
 
-  # Output path (no extension) for the per-slope/aspect-bin csv summary, the difference raster,
-  # and the outlier-flagged raster. No defaults -- must be set in the parameter file (outOutlier
-  # is also used below to decide whether Align has already been run -- see "Run Align").
+  # Output path (no extension) for the per-slope/aspect-bin csv summary and the difference
+  # raster (no defaults -- must be set in the parameter file), and the optional outlier raster
+  # (Align 1.2.0+ writes it only when this is set; NOFILE, the default, leaves it out).
   outbins    = list(type = "character", required = TRUE),
   outDif     = list(type = "character", required = TRUE),
-  outOutlier = list(type = "character", required = TRUE),
+  outOutlier = list(type = "character", default = "NOFILE"),
 
   # Scratch folder for Align's intermediate files, and the folder containing the Align
   # executable. No defaults -- must be set in the parameter file.
@@ -210,11 +212,13 @@ list2env(params, envir = globalenv())  # makes refDTM, alignDTM, iterations, ...
 message("Loaded parameters from: ", config_path)
 
 ## ---- Run Align -------------------------------------------------------------------------------
-## Skips the work if outOutlier's output file already exists, so a failed/interrupted run can be
-## restarted without redoing an alignment that already completed (same resumability convention
-## used elsewhere in this repo, e.g. ground_returns.R's per-batch merged files).
+## Skips the work if the aligned DTM (outDTM, among the last files Align writes) already exists,
+## so a failed/interrupted run can be restarted without redoing an alignment that already
+## completed (same resumability convention used elsewhere in this repo, e.g. ground_returns.R's
+## per-batch merged files).
 
-if (!file.exists(paste0(outOutlier, ".flt"))) {
+outDTM_flt <- paste0(sub("\\.flt$", "", outDTM, ignore.case = TRUE), ".flt")
+if (!file.exists(outDTM_flt)) {
   returnCode <- TWutils::align(refDTM,
                                alignDTM,
                                refGrnd,
@@ -246,5 +250,5 @@ if (!file.exists(paste0(outOutlier, ".flt"))) {
 
   message("Align finished. Aligned DTM written to: ", outDTM)
 } else {
-  message("Outlier output already exists, skipping Align: ", paste0(outOutlier, ".flt"))
+  message("Aligned DTM already exists, skipping Align: ", outDTM_flt)
 }

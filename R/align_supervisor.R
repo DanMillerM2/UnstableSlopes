@@ -6,11 +6,14 @@
 ## (Rscript align_supervisor.R params.txt) or from run_align_pipeline.R, whose Stage 3 always
 ## runs it.
 ##
-## Needs Align at GridUtilities 8a08fa6 or later (alignSlope2 with align_modules\, built from
-## Projects\align). The settings echo is checked a few seconds into the run: if Align reports
-## unrecognized keywords, or doesn't echo an option set here (the convergence test on the change
-## of the aligned DEM, cross-validated tile selection, central derivatives, the gradient raster,
-## the density LoD), the executable is too old and the run is stopped.
+## Needs Align 1.2.0 or later (GridUtilities f568852: alignSlope2 with align_modules\, built from
+## Projects\align), which writes the outlier raster only when asked: the pipeline uses the
+## exceedance raster (outExceed) for change, and outOutlier is optional here. The settings echo is
+## checked a few seconds into the run: if Align reports unrecognized keywords, doesn't echo an
+## option set here (the convergence test on the change of the aligned DEM, cross-validated tile
+## selection, central derivatives, the gradient raster, the density LoD), or stops because
+## OUTPUT OUTLIER RASTER is missing (Align before 1.2.0), the executable is too old and the run is
+## stopped.
 ##
 ## Tiles. With tileNx/tileNy: auto (the default), Align chooses the tile count and the prior
 ## strength itself by block cross-validation (TILES FIT = JOINT, SELECT = AUTO): square tiles from
@@ -25,11 +28,11 @@
 ## steep ground and the predicted remaining change (Align's CONVERGENCE). 8 and 0.005 make the
 ## results independent of the iteration count (see Align's CLAUDE.md).
 ##
-## Outputs. Align writes to <dirname(outOutlier)>/align_run/ (its scratch log to
+## Outputs. Align writes to <dirname(outDTM)>/align_run/ (its scratch log to
 ## <scratch_dir>/align_run/), with its console output in align_run/align.log, streamed to this
 ## session's console as it runs. On success every output is moved to its final path (by base
 ## name: <outDif>_0, <outLod>_gain/_centre/_iqr, <outbins>_fit0.csv, ... go with their base;
-## outOutlier's .flt last, since its existence marks the run complete). The gradient raster
+## the aligned DEM's (outDTM's) .flt last, since its existence marks the run complete). The gradient raster
 ## LShunter needs is written by Align next to the reference DTM, <refDTM>_grad<radius>m. Tables
 ## in align_run/, for the pipeline report:
 ##   align_run.csv        -- one row: version, chosen tiles and prior scale, iterations and
@@ -43,7 +46,7 @@
 ##                           block-mean spread, best/chosen;
 ##   align_nodes.csv      -- the joint fit's node totals relative to the global solution (mm),
 ##                           with each node's map position.
-## Resumability: if outOutlier already exists nothing runs; a finished run in align_run/ made from
+## Resumability: if outDTM's .flt already exists nothing runs; a finished run in align_run/ made from
 ## the same input file is not rerun, only its outputs moved.
 ##
 ## Requires: TWutils, terra, processx.
@@ -159,8 +162,8 @@ param_specs <- list(
   outDTM        = list(type = "character", required = TRUE),
   outbins       = list(type = "character", required = TRUE),
   outDif        = list(type = "character", required = TRUE),
-  outOutlier    = list(type = "character", required = TRUE),
-  outExceed     = list(type = "character", default = "NOFILE"),
+  outExceed     = list(type = "character", default = "NOFILE"),  # the change raster LShunter uses
+  outOutlier    = list(type = "character", default = "NOFILE"),  # optional (Align 1.2.0+); not used downstream
   outLod        = list(type = "character", default = "NOFILE"),
   outCenDif     = list(type = "character", default = "NOFILE"),
   outDenOutlier = list(type = "character", default = "NOFILE"),
@@ -265,9 +268,10 @@ if (any(dup)) {
        paste(names(out_bases)[dup], collapse = ", "), " repeat an earlier output's name.")
 }
 
-final_outlier <- flt_path(out_bases$outOutlier)
-if (file.exists(final_outlier)) {
-  message("outOutlier already exists -- Align has already been run, nothing to do: ", final_outlier)
+## The aligned DEM is moved into place last, so its existence marks a finished run.
+final_dtm <- flt_path(out_bases$outDTM)
+if (file.exists(final_dtm)) {
+  message("outDTM (the aligned DEM) already exists -- Align has already been run, nothing to do: ", final_dtm)
   quit(save = "no", status = 0)
 }
 
@@ -278,7 +282,7 @@ for (nm in c("refDTM", "alignDTM", "refDSM", "alignDSM")) {
   if (!file.exists(flt_path(p[[nm]]))) stop(nm, " not found: ", p[[nm]])
 }
 
-run_dir     <- file.path(dirname(out_bases$outOutlier), "align_run")
+run_dir     <- file.path(dirname(out_bases$outDTM), "align_run")
 run_scratch <- file.path(p$scratch_dir, "align_run")
 run_log     <- file.path(run_dir, "align.log")
 input_copy  <- file.path(run_dir, "input_align.txt")
@@ -327,6 +331,12 @@ if (length(lacking)) {
   stop("The installed TWutils is older than this pipeline: align_input() has no ", paste(lacking, collapse = ", "),
        ". Reinstall TWutils from ..\\TWutils (R CMD INSTALL).", call. = FALSE)
 }
+## A TWutils whose align_input() still requires outOutlier (before ac87ce5) would write
+## "OUTPUT OUTLIER RASTER: nofile" when it isn't given.
+if (identical(formals(TWutils::align_input)$outOutlier, quote(expr = ))) {  # no default
+  stop("The installed TWutils is older than this pipeline: align_input() still requires outOutlier. ",
+       "Reinstall TWutils from ..\\TWutils (R CMD INSTALL).", call. = FALSE)
+}
 input_file <- do.call(TWutils::align_input, align_args)
 
 ## ---- Run Align ------------------------------------------------------------------------------
@@ -357,6 +367,9 @@ expected_echo <- c(
 
 check_echo <- function(lines) {
   lines <- trimws(lines)
+  if (is_nofile(p$outOutlier) && any(grepl("Output outlier raster not specified", lines, fixed = TRUE))) {
+    return("it requires OUTPUT OUTLIER RASTER (Align before 1.2.0)")
+  }
   unknown_at <- grep("^WARNING: unrecognized keywords", lines)
   if (length(unknown_at)) {
     following <- lines[seq(unknown_at[1] + 1, min(length(lines), unknown_at[1] + 5))]
@@ -411,7 +424,7 @@ if (same_input && finished_log() && all(file.exists(expected_flts))) {
       if (!is.null(problem)) {
         proc$kill()
         stop("Align (", executable, ") is older than this pipeline: ", problem, ". Rebuild ",
-             "Projects\\align from GridUtilities 8a08fa6 or later and rerun. Log: ", run_log)
+             "Projects\\align from GridUtilities master (Align 1.2.0, f568852, or later) and rerun. Log: ", run_log)
       }
     }
     if (length(lines) > shown) {
@@ -584,8 +597,8 @@ res <- parse_align_log(log_lines)
 
 ## ---- Move the outputs into place ------------------------------------------------------------
 ## Each file in the run folder goes to the output whose base name it starts with (longest match
-## first, so "elev_dif.flt" goes with outDif "elev_dif" rather than outDTM "elev"); outOutlier's
-## .flt moves last.
+## first, so "elev_dif.flt" goes with outDif "elev_dif" rather than outDTM "elev"); the aligned
+## DEM's (outDTM's) .flt moves last, since its existence marks the run complete.
 
 move_file <- function(from, to) {
   if (file.exists(to)) unlink(to)
@@ -604,8 +617,8 @@ for (f in files) {
   hit <- names(bases)[vapply(bases, function(b) startsWith(tolower(f), tolower(b)), logical(1))]
   if (length(hit)) moves[[f]] <- file.path(dirname(out_bases[[hit[1]]]), f)
 }
-outlier_flt <- basename(flt_path(run_out$outOutlier))
-for (f in c(setdiff(names(moves), outlier_flt), intersect(names(moves), outlier_flt))) {
+dtm_flt <- basename(flt_path(run_out$outDTM))
+for (f in c(setdiff(names(moves), dtm_flt), intersect(names(moves), dtm_flt))) {
   dir.create(dirname(moves[[f]]), showWarnings = FALSE, recursive = TRUE)
   move_file(file.path(run_dir, f), moves[[f]])
 }

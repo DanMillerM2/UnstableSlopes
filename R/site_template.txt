@@ -63,7 +63,7 @@ ground_batch_size_tiles: 50
 # Defaults: tiles and prior chosen by cross-validation (tileNx auto, SELECT = AUTO, square tiles
 # from max_tile_size 8000 down to min_tile_size 500 m), iterations 8, convergence 0.005 m,
 # derivatives CENTRAL, k 1.5, radius 15, nslope 10, maxSlope 1.5, density LoD. Outputs
-# (in the run folder): elev_<align>aligned, dif_<tag> (and _0), outlier_<tag>, exceed_<tag>,
+# (in the run folder): elev_<align>aligned, dif_<tag> (and _0), exceed_<tag> (the change raster),
 # lod_<tag> (_gain, _centre, _iqr), cendif_<tag>, outbins_<tag>_*.csv; the gradient raster
 # <ref_dtm>_grad<radius>m goes next to the reference DTM.
 align_executable_dir: c:\work\sandbox\gridutilities\projects\align\x64\release
@@ -143,7 +143,7 @@ lshunter_executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x6
 
 # ---- LSstats ----------------------------------------------------------------------------------------
 # Filled in by run_site.R: LShunter's patch raster and patch table (volumes), RIL's landforms,
-# out_csv lsstats_<tag>. In lsstats_rasters, @cendif, @exceed, @dif, @dif0, @outlier, @lod,
+# out_csv lsstats_<tag>. In lsstats_rasters, @cendif, @exceed, @dif, @dif0, @lod,
 # @gradient and @aligned stand for this run's Align outputs.
 lsstats_rasters: @gradient, @cendif, @exceed
 # Distance to the floodplain edge: an existing raster, or computed out to lsstats_radius (m,

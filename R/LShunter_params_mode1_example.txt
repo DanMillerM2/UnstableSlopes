@@ -2,13 +2,14 @@
 #
 # Mode 1 hands an already-written LShunter input file straight to LShunter.exe, skipping
 # LShunterInput() entirely -- see LShunter_params_template.txt for mode 2 (build the input file
-# from outlier/accum/out_patch/... parameters instead), which is the more common case.
+# from exceedance/accum/out_patch/... parameters instead), which is the more common case.
 #
 # Setting input_file to anything other than NOFILE selects mode 1. Every mode-2-only keyword is
 # then ignored -- the input file already carries everything LShunter needs -- so this example
 # only sets the two keywords mode 1 actually uses:
-#   - input_file: the existing LShunter input file. It must contain the keywords OUTLIER or
-#     EXCEEDANCE RASTER, GRADIENT (with the gradient raster Align uses -- LShunter no longer
+#   - input_file: the existing LShunter input file. It must contain the keywords
+#     EXCEEDANCE RASTER (Align's exceedance raster: the pipeline uses no other change raster, and
+#     run_landslide_pipelines.R stops without it), GRADIENT (with the gradient raster Align uses -- LShunter no longer
 #     computes it), FLOW ACCUMULATION, MINIMUM SIZE, OUTPUT PATCH RASTER and SCRATCH DIRECTORY
 #     (TWutils::LShunter() checks for these) and uses LShunter.exe's own keyword grammar, not
 #     this parameter file's "keyword: value" grammar.

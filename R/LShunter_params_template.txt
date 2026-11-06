@@ -6,8 +6,8 @@
 # (a Windows drive letter, "c:\...") -- only the first colon on a line separates the keyword
 # from its value, so that's safe.
 #
-# gradient, accum, out_patch, scratch_dir, and executable_dir have no default and must be set
-# below (mode 2), as must exactly one of exceedance and outlier. Every other keyword falls back
+# exceedance, gradient, accum, out_patch, scratch_dir, and executable_dir have no default and
+# must be set below (mode 2). Every other keyword falls back
 # to the default noted in param_specs (in LShunter.R) if you delete or comment out its line here.
 #
 # input_file selects mode 1: point it at an already-written LShunter input file to hand straight
@@ -18,11 +18,10 @@
 # above). Leave as NOFILE (the default) to build one from the parameters below (mode 2).
 input_file: NOFILE
 
-# Raster created by Align -- exactly one of: exceedance (OUTPUT EXCEEDANCE PROBABILITY RASTER;
-# recommended, thresholds in S = -log10(p)) or outlier (OUTPUT OUTLIER RASTER) -- and flow
-# accumulation raster (.flt) created by bldgrds.
+# Align's exceedance raster (OUTPUT EXCEEDANCE PROBABILITY RASTER; thresholds in
+# S = -log10(p)), the only change raster the pipeline uses, and the flow accumulation raster
+# (.flt) created by bldgrds. (Align's outlier raster is no longer accepted.)
 exceedance: c:\work\data\postmortem\exceed_2006_2023
-outlier: NOFILE
 accum: c:\work\data\postmortem\accum_2006
 
 # Output patch raster (.flt), given without extension.
@@ -34,9 +33,8 @@ scratch_dir: c:\work\scratch
 executable_dir: c:\work\sandbox\landslideutilities\projects\LShunter\x64\release\
 
 # --- Two-round thresholds: a strict 1st round finds patch cores, a looser 2nd round grows them ---
-# Maximum value for a patch: outlier (k) values with outlier; with exceedance, S values such as
-# threshold1: -4 and threshold2: -2 (p <= 0.01% and p <= 1%). With outlier, e.g. -5.0 and -1.5
-# (the defaults).
+# Maximum value for a patch, in S = -log10(p): threshold1: -4 and threshold2: -2 (p <= 0.01%
+# and p <= 1%; the defaults).
 threshold1: -4
 threshold2: -2
 # Minimum gradient for a patch, as tan(slope).

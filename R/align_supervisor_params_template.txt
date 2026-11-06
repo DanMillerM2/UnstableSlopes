@@ -6,7 +6,7 @@
 # itself from its [align] section; use this template to run Align on its own, on DTMs that
 # already exist.
 #
-# refDTM, alignDTM, outDTM, outbins, outDif, outOutlier, scratch_dir, and executable_dir have no
+# refDTM, alignDTM, outDTM, outbins, outDif, scratch_dir, and executable_dir have no
 # default and must be set. Everything else falls back to the default in param_specs
 # (align_supervisor.R) -- the values shown here; a commented-out keyword with no default is left
 # out of Align's input file, so Align's own default applies. Needs Align at GridUtilities
@@ -78,14 +78,16 @@ nAzimuth: 8
 # FALSE. Optional: localOffsetWindow, localOffsetMinPoints (not recommended as a default).
 densityLod: auto
 
-# Final outputs (no extension). Align writes into <folder of outOutlier>\align_run\ and the
-# files are moved here when it has finished; outOutlier's .flt existing means the run is done.
-# The gradient raster is written next to refDTM as <refDTM>_grad<radius>m.
+# Final outputs (no extension). Align writes into <folder of outDTM>\align_run\ and the files
+# are moved here when it has finished; the aligned DEM's (outDTM's) .flt is moved last, so its
+# existing means the run is done. The gradient raster is written next to refDTM as
+# <refDTM>_grad<radius>m.
 outDTM: c:\work\data\site1\elev_2023aligned
 outbins: c:\work\data\site1\outbins
 outDif: c:\work\data\site1\dif
-outOutlier: c:\work\data\site1\outlier_tiled
 # Density LoD outputs (need densityLod), each optional; outLod also writes _gain, _centre, _iqr.
+# outExceed is the change raster LShunter uses. (outOutlier, the fence outlier raster, is
+# optional since Align 1.2.0, and nothing downstream reads it.)
 outExceed: c:\work\data\site1\exceed
 outLod: c:\work\data\site1\lod
 outCenDif: c:\work\data\site1\cendif

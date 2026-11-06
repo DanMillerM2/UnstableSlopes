@@ -372,7 +372,7 @@ if (use_existing_input_file) {
 
   # Skips the work if out_RIL's output raster already exists, so a failed/interrupted run can be
   # restarted without redoing a RIL run that already completed (same resumability convention used
-  # elsewhere in this repo, e.g. align_dtms.R's outOutlier skip).
+  # elsewhere in this repo, e.g. align_dtms.R's outDTM skip).
   out_RIL_flt <- if (grepl("\\.flt$", out_RIL, ignore.case = TRUE)) out_RIL else paste0(out_RIL, ".flt")
 
   if (!file.exists(out_RIL_flt)) {

@@ -20,7 +20,7 @@ results:
 
 | Step | Script | Produces |
 |---|---|---|
-| 1. Align and its inputs | `R/run_align_pipeline.R` → `R/align_supervisor.R` | aligned DTM, DoD, outlier and exceedance rasters, level of detection, gradient raster, `align_run\*.csv` |
+| 1. Align and its inputs | `R/run_align_pipeline.R` → `R/align_supervisor.R` | aligned DTM, DoD, exceedance raster, level of detection, gradient raster, `align_run\*.csv` |
 | 2. RIL (runs alongside 1) | `R/ril_pipeline.R` | landform raster |
 | 3. LShunter and LSstats | `R/lshunter_lsstats_pipeline.R` | candidate-landslide patch raster, patch table (volumes ± SD), LSstats csv files, and the patches as a polygon shapefile; with `lshunter_deposits: TRUE`, the deposits below each scar (raster, table, polygons) and each scar's volume balance |
 | 4. Strip noise (optional, off by default; runs alongside 3) | `R/strip_noise.R`, as Stage 4 of `R/run_align_pipeline.R` | each survey's noise between its own flight passes: strip offsets and a noise floor by canopy, slope and ground density |
@@ -51,7 +51,7 @@ Anything left out takes its default, and an unknown keyword stops the run. Every
 one program to the next is filled in: Align's output names come from the run folder and the
 survey labels; LShunter reads Align's exceedance raster, gradient, centred difference, IQR raster
 and noise correlogram, and RIL's landform raster; LSstats reads LShunter's patch raster and patch
-table. In `lsstats_rasters`, `@cendif`, `@exceed`, `@dif`, `@outlier`, `@lod`, `@gradient` and
+table. In `lsstats_rasters`, `@cendif`, `@exceed`, `@dif`, `@lod`, `@gradient` and
 `@aligned` stand for this run's Align outputs. For Site 2 the file is
 `C:\Work\Data\Site2\Site2_2017_2025.txt` (Site 1: `C:\Work\Data\Site1\Site1_2017_2023.txt`).
 
@@ -96,8 +96,8 @@ or executable it can't find.
    | Repo | Branch | Holds |
    |---|---|---|
    | UnstableSlopes (`DanMillerM2`) | `main` | the R scripts, the skill, this guide |
-   | TWutils (`DanMillerM2`) | `main` (c2290a4 or later) | the R package that writes the programs' input files |
-   | GridUtilities (`teal-waters`) | `master` (ab662ea or later) | Align, bldgrds |
+   | TWutils (`DanMillerM2`) | `main` (ac87ce5 or later) | the R package that writes the programs' input files |
+   | GridUtilities (`teal-waters`) | `master` (f568852 or later) | Align, bldgrds |
    | LandslideUtilities (`DanMillerM2`) | `master` (tag `lshunter-1.4.0` or later) | LShunter, LSstats |
    | ChannelUtilities (`teal-waters`) | `master` | ValleyFloor, RIL |
    | modules (`teal-waters`) | `master` | Fortran modules shared by all of the above |
@@ -112,8 +112,8 @@ or executable it can't find.
    RIL's project includes Intel MKL's `lapack.f90` from
    `C:\Program Files (x86)\IntelSWTools\compilers_and_libraries_2020.4.311\...`, so on a computer
    with another Intel Fortran version, point that file at its MKL.
-3. **Build the executables** in Visual Studio, Release|x64: `align` (GridUtilities 8a08fa6 or
-   later; ab662ea or later for the optional `align_exceedanceTrim`, 78b4911 for
+3. **Build the executables** in Visual Studio, Release|x64: `align` (Align 1.2.0, GridUtilities
+   f568852 or later, which no longer requires the outlier raster; ab662ea or later for the optional `align_exceedanceTrim`, 78b4911 for
    `align_suspectGround`, 2083edb for `align_matchSmoothness`; Align 1.1.0, tag `align-1.1.0`, for
    the water and coverage masks), `bldgrds`, `ValleyFloor`, `RIL`, `LShunter` (1.1.0 or later;
    1.4.0 for deposits) and `LSstats` (1.1.0 or later). Build from the pulled source, so each

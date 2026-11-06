@@ -13,14 +13,14 @@
 # Name for the report title and file name.
 study_name: Site 1, 2017-2023
 
-# Each pipeline's own config. LShunter's inputs (exceedance or outlier raster, gradient, and the
+# Each pipeline's own config. LShunter's inputs (the exceedance raster, gradient, and the
 # patch-table inputs) must be this run's Align outputs (checked before anything runs).
 align_pipeline_config: c:\work\data\site1\run_align_pipeline.txt
 ril_pipeline_config: c:\work\data\site1\ril_pipeline.txt
 lshunter_lsstats_config: c:\work\data\site1\lshunter_lsstats_pipeline.txt
 
 # Folder for the rendered report, its manifest, and the pipelines' logs (default: a "report"
-# folder next to outOutlier).
+# folder next to outDTM, the aligned DEM).
 # report_dir: c:\work\data\site1\report
 
 # Markdown included as the report's Interpretation section (default <report_dir>\narrative.md;

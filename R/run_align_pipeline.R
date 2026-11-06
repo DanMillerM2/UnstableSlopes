@@ -55,9 +55,10 @@
 ##
 ## Resumability: every file this pipeline produces is checked for existence before it's
 ## (re)created, and skipped if it's already there -- same convention used throughout this repo
-## (see ground_returns.R's per-batch merged-file skip and align_dtms.R's outOutlier skip). In
-## particular, since outOutlier is the very last thing the whole pipeline produces, if its output
-## already exists the entire pipeline -- both ground_returns.R runs included -- is skipped
+## (see ground_returns.R's per-batch merged-file skip and align_dtms.R's outDTM skip). In
+## particular, since the aligned DEM (outDTM) is the very last thing Align's stage produces
+## (align_supervisor.R moves it into place last), if its .flt already exists the entire
+## pipeline -- both ground_returns.R runs included -- is skipped
 ## outright; see "Skip everything" below. Existence is the only check (except that a count raster
 ## older than the reference DTM stops the pipeline, since it may be on a stale grid): after
 ## changing clip_polygon (or any other parameter), delete the outputs it affects so they're
@@ -109,15 +110,17 @@
 ##                   align_label (output prefixes, default ref/align). input_dir, template_raster,
 ##                   dtm, dsm, gradient_raster, pass_tally and clip_polygon are set here.
 ##   [align]      -- align_supervisor.R's keywords (iterations, convergence, k, tileNx, ...,
-##                   outOutlier, outExceed, outLod, outCenDif, scratch_dir, executable_dir,
+##                   outExceed, outLod, outCenDif, scratch_dir, executable_dir,
 ##                   program_name; see param_specs there), passed on as they are.
 ##                   refDTM/alignDTM, refDSM/alignDSM, and refGrnd/alignGrnd are NOT set here --
 ##                   they are always taken from the sections above; any found in [align] are
 ##                   ignored (with a warning).
 ##
 ## input_dir/output_dir (per LAZ set), tile_dir or input_dtm with output_dtm, or existing_dtm
-## (per DTM), and outDTM/outbins/outDif/outOutlier/scratch_dir/executable_dir (in [align]) have
-## no default and must be set. Everything else falls back to ground_returns.R's, mosaic_dtm.R's, or
+## (per DTM), and outDTM/outbins/outDif/outExceed/scratch_dir/executable_dir (in [align]) have
+## no default and must be set: the exceedance raster (outExceed) is the change raster the rest of
+## the method uses, and Align no longer needs an outlier raster (outOutlier, optional since Align
+## 1.2.0, is passed on if given but nothing downstream reads it). Everything else falls back to ground_returns.R's, mosaic_dtm.R's, or
 ## align_supervisor.R's own built-in default -- see param_specs in each of those scripts.
 
 library(TWutils)
@@ -407,7 +410,7 @@ ref_dsm   <- resolve_raster_section(ref_dsm,   "ref_dsm",   "dsm")
 align_dsm <- resolve_raster_section(align_dsm, "align_dsm", "dsm")
 
 ## ---- Resolve Align's parameters up front -----------------------------------------------------
-## Done before Stages 1-2 run (not after, as in align_dtms.R) so outOutlier is known early
+## Done before Stages 1-2 run (not after, as in align_dtms.R) so outDTM is known early
 ## enough to decide, below, whether the whole pipeline can be skipped -- refGrnd/alignGrnd and
 ## refDTM/alignDTM/refDSM/alignDSM only need ref_set/align_set's output_dir and the DTM/DSM
 ## sections' output_dtm/output_dsm (or existing_dtm/existing_dsm), which are already known from
@@ -427,7 +430,7 @@ if (length(derived_align_keys) > 0) {
 
 # [align] goes to align_supervisor.R as it is: that script holds the keywords and their
 # defaults and checks them. Only the keywords this script itself needs are checked here.
-for (key in c("outDTM", "outbins", "outDif", "outOutlier", "scratch_dir", "executable_dir")) {
+for (key in c("outDTM", "outbins", "outDif", "outExceed", "scratch_dir", "executable_dir")) {
   if (is.null(align_section[[key]]) || !nzchar(align_section[[key]])) {
     stop("Required parameter '", key, "' is missing from [align] in ", pipeline_config_path)
   }
@@ -457,22 +460,22 @@ if (counts_water(ref_set))   align_params$refWater   <- water_count_path(ref_set
 if (counts_water(align_set)) align_params$alignWater <- water_count_path(align_set)
 # [study_area]'s water polygons, rasterized onto the reference DTM's grid in the run folder
 water_mask_flt <- if (toupper(water_polygons) == "NOFILE") NULL else
-  file.path(dirname(align_params$outOutlier), "water_mask_ref_grid.flt")
+  file.path(dirname(align_params$outDTM), "water_mask_ref_grid.flt")
 if (!is.null(water_mask_flt)) align_params$waterMask <- water_mask_flt
 
 refGrnd    <- align_params$refGrnd
 alignGrnd  <- align_params$alignGrnd
 outDTM     <- align_params$outDTM
-outOutlier <- sub("\\.flt$", "", align_params$outOutlier, ignore.case = TRUE)
 
 ## ---- Skip everything if the final output already exists --------------------------------------
-## outOutlier is the last file the whole pipeline produces (every ground_returns.R/mosaic_dtm.R
-## run feeds into it via Align). If it's already there, there is nothing left for any stage to
+## The aligned DEM (outDTM) is the last file the whole pipeline produces (every
+## ground_returns.R/mosaic_dtm.R run feeds into it via Align, and align_supervisor.R moves it into
+## place after every other output). If it's already there, there is nothing left for any stage to
 ## do, so skip Stages 1-3 entirely rather than just checking right before the Align call, as
 ## align_dtms.R does -- that would still go through every (potentially slow) earlier run for no
 ## reason once the pipeline has already finished.
 
-outOutlier_path <- paste0(outOutlier, ".flt")
+outDTM_path <- paste0(sub("\\.flt$", "", outDTM, ignore.case = TRUE), ".flt")
 
 # Writes a named list out as a "keyword: value" parameter file and returns that file's path.
 write_param_file <- function(params, path) {
@@ -526,9 +529,9 @@ run_script_step <- function(script, label, param_path, expected_output, log_file
 
 if (strip_noise_only) {
   message("--strip-noise-only: Stages 1-3 skipped.")
-} else if (file.exists(outOutlier_path)) {
-  message("Final outlier output already exists -- pipeline already complete, nothing to do: ",
-          outOutlier_path)
+} else if (file.exists(outDTM_path)) {
+  message("Final output (the aligned DEM) already exists -- pipeline already complete, nothing to do: ",
+          outDTM_path)
 } else {
 
   ## ---- Stage 1: mosaic_dtm.R for each DTM/DSM built from tiles or one input file --------------
@@ -724,13 +727,13 @@ if (strip_noise_only) {
   message("  align_dsm: ", align_dsm_flt)
 
   ## ---- Stage 3: Align --------------------------------------------------------------------------
-  ## Reaching here means outOutlier_path did not exist when this run started, so Align has not
+  ## Reaching here means outDTM_path did not exist when this run started, so Align has not
   ## already produced this pipeline's final output -- run it.
 
   # align_supervisor.R reads the same keywords as [align], plus the six raster paths.
   supervisor_params <- write_param_file(align_params,
                                         file.path(param_dir, "params_align_supervisor.txt"))
-  run_script_step(supervisor_script, "Align", supervisor_params, outOutlier_path)
+  run_script_step(supervisor_script, "Align", supervisor_params, outDTM_path)
   message("Align finished. Aligned DTM written to: ", outDTM)
 }
 
@@ -738,7 +741,7 @@ if (strip_noise_only) {
 ## Each survey's own flight-pass overlaps, classed by its own canopy height and Align's gradient.
 if (!is.null(strip_noise_section) && !no_strip_noise &&
     !identical(toupper(strip_noise_section$run %||% "TRUE"), "FALSE")) {
-  noise_dir <- strip_noise_section$output_dir %||% file.path(dirname(align_params$outOutlier), "strip_noise")
+  noise_dir <- strip_noise_section$output_dir %||% file.path(dirname(align_params$outDTM), "strip_noise")
   noise_labels <- c(ref = strip_noise_section$ref_label %||% "ref",
                     align = strip_noise_section$align_label %||% "align")
   set_keys <- c("input_dir", "output_dir", "label", "template_raster", "dtm", "dsm", "gradient_raster",

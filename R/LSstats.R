@@ -41,7 +41,7 @@ library(TWutils)
 ## one per line -- e.g.:
 ##
 ##   polygon_raster: c:\work\data\site1\patch_2006_2023
-##   rasters: c:\work\data\site1\grad_2006, c:\work\data\site1\outlier_2006_2023
+##   rasters: c:\work\data\site1\grad_2006, c:\work\data\site1\exceed_2006_2023
 ##   scratch_dir: c:\work\scratch
 ##
 ## Because each line is self-labeled with its keyword, the order lines appear in the file does

@@ -9,7 +9,7 @@ This repo chains three pipelines and a report:
 
 | Step | Script | Produces |
 |---|---|---|
-| 1. Align (and its inputs) | `R/run_align_pipeline.R` -> `R/align_supervisor.R` | aligned DTM, DoD (`outDif`, `<outDif>_0`), outlier raster, exceedance raster, LoD rasters (`<outLod>`, `_gain`, `_centre`, `_iqr`), centred difference, gradient raster `<ref DTM>_grad<radius>m`, `<outbins>_*.csv`, `align_run\*.csv` |
+| 1. Align (and its inputs) | `R/run_align_pipeline.R` -> `R/align_supervisor.R` | aligned DTM, DoD (`outDif`, `<outDif>_0`), exceedance raster (the only change raster the method uses; Align writes no outlier raster), LoD rasters (`<outLod>`, `_gain`, `_centre`, `_iqr`), centred difference, gradient raster `<ref DTM>_grad<radius>m`, `<outbins>_*.csv`, `align_run\*.csv` |
 | 2. RIL (independent of 1) | `R/ril_pipeline.R` | landform raster (codes 1-10 as LSstats names them: Floodplain, Bedrock_Hollow, Inner_Gorge, Steep_/Convergent, Divergent, Planar, Other) |
 | 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv`; with `lshunter_deposits: TRUE`, also `ang_<ref>` (bldgrds), `corridor_<tag>`, `patch_<tag>_deposits`/`_unlinked` rasters, `patch_<tag>_table_deposits.csv`/`_unlinked.csv`/`_balance.csv`, and the deposits in `patch_<tag>_polygons.shp` (field `type`: scar or deposit; a deposit's `scar` field links it); optionally (`R/naip_images.R`, `naip_run: TRUE`) `naip\p<label>_naip.jpg` |
 | Report | `PipelineReport.qmd` (repo root, tracked -- see section 6) | one self-contained html file |
@@ -63,18 +63,21 @@ not already given, in one message:
 Run these and fix anything that fails before writing configs:
 
 ```
-Rscript -e "a <- names(formals(TWutils::align_input)); stopifnot(all(c('tileSelect','minTileSize','outGradient','densityLod','outExceed','outCenDif','matchSmoothness','suspectGround','exceedanceTrim') %in% a)); l <- names(formals(TWutils::LShunterInput)); stopifnot(all(c('Exceedance','Gradient','OutTable','SignFlip','CanopyRefDSM','AreaWindows') %in% l)); stopifnot(exists('align_gradient_raster', asNamespace('TWutils')), 'patch_table' %in% names(formals(TWutils::LSstats_input))); for (p in c('terra','sf','processx','ggplot2','knitr')) stopifnot(requireNamespace(p, quietly = TRUE))"
+Rscript -e "a <- names(formals(TWutils::align_input)); stopifnot(all(c('tileSelect','minTileSize','outGradient','densityLod','outExceed','outCenDif','matchSmoothness','suspectGround','exceedanceTrim') %in% a), !identical(formals(TWutils::align_input)[['outOutlier']], quote(expr = ))); l <- names(formals(TWutils::LShunterInput)); stopifnot(all(c('Exceedance','Gradient','OutTable','SignFlip','CanopyRefDSM','AreaWindows') %in% l)); stopifnot(exists('align_gradient_raster', asNamespace('TWutils')), 'patch_table' %in% names(formals(TWutils::LSstats_input))); for (p in c('terra','sf','processx','ggplot2','knitr')) stopifnot(requireNamespace(p, quietly = TRUE))"
 quarto --version
 ```
 
 - If TWutils fails the check, reinstall it from `..\TWutils` (`R CMD INSTALL`; current `main`,
-  c2290a4 or later). An older TWutils is also caught when Align starts: the supervisor stops with
-  "The installed TWutils is older than this pipeline" and names the missing arguments.
+  ac87ce5 or later, whose `align_input()` no longer requires `outOutlier`). An older TWutils is
+  also caught when Align starts: the supervisor stops with "The installed TWutils is older than
+  this pipeline" and names the missing arguments.
 - If `quarto` isn't found, the report can't render. RStudio has a copy that isn't on the PATH
   (`C:\Program Files\RStudio\resources\app\bin\quarto\bin`); ask the user to add it to the PATH
   (or install Quarto), or set `render_report: FALSE` in the site file until then.
-- **Align** must be built from GridUtilities `master`, 8a08fa6 or later (`Projects\align`,
-  Release|x64); the options `align_matchSmoothness`, `align_suspectGround` and
+- **Align** must be 1.2.0 or later, built from GridUtilities `master`, f568852 or later
+  (`Projects\align`, Release|x64): the pipeline no longer asks for the outlier raster, which
+  older versions require -- the supervisor then stops with "it requires OUTPUT OUTLIER RASTER
+  (Align before 1.2.0)". The options `align_matchSmoothness`, `align_suspectGround` and
   `align_exceedanceTrim` need 2083edb, 78b4911 and ab662ea or later respectively. An older
   `align.exe` is caught a few seconds into the run -- the supervisor stops with "Align ... is
   older than this pipeline" and names what it didn't recognize. **LShunter**
@@ -99,7 +102,7 @@ quarto --version
    `lshunter_` and `lsstats_`. Leave out anything at its default: Align's defaults (`tileNx`
    auto, 8 iterations, convergence 0.005, `CENTRAL`, 10 slope bins to 1.5, density LoD) are the
    recommended setup, and LShunter's S thresholds default to -4 / -2. In `lsstats_rasters`,
-   `@cendif`, `@exceed`, `@dif`, `@dif0`, `@outlier`, `@lod`, `@gradient` and `@aligned` stand for
+   `@cendif`, `@exceed`, `@dif`, `@dif0`, `@lod`, `@gradient` and `@aligned` stand for
    this run's Align outputs -- prefer `@cendif` and `@exceed` over older difference rasters.
 3. **Check it** without running anything:
 
@@ -133,7 +136,7 @@ On failure, read the end of the failing log and report the cause. Rerunning resu
 exists. To change a setting, edit the site file (never the generated configs: `run_site.R`
 rewrites them on every run). **Ask before deleting any output** -- after a parameter change, the
 outputs it affects must be deleted for the change to take effect (each pipeline's header says
-which; for Align, deleting the outlier raster `.flt` reruns it).
+which; for Align, deleting the aligned DEM `elev_<align>aligned.flt` reruns it).
 
 ## 5. Write the interpretation and render
 

@@ -147,7 +147,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `align_outWaterMask: FALSE`); and, by default (`extra_counts: water=9` unless `[defaults]` or a set sets
   `extra_counts: NONE`), each set's `water_count_ref_grid.flt` becomes Align's
   `refWater`/`alignWater` (WATER POINTS), which is how rivers are found.
-- **align_supervisor.R** — runs Align once (needs GridUtilities 8a08fa6+). With `tileNx`/`tileNy:
+- **align_supervisor.R** — runs Align once (needs Align 1.2.0+, GridUtilities f568852+, which no
+  longer requires the outlier raster: the method relies solely on the exceedance raster
+  `outExceed`, and `outOutlier` is optional and read by nothing downstream). With `tileNx`/`tileNy:
   auto` (default) Align itself chooses the tile count and prior by block cross-validation
   (`TILES FIT = JOINT, SELECT = AUTO`; `min_tile_size`, `max_tile_size`, `cv_block`, `cv_buffer`);
   defaults follow Align's CLAUDE.md: `iterations` 8 with `convergence` 0.005 (change of the aligned
@@ -165,12 +167,15 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   `suspectBuffer`) replaces with the local median (code 5; nodata where too few neighbours remain)
   bumps under canopy in one DTM that the other lacks -- vegetation classified as ground, which
   read as loss (2017) or gain. A few seconds in it
-  checks Align's settings echo — unrecognized keywords, or an
-  option not acknowledged (Align drops unknown `TILES` sub-fields silently) — and kills an old exe.
+  checks Align's settings echo — unrecognized keywords, an
+  option not acknowledged (Align drops unknown `TILES` sub-fields silently), or an Align before
+  1.2.0 stopping for want of OUTPUT OUTLIER RASTER — and kills an old exe; it also stops if the
+  installed TWutils' `align_input()` still requires `outOutlier` (before ac87ce5).
   It runs the exe via `processx` (input file from `TWutils::align_input()`) into
-  `<outOutlier folder>/align_run/`, streaming `align.log`, then moves every output to its final
-  path by base name (`_0`, `_gain`/`_centre`/`_iqr`, `_fit0.csv`, ... with their base; outOutlier
-  last) and writes `align_run.csv`, `align_iterations.csv`, `align_select.csv` (the CV table) and
+  `<outDTM folder>/align_run/`, streaming `align.log`, then moves every output to its final
+  path by base name (`_0`, `_gain`/`_centre`/`_iqr`, `_fit0.csv`, ... with their base; the aligned
+  DEM, outDTM, last: its `.flt` existing means the run is done, here and in
+  `run_align_pipeline.R`) and writes `align_run.csv`, `align_iterations.csv`, `align_select.csv` (the CV table) and
   `align_nodes.csv` (joint-fit node totals, mm, with map positions) there. It parses the longest
   `<output>.log` copy, because Align's console output wraps at 80 columns.
 - **run_site.R** — front end for one site: reads a single flat `keyword: value` site file
@@ -178,7 +183,7 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   Align settings, `ril_`, `lshunter_`, `lsstats_`; unknown keywords stop it), writes the six
   configs below into `<site_dir>\<site_run_name>\configs\` and runs `run_landslide_pipelines.R`
   (`--configs-only` writes and checks them). It derives every link: Align's outputs are
-  `<run folder>\elev_<align>aligned`, `dif_/outlier_/exceed_/lod_/cendif_/outbins_<ref>_<align>`;
+  `<run folder>\elev_<align>aligned`, `dif_/exceed_/lod_/cendif_/outbins_<ref>_<align>` (no outlier raster);
   LShunter gets Align's exceedance, gradient, cendif, IQR and correlogram and RIL's landforms
   (`OUTPUT RIL RASTER` of `ril_input`), and with both DSMs the two surveys' DSMs and original DTMs
   (`canopy_*`), writing `patch_<tag>` and `patch_<tag>_table.csv`; LSstats
@@ -191,7 +196,7 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
 - **run_landslide_pipelines.R** — driver for the whole method: runs `run_align_pipeline.R` and
   `ril_pipeline.R` concurrently (processx, logs in `<report_dir>/logs/`), then
   `lshunter_lsstats_pipeline.R`, checking first that LShunter's inputs are this run's Align
-  outputs: the exceedance (`outExceed`) or outlier (`outOutlier`/`outDenOutlier`) raster, the
+  outputs: the exceedance raster (`outExceed`, required -- the only change raster used), the
   gradient `<ref DTM>_grad<radius>m`, and when used `cen_dif`/`iqr`/`noise_corr` and the
   seed-density count rasters; writes `pipeline_manifest.txt` and renders **PipelineReport.qmd** (repo root,
   `embed-resources: true`) to `<report_dir>/<study_name>_report.html`, including
@@ -233,7 +238,8 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   trace the channel network from a DEM and classify valley floor / hollow / inner-gorge landforms.
 - **LShunter.R** — runs `TWutils::LShunter()` (Fortran program LShunter, see
   `..\LandslideUtilities\LShunter.f90`) to find candidate landslide patches from Align's exceedance
-  raster (recommended, S thresholds such as −4/−2) or outlier raster, plus Align's gradient raster
+  raster (required, S thresholds −4/−2 by default; the `outlier` keyword is no longer accepted),
+  plus Align's gradient raster
   (required) and a flow-accumulation raster, in two rounds of paired thresholds. LShunter 1.1's
   options are keywords too: patch table (`cen_dif`, `iqr` + `noise_corr`, `landform`,
   `dist_channel`, `out_table`, `min_patch_significance`), `null_*` simulation, `seed_den_*`,
