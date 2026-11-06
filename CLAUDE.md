@@ -175,7 +175,8 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   installed TWutils' `align_input()` still requires `outOutlier` (before ac87ce5).
   It runs the exe via `processx` (input file from `TWutils::align_input()`) into
   `<outDTM folder>/align_run/`, streaming `align.log`, then moves every output to its final
-  path by base name (`_0`, `_gain`/`_centre`/`_iqr`, `_fit0.csv`, ... with their base; the aligned
+  path by base name (`_0`, `_iqr`, `_fit0.csv`, ... with their base; `lodGain`/`lodCentre`
+  TRUE also ask Align 1.4.0+ for `<outLod>_gain`/`_centre`, which nothing reads; the aligned
   DEM, outDTM, last: its `.flt` existing means the run is done, here and in
   `run_align_pipeline.R`) and writes `align_run.csv`, `align_iterations.csv`, `align_select.csv` (the CV table) and
   `align_nodes.csv` (joint-fit node totals, mm, with map positions) there. It parses the longest
@@ -192,7 +193,7 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   gets the patch raster and table; `@cendif`, `@exceed`, ... in `lsstats_rasters` stand for Align
   outputs. With `lshunter_deposits: TRUE` (LShunter 1.4.0) LShunter also gets the reference DTM
   and `<run folder>\ang_<ref>` (its flow directions, which LShunter.R builds with RIL's bldgrds
-  executable) and writes `corridor_<tag>`; `lshunter_dep_*` keys pass through as `dep_*`, and the
+  executable; no corridor raster is asked for, as nothing reads it); `lshunter_dep_*` keys pass through as `dep_*`, and the
   deposits join the scars in `patch_<tag>_polygons.shp` (type `deposit`, with their scar).
   The configs are regenerated every run; edit the site file, not them.
 - **run_landslide_pipelines.R** — driver for the whole method: runs `run_align_pipeline.R` and
@@ -202,7 +203,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   gradient `<ref DTM>_grad<radius>m`, and when used `cen_dif`/`iqr`/`noise_corr` and the
   seed-density count rasters; writes `pipeline_manifest.txt` and renders **PipelineReport.qmd** (repo root,
   `embed-resources: true`) to `<report_dir>/<study_name>_report.html`, including
-  `narrative.md` as its Interpretation section. The report reads only the manifest's outputs, so
+  `narrative.md` as its Interpretation section and, with deposits, a Deposits section (map,
+  deposit sizes and travel, the scars' volume balance, from the deposit, balance and unlinked
+  tables). The report reads only the manifest's outputs, so
   a rerun (every pipeline skipping) just re-renders, keeping the previous run's logs and the
   manifest's `created`/`elapsed_min` (no output file created or changed; each pipeline logs to
   `<pipeline>.log.new`, renamed into place only when the run did something or failed). `.claude/skills/landslide-pipelines/` is the
@@ -261,7 +264,9 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   (gain patches with no scar above them) and `_balance.csv` (each scar's volume against its
   deposits', the net and their SDs), last. `dep_flow_dir` is built here with
   `TWutils::bldgrds_nochannels(out_ang = )` when missing or older than `dep_ref_dem`
-  (`dep_bldgrds_executable_dir`); with deposits the run counts as done once `_balance.csv`
+  (`dep_bldgrds_executable_dir`), and the contributing area bldgrds always writes beside it
+  (`<dep_flow_dir>_accum`, and an empty `BaseNode_<id>.dat`) is deleted; LShunter 1.5.0+ writes
+  the unlinked raster only with `out_unlinked`; with deposits the run counts as done once `_balance.csv`
   exists. The scars' sign-flip control then leaves out gain patches in a scar's corridor, and
   `null_*` gives deposits false-discovery rates from simulated noise patches in the same
   corridors. Supports
@@ -315,7 +320,8 @@ block, `RIL_attributes_example.txt`) to copy as a starting point.
   stratified random sample of patch_polygons.R's scars (deposits left out) (`factor_<name>: level = condition; ...;
   level = otherwise`, R expressions over the shapefile's fields, first true wins, NA = false;
   strata are the factors' combinations; `per_stratum`, `seed`, optional `filter`; default factors
-  sim_fdr <= 0.05 x canopy_chg < -10 / > 5, which reproduce the Site 2 sample), each drawn as 8
+  flip_fdr <= 0.05 x canopy_chg < -10 / > 5, which reproduce the Site 2 sample; `sim_fdr` is
+  empty unless the run used the null simulation), each drawn as 8
   lidar panels (hillshades, centred difference, 700 m context, canopy height, ground returns/m2).
   The ground-return panels mask what Align leaves out: each survey's coverage gaps (Align's rule,
   `coverage_min`/`coverage_block`, grown into adjacent cells without returns because a 50 m block

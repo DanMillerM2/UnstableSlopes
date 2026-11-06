@@ -15,8 +15,9 @@ out_dir: c:\work\data\site2\run_2017_2025_gap2\scar_review
 # Strata are the combinations of the factors' levels. Each factor_<name> is "level = condition; ...",
 # the first true condition wins, "otherwise" takes the rest; an NA condition counts as false.
 # Conditions are R expressions over patch_polygons.R's fields (see <patch shp>_fields.csv).
-# Without any factor_ lines: the two below.
-factor_fdr: sig = sim_fdr <= 0.05; nonsig = otherwise
+# Without any factor_ lines: the two below. flip_fdr is the sign-flip control's false-discovery
+# rate; sim_fdr (the null simulation's) is empty unless the run set lshunter_null_realizations.
+factor_fdr: sig = flip_fdr <= 0.05; nonsig = otherwise
 factor_canopy: loss = canopy_chg < -10; growth = canopy_chg > 5; mid = otherwise
 per_stratum: 40          # patches drawn from each stratum (all of them if fewer)
 seed: 2026

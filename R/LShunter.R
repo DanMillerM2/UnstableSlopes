@@ -227,14 +227,15 @@ param_specs <- list(
   # downslope of the scars, each linked to its scar along runout paths traced on the reference
   # DTM's D-infinity flow directions. dep_ref_dem is the reference DTM; dep_flow_dir its flow
   # direction raster (bldgrds' ang_), built here by bldgrds (NO CHANNELS) when it is missing or
-  # older than dep_ref_dem -- dep_bldgrds_executable_dir is then required, and its contributing
-  # area goes to <dep_flow_dir>_accum. The other dep_ settings fall back to LShunter's defaults
+  # older than dep_ref_dem -- dep_bldgrds_executable_dir is then required; its contributing area
+  # (<dep_flow_dir>_accum), which nothing uses, is deleted. The other dep_ settings fall back to LShunter's defaults
   # (NA): thresholds S 4 and 2 (gain); no minimum gradient; seeds below max_accum1 (out of
   # channels), growth with no accumulation limit (into channels and onto the floodplain where
   # contiguous with gain outside them); min_size; max_distance 500 m beyond the last coherent
   # loss; spread 100 m; scour window 5 m, fraction 0.5. Outputs: <out_table>_deposits.csv,
-  # _unlinked.csv, _balance.csv, and rasters out_deposits/out_unlinked (default
-  # <out_patch>_deposits/_unlinked); out_corridor/out_paths are optional diagnostics.
+  # _unlinked.csv, _balance.csv, and the raster out_deposits (default <out_patch>_deposits);
+  # out_unlinked (LShunter 1.5.0+ writes it only when set), out_corridor and out_paths are
+  # optional diagnostics.
   dep_flow_dir       = list(type = "character", default = "NOFILE"),
   dep_ref_dem        = list(type = "character", default = "NOFILE"),
   dep_bldgrds_executable_dir = list(type = "character", default = "NOFILE"),
@@ -376,7 +377,9 @@ if (use_existing_input_file) {
                "dep_bldgrds_executable_dir is set to build it.")
         }
         message("Building the reference DTM's flow directions with bldgrds: ", ang_flt)
-        TWutils::bldgrds_nochannels(raster = paste0(sub("\\.flt$", "", ang_flt, ignore.case = TRUE), "_accum"),
+        accum_base <- paste0(sub("\\.flt$", "", ang_flt, ignore.case = TRUE), "_accum")
+        build_start <- Sys.time()
+        TWutils::bldgrds_nochannels(raster = accum_base,
                                     dem = dep_ref_dem,
                                     aspect_length = dep_aspect_length,
                                     plan_length = dep_plan_length,
@@ -385,6 +388,14 @@ if (use_existing_input_file) {
                                     executable_dir = dep_bldgrds_executable_dir,
                                     out_ang = dep_flow_dir)
         if (!file.exists(ang_flt)) stop("bldgrds did not write the flow direction raster ", ang_flt)
+        # bldgrds always writes the contributing area (and an empty BaseNode_<id>.dat beside it);
+        # only the flow directions are used, so remove what this build left
+        invisible(gc())  # release the raster bldgrds_nochannels() opened on the accumulation file
+        leftovers <- c(list.files(dirname(accum_base), full.names = TRUE,
+                                  pattern = paste0("^", basename(accum_base), "\\.")),
+                       list.files(dirname(accum_base), full.names = TRUE, pattern = "^BaseNode_.*\\.dat$"))
+        leftovers <- leftovers[file.mtime(leftovers) >= build_start - 1]
+        if (length(leftovers)) unlink(leftovers)
       }
     }
 

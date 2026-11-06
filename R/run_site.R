@@ -92,6 +92,8 @@ align_settings <- c("iterations", "convergence", "k", "dampener", "derivatives",
                     "coverage", "coverageMin", "coverageBlock",
                     "matchSmoothness", "matchFit", "matchMaxSigma",
                     "suspectGround", "suspectHeight", "suspectWindow", "suspectCanopy", "suspectBuffer",
+                    # TRUE also writes lod_<tag>_gain / _centre (Align 1.4.0+; nothing reads them)
+                    "lodGain", "lodCentre",
                     # optional extra outputs, TRUE to write them into the run folder
                     "outCorDif", "outDenOutlier", "outDX", "outDY", "outDZ", "outWaterMask", "outSigma")
 ril_keys <- c("ril_bldgrds_input", "ril_valleyfloor_input", "ril_input",
@@ -325,12 +327,13 @@ for (k in setdiff(lshunter_settings, c("threshold1", "threshold2", "accum", "exe
   lsh[[k]] <- v
 }
 # Deposits: runout paths on the reference DTM's flow directions (ang_<ref>, built by bldgrds with
-# RIL's bldgrds executable when missing or older than the DTM), and the corridor raster
+# RIL's bldgrds executable when missing or older than the DTM). No corridor or unlinked-gain
+# rasters: nothing in the pipeline reads them (LShunter.R's out_corridor/out_unlinked, run on its
+# own, still write them)
 if (deposits) {
   lsh$dep_flow_dir <- in_run(paste0("ang_", s$ref_label))
   lsh$dep_ref_dem <- win(no_ext(s$ref_dtm))
   lsh$dep_bldgrds_executable_dir <- s$ril_bldgrds_executable_dir
-  lsh$out_corridor <- in_run(paste0("corridor_", tag))
 }
 if (!is.null(lsh$seed_den_min)) {  # seed density: the two count rasters Align uses
   lsh$seed_den_ref <- count_raster("ref")

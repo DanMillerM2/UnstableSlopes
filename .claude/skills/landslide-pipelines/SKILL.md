@@ -9,9 +9,9 @@ This repo chains three pipelines and a report:
 
 | Step | Script | Produces |
 |---|---|---|
-| 1. Align (and its inputs) | `R/run_align_pipeline.R` -> `R/align_supervisor.R` | aligned DTM, DoD (`outDif`, `<outDif>_0`), exceedance raster (the only change raster the method uses; Align writes no outlier raster), LoD rasters (`<outLod>`, `_gain`, `_centre`, `_iqr`), centred difference, gradient raster `<ref DTM>_grad<radius>m`, `<outbins>_*.csv`, `align_run\*.csv` |
+| 1. Align (and its inputs) | `R/run_align_pipeline.R` -> `R/align_supervisor.R` | aligned DTM, DoD (`outDif`, `<outDif>_0`), exceedance raster (the only change raster the method uses; Align writes no outlier raster), LoD rasters (`<outLod>`, `_iqr`; `_gain`/`_centre` only with `align_lodGain`/`align_lodCentre`, Align 1.4.0+), centred difference, gradient raster `<ref DTM>_grad<radius>m`, `<outbins>_*.csv`, `align_run\*.csv` |
 | 2. RIL (independent of 1) | `R/ril_pipeline.R` | landform raster (codes 1-10 as LSstats names them: Floodplain, Bedrock_Hollow, Inner_Gorge, Steep_/Convergent, Divergent, Planar, Other) |
-| 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv`; with `lshunter_deposits: TRUE`, also `ang_<ref>` (bldgrds), `corridor_<tag>`, `patch_<tag>_deposits`/`_unlinked` rasters, `patch_<tag>_table_deposits.csv`/`_unlinked.csv`/`_balance.csv`, and the deposits in `patch_<tag>_polygons.shp` (field `type`: scar or deposit; a deposit's `scar` field links it); optionally (`R/naip_images.R`, `naip_run: TRUE`) `naip\p<label>_naip.jpg` |
+| 3. LShunter + LSstats | `R/lshunter_lsstats_pipeline.R` | patch raster, patch table (`out_table`, `_null.csv`), `<out_csv>_<i>.csv`, `<out_csv>_landforms_<i>.csv`, and (`R/patch_polygons.R`) `patch_<tag>_polygons.shp` with `_fields.csv`; with `lshunter_deposits: TRUE`, also `ang_<ref>` (bldgrds; its `_accum` is deleted), the `patch_<tag>_deposits` raster (LShunter 1.5.0+ writes no unlinked raster, and no corridor raster is asked for), `patch_<tag>_table_deposits.csv`/`_unlinked.csv`/`_balance.csv`, and the deposits in `patch_<tag>_polygons.shp` (field `type`: scar or deposit; a deposit's `scar` field links it); optionally (`R/naip_images.R`, `naip_run: TRUE`) `naip\p<label>_naip.jpg` |
 | Report | `PipelineReport.qmd` (repo root, tracked -- see section 6) | one self-contained html file |
 
 **Everything for a site goes in one site file** (`keyword: value` lines; template
@@ -227,7 +227,12 @@ show it to the user:
   the `<out_bins>_densityLod.csv` fits); noise reference from flight-pass overlaps (below);
   candidate landslides (`patch_raster` over a hillshade of
   `ref_dtm`, the `lshunter_table` summary, and a line naming `patch_polygons` with its feature
-  count and `_fields.csv`); landforms (`landform_raster`, the LSstats csvs);
+  count and `_fields.csv`, then the `_null.csv` controls by source, flip and sim); deposits
+  (with `deposit_table`: counts of deposits, their scars and unlinked gain patches from
+  `unlinked_table`, `deposit_raster` blue over the scars red on the hillshade, min/median/max of
+  area, thickness, volume, travel, drop and reach angle, and from `balance_table` the scars with
+  deposits' volume, their deposits', the net +- SD and the median deposit/scar ratio; else a
+  note); landforms (`landform_raster`, the LSstats csvs);
   Interpretation (include `narrative_md` if it exists, else a note that it hasn't been written);
   run details (`created`, `config`, `elapsed_min`, `log_dir`).
 - Noise reference section, from `strip_noise_dir` (`NOFILE` without `noise_run: TRUE`, so by default: one note),

@@ -223,8 +223,7 @@ for the material each scar delivered downslope:
   path counts from the last point of coherent loss -- the scar itself, or scour along a
   debris-flow track -- so a long scoured track doesn't use up the allowance; a path ends
   `lshunter_dep_max_distance` (500 m) beyond it, or where it enters another scar.
-- **Corridors.** Everything within `lshunter_dep_spread` (100 m) of a path, saved as
-  `corridor_<tag>` (each cell holds the scar it belongs to).
+- **Corridors.** Everything within `lshunter_dep_spread` (100 m) of a path.
 - **Deposits.** Patches of significant gain (S of 4 to seed, 2 to grow, the reverse of the scars'
   thresholds). Seeds must lie out of channels and off the valley floor; a deposit may then extend
   into a narrow channel or onto the floodplain, but only where that is contiguous with gain
@@ -233,11 +232,12 @@ for the material each scar delivered downslope:
   separately, as "unlinked": a check on the gain-side level of detection, and a list of gains
   (fill, vegetation read as ground, slow deep-seated movement) worth a look.
 
-Outputs: `patch_<tag>_deposits` and `_unlinked` rasters, `patch_<tag>_table_deposits.csv` (every
+Outputs: the `patch_<tag>_deposits` raster, `patch_<tag>_table_deposits.csv` (every
 patch-table column, plus the scar, travel distance, drop, reach angle, and channel share),
 `_unlinked.csv`, `_balance.csv` (each scar's volume against its deposits', the net and their SDs
 from the correlated noise, and the deposit/scar ratio, near 1 to 1.3 where little left the
-slope); the deposits are also in `patch_<tag>_polygons.shp` (see below). With `lshunter_null_realizations`, each deposit's
+slope); the deposits are also in `patch_<tag>_polygons.shp` (see below), and the report has a
+short Deposits section (a map, their sizes, travel and reach angles, and the volume balance). With `lshunter_null_realizations`, each deposit's
 false-discovery rate comes from simulated noise patches that land in the same corridors.
 
 ## Reviewing the candidates
@@ -287,15 +287,15 @@ missing value counts as false. Without any factor lines the sample uses these tw
 all:
 
 ```
-factor_fdr: sig = sim_fdr <= 0.05; nonsig = otherwise
+factor_fdr: sig = flip_fdr <= 0.05; nonsig = otherwise
 factor_canopy: loss = canopy_chg < -10; growth = canopy_chg > 5; mid = otherwise
 ```
 
-That is, null-simulation false-discovery rate at most 5% or not, crossed with canopy height
-falling by more than 10 m, growing by more than 5 m, or neither. `sim_fdr` exists only when the
-run used the null simulation (`lshunter_null_realizations`); without it, stratify on the
-sign-flip control's rate instead (`factor_fdr: sig = flip_fdr <= 0.05; nonsig = otherwise`), as
-the Site 1 and Site 2 rebuilds of November 2026 do. A `filter` line restricts the
+That is, sign-flip false-discovery rate at most 5% or not, crossed with canopy height
+falling by more than 10 m, growing by more than 5 m, or neither, as the Site 1 and Site 2
+rebuilds of November 2026 do. With the null simulation (`lshunter_null_realizations`), its rate
+`sim_fdr` can be used instead (`factor_fdr: sig = sim_fdr <= 0.05; nonsig = otherwise`); without
+it, `sim_fdr` is empty. A `filter` line restricts the
 sample to patches meeting a condition (for example `filter: area_m2 >= 50`). The same shapefile,
 factors and seed always give the same sample, so a page rebuilt later keeps its labels.
 

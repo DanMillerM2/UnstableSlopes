@@ -7,8 +7,8 @@
 ##     can share a label), and a deposit's scar field is the label of the scar it came from;
 ##   - LShunter's patch table (out_table) for the scars and its deposit table
 ##     (<out_table stem>_deposits.csv) for the deposits: points, area, centroid, mean and most
-##     extreme centred difference, volume and its SD and z, gradient, most extreme S (or outlier
-##     value), road, valley-floor, hollow and inner-gorge shares, distance to channel,
+##     extreme centred difference, volume and its SD and z, gradient, most extreme S, road,
+##     valley-floor, hollow and inner-gorge shares, distance to channel,
 ##     false-discovery rates, canopy height in both surveys, seed type; for deposits also the scar,
 ##     travel distance, drop and reach angle -- whichever columns this LShunter version wrote;
 ##   - the polygon's own shape: perimeter, and the length and width of its minimum rotated
@@ -166,7 +166,6 @@ known <- list(
   mean_grad_tan = c("grad_mean", "tan", "mean gradient"),
   max_grad_tan = c("grad_max", "tan", "maximum gradient"),
   min_S = c("min_S", "", "most extreme exceedance S (negative: loss; S = -2 is p = 1%)"),
-  min_outlier = c("min_outl", "", "most extreme outlier value"),
   road_frac = c("road_frac", "", "share of cells in the road buffer"),
   valley_frac = c("valley_frc", "", "share of cells on valley floor (RIL)"),
   hollow_frac = c("hollow_frc", "", "share of cells in bedrock hollows (RIL)"),
@@ -230,7 +229,7 @@ if (!is.null(dep_csv)) add_table(dep_csv, "deposit", which(v$type == "deposit"))
 ## Field prefix and units for a raster, from its name (Align's outputs and the gradient raster)
 short_of <- function(path) {
   b <- tolower(basename(sub("\\.flt$", "", path, ignore.case = TRUE)))
-  pre <- list(cendif = c("cdif", "m"), exceed = c("S", ""), grad = c("grd", "tan"), outlier = c("outl", ""),
+  pre <- list(cendif = c("cdif", "m"), exceed = c("S", ""), grad = c("grd", "tan"),
               lod = c("lod", "m"), dif = c("dif", "m"), elev = c("elev", "m"))
   hit <- names(pre)[vapply(names(pre), function(k) startsWith(b, k) || grepl(paste0("_", k), b), TRUE)]
   if (length(hit)) pre[[hit[1]]] else c(substr(gsub("[^a-z0-9]", "", b), 1, 5), "")

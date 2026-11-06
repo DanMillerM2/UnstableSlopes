@@ -31,7 +31,7 @@
 ## Outputs. Align writes to <dirname(outDTM)>/align_run/ (its scratch log to
 ## <scratch_dir>/align_run/), with its console output in align_run/align.log, streamed to this
 ## session's console as it runs. On success every output is moved to its final path (by base
-## name: <outDif>_0, <outLod>_gain/_centre/_iqr, <outbins>_fit0.csv, ... go with their base;
+## name: <outDif>_0, <outLod>_iqr (and _gain/_centre with lodGain/lodCentre), <outbins>_fit0.csv, ... go with their base;
 ## the aligned DEM's (outDTM's) .flt last, since its existence marks the run complete). The gradient raster
 ## LShunter needs is written by Align next to the reference DTM, <refDTM>_grad<radius>m. Tables
 ## in align_run/, for the pipeline report:
@@ -164,7 +164,9 @@ param_specs <- list(
   outDif        = list(type = "character", required = TRUE),
   outExceed     = list(type = "character", default = "NOFILE"),  # the change raster LShunter uses
   outOutlier    = list(type = "character", default = "NOFILE"),  # optional (Align 1.2.0+); not used downstream
-  outLod        = list(type = "character", default = "NOFILE"),
+  outLod        = list(type = "character", default = "NOFILE"),  # loss limit, also writes _iqr
+  lodGain       = list(type = "logical", default = FALSE),       # also <outLod>_gain (Align 1.4.0+; nothing reads it)
+  lodCentre     = list(type = "logical", default = FALSE),       # also <outLod>_centre (Align 1.4.0+; nothing reads it)
   outCenDif     = list(type = "character", default = "NOFILE"),
   outDenOutlier = list(type = "character", default = "NOFILE"),
   outCorDif     = list(type = "character", default = "NOFILE"),
@@ -326,6 +328,10 @@ align_args <- list(
 trim <- Filter(Negate(is.null), list(exceedanceTrim = p$exceedanceTrim, exceedanceTrimZ = p$exceedanceTrimZ,
                                      exceedanceTrimFraction = p$exceedanceTrimFraction))
 align_args <- c(align_args, trim)
+## The LoD gain limit and centre rasters only when asked for (Align 1.4.0 writes them only then;
+## older versions always do), so a TWutils without lodGain/lodCentre still runs by default
+if (!is_nofile(p$outLod) && isTRUE(p$lodGain)) align_args$lodGain <- TRUE
+if (!is_nofile(p$outLod) && isTRUE(p$lodCentre)) align_args$lodCentre <- TRUE
 lacking <- setdiff(names(align_args)[nzchar(names(align_args))], names(formals(TWutils::align_input)))
 if (length(lacking)) {
   stop("The installed TWutils is older than this pipeline: align_input() has no ", paste(lacking, collapse = ", "),

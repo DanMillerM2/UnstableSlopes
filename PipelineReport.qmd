@@ -298,8 +298,70 @@ if (has(tb)) {
         basename(sub("\\.shp$", "_fields.csv", shp, ignore.case = TRUE)), "`).\n\n", sep = "")
   }
   nul <- sub("\\.csv$", "_null.csv", tb, ignore.case = TRUE)
-  if (has(nul)) { cat("\n### Null simulation\n\n"); table_or_note(nul, "Null table", 30) }
+  if (has(nul)) {
+    cat("\n### Null distribution\n\n")
+    nd <- read_csv(nul)
+    if ("source" %in% names(nd)) {
+      src <- table(nd$source)
+      cat("Patches found the same way in the controls, which set the false-discovery rates: `flip` ",
+          "is the sign-flip control (gain patches; `flip_fdr`), `sim` the null simulation (`sim_fdr`, ",
+          "only when it was run). Here: ", paste(names(src), src, collapse = ", "), ".\n\n", sep = "")
+    }
+    print(kable(utils::head(nd, 30), digits = 4))
+  }
 } else note("No LShunter patch table.")
+```
+
+## Deposits
+
+```{r deposits, results = "asis", fig.cap = "Deposits (blue) and the candidate scars (red) over the reference hillshade."}
+dt <- get("deposit_table"); bt <- get("balance_table"); ut <- get("unlinked_table")
+na9 <- function(d) { d[] <- lapply(d, function(v) if (is.numeric(v)) replace(v, v == -9999, NA) else v); d }
+if (has(dt)) {
+  d <- na9(read_csv(dt))
+  b <- if (has(bt)) na9(read_csv(bt)) else NULL
+  n_unl <- if (has(ut)) nrow(read_csv(ut)) else NA
+  linked <- if (!is.null(b)) b[b$n_deposits > 0, ] else NULL
+  cat("LShunter linked ", nrow(d), " gain patches downslope of the scars to ",
+      if (!is.null(linked)) nrow(linked) else "?", " scars as their deposits, along runout paths traced on ",
+      "the reference DTM. Another ", n_unl, " gain patches have no scar above them (unlinked; ",
+      "`", basename(ut), "`): many of these point to gain thresholds that are low, or to gains ",
+      "from vegetation or fill rather than landslides.\n\n", sep = "")
+  dr <- get("deposit_raster"); pr <- get("patch_raster")
+  if (has(dr) && has(pr)) {
+    agg <- function(path) {
+      r <- rast(path); f <- ceiling(sqrt(ncell(r) / 1.5e6))
+      if (f > 1) r <- aggregate(r, f, fun = "max", na.rm = TRUE)
+      classify(r, cbind(0, NA)) > 0
+    }
+    if (!is.null(hs)) plot(hs, col = grey(0:100 / 100), legend = FALSE, mar = c(2, 2, 1, 4))
+    plot(agg(pr), col = "red", legend = FALSE, add = !is.null(hs))
+    plot(agg(dr), col = "blue", legend = FALSE, add = TRUE)
+  }
+  cols <- intersect(c("area_m2", "mean_thickness_m", "volume_m3", "travel_m", "drop_m", "reach_angle_deg"),
+                    names(d))
+  s <- t(vapply(d[cols], function(v) c(min = min(v, na.rm = TRUE), median = stats::median(v, na.rm = TRUE),
+                                       max = max(v, na.rm = TRUE)), numeric(3)))
+  print(kable(s, digits = 2, caption = paste0("Deposits (", basename(dt), "). Travel is the distance beyond ",
+                                              "the last coherent loss.")))
+  if (!is.null(linked) && nrow(linked)) {
+    bal <- data.frame(
+      Item = c("Scars with deposits", "Their volume (m3)", "Their deposits' volume (m3)",
+               "Net (m3, +- SD)", "Deposit / scar volume, median (quartiles)"),
+      Value = c(nrow(linked), format(round(sum(linked$scar_volume_m3)), big.mark = ","),
+                format(round(sum(linked$deposit_volume_m3)), big.mark = ","),
+                paste0(format(round(sum(linked$net_volume_m3)), big.mark = ","), " +- ",
+                       format(round(sqrt(sum(linked$net_sd_m3^2, na.rm = TRUE))), big.mark = ",")),
+                paste0(round(stats::median(linked$deposit_to_scar_ratio, na.rm = TRUE), 2), " (",
+                       paste(round(stats::quantile(linked$deposit_to_scar_ratio, c(.25, .75), na.rm = TRUE), 2),
+                             collapse = "-"), ")")))
+    print(kable(bal, caption = paste0("Volume balance of the scars with deposits (", basename(bt),
+                                      "; the net SD treats the scars as independent). Deposits beyond their ",
+                                      "scars' volume suggest bulking along the path, or gains not from the scar.")))
+  }
+  cat("\nThe deposits are features of the patch polygons (field `type` = `deposit`, with their scar's label ",
+      "in `scar`).\n\n", sep = "")
+} else note("Deposits weren't run (lshunter_deposits: TRUE in the site file finds them).")
 ```
 
 ## Landforms

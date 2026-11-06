@@ -157,8 +157,9 @@ if (is_set(p$filter)) {
   message("filter ", p$filter, ": ", nrow(poly), " patches")
 }
 fdefs <- p[startsWith(names(p), "factor_")]
-if (!length(fdefs)) {   # the Site 2 design: null-simulation FDR x canopy change
-  fdefs <- list(factor_fdr = "sig = sim_fdr <= 0.05; nonsig = otherwise",
+if (!length(fdefs)) {   # the Site 2 design: sign-flip FDR x canopy change. (sim_fdr, the null
+  # simulation's rate, is empty unless the run set lshunter_null_realizations.)
+  fdefs <- list(factor_fdr = "sig = flip_fdr <= 0.05; nonsig = otherwise",
                 factor_canopy = "loss = canopy_chg < -10; growth = canopy_chg > 5; mid = otherwise")
 }
 strata_desc <- character(0)
